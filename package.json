@@ -3,12 +3,21 @@
   "description": "Web server for webhook",
   "version": "0.0.1",
   "private": true,
+  "scripts": {
+    "start": "grunt startServer",
+    "command-delegator": "grunt commandDelegator",
+    "invite-worker": "grunt inviteWorker",
+    "create-worker": "grunt createWorker",
+    "build-worker": "grunt buildWorker",
+    "backup-cron": "grunt backupCron"
+  },
   "dependencies": {
     "adm-zip": "~0.4.3",
     "archiver": "~0.10.0-alpha",
     "async": "~0.2.9",
     "colors": "~0.6.2",
     "csv-stream": "~0.1.3",
+    "dotenv": "^2.0.0",
     "elasticsearchclient": "~0.5.3",
     "express": "3.x",
     "firebase": "~1.0.5",
