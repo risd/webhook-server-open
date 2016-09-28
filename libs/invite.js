@@ -94,7 +94,7 @@ module.exports.start = function (config, logger) {
       var content = fs.readFileSync('libs/emails/invite-signup.email');
       content = _.template(content, { fromUser: fromUsername, siteUrl: siteUrl, url: url });
 
-      mailgun.sendText(fromEmail, email, '[Webhook] You\'ve been invited to edit ' + siteref, content);
+      mailgun.sendText(fromEmail, email, '[Webhook] You\'ve been invited to edit ' + unescapeUserId(siteref), content);
     });
 
   }
@@ -123,7 +123,7 @@ module.exports.start = function (config, logger) {
       var content = fs.readFileSync('libs/emails/invite-login.email');
       content = _.template(content, { fromUser: fromUsername, siteUrl: siteUrl, url: url });
 
-      mailgun.sendText(fromEmail, email, '[Webhook] You\'ve been invited to edit ' + siteref, content);
+      mailgun.sendText(fromEmail, email, '[Webhook] You\'ve been invited to edit ' + unescapeUserId(siteref), content);
     });
   }
 };
