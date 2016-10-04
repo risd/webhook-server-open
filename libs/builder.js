@@ -286,6 +286,10 @@ module.exports.start = function (config, logger) {
             // upload function (will upload with gz compression)
             funcs.push( function(step) {
               cloudStorage.objects.uploadCompressed(siteBucket, source, file, cache, function(err, body) {
+                if (err) {
+                  console.log('upload:func:', file);
+                  console.log(err);
+                }
                 step();
               });
             });
@@ -296,6 +300,10 @@ module.exports.start = function (config, logger) {
             if(file.indexOf('static/') !== 0 && file.indexOf('/index.html') !== -1) {
               funcs.push( function(step) {
                 cloudStorage.objects.uploadCompressed(siteBucket, source, file.replace('/index.html', ''), cache, 'text/html', function(err, body) {
+                  if (err) {
+                    console.log('upload:func-dircopy:', file);
+                    console.log(err);
+                  }
                   step();
                 });
               });
@@ -322,7 +330,7 @@ module.exports.start = function (config, logger) {
       });
 
       // Run the uploads in parallel
-      async.parallel(funcs, function() {
+      async.parallelLimit(funcs, 100, function() {
 
         cloudStorage.buckets.updateIndex(siteBucket, 'index.html', '404.html', function(err, body) {
           console.log('updated');
