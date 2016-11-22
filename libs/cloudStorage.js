@@ -345,6 +345,13 @@ module.exports.objects = {
 
     var fileContent = fs.readFileSync(local);
 
+    // subpublish
+    var subpublish = 'alumni';
+    if ( bucket === [ subpublish, 'risd.systems'].join('.') ) {
+      // replace subpublish from links
+      fileContent = subpublishLinks( fileContent )
+    }
+
     var now = Date.now();
     zlib.gzip(fileContent, function(err, content) {
       jsonRequest({
@@ -367,6 +374,25 @@ module.exports.objects = {
         }]
       }, callback);
     });
+
+    function subpublishLinks ( buffer ) {
+      var cheerio = require( 'cheerio' );
+      var $ = cheerio.load( buffer.toString() );
+
+      $( 'a[href*="/' + subpublish +  '/"]' )
+        .map( function ( index, element ) {
+          var originalLink = $( element ).attr( 'href' );
+          var subpublishLink = originalLink
+            .split( '/' + subpublish + '/' )
+            .join('/')
+
+          $( element ).attr( 'href', subpublishLink )
+
+          return element;
+        } )
+
+      return new Buffer( $.html() );
+    }
 
   },
 

@@ -244,7 +244,7 @@ module.exports.start = function (config, logger) {
     cloudStorage.objects.list(siteBucket, function(err, body) {
 
       if(err) {
-        callback();
+        callback( { error: err } );
       }
 
       // Get a list of all objects already existing in cloud storage,
@@ -323,15 +323,159 @@ module.exports.start = function (config, logger) {
 
         funcs.push( function(step) {
           cloudStorage.objects.del(siteBucket, key, function(err, body) {
+            if (err) {
+              console.log( 'upload:delete:', file);
+              console.log( err );
+            }
             step();
           });
         });
 
       });
 
+
+
+      // subpublish
+      // alumni.risd.systems
+      var subpublish = 'alumni';
+      if ( siteBucket === 'edu.risd.systems' ) {
+        console.log( 'subpublish:alumni.risd.systems' );
+
+        funcs = funcs.concat(
+          // subpublish files to upload functions
+          subpublishRequestsFrom( files ),
+          // directory dupes
+          sublishDirectoryRequestsFrom( files ),
+          // delete files
+          sublishDeleteRequestsFrom( deleteList )
+        )
+
+      }
+
+      function subpublishRequestsFrom ( filesToPublish ) {
+        return filesToPublish
+          .filter( isSubpublish )
+          .map( toUploadOptions )
+          .map( subpublishFileOption )
+          .filter( function isNotDirectory ( options ) {
+            return !fs.lstatSync( options.source ).isDirectory()
+          } )
+          .filter( function isFileNew ( options ) {
+            if ( ! md5List[ options.file ] ) return true; // not in list
+            // see if the file hash exists in the list
+            return ( crypto
+              .createHash( 'md5' )
+              .update( fs.readFileSync( options.source ) )
+              .digest( 'base64' )
+              === md5List[file] )
+          } )
+          .map( toUploadRequests );
+      }
+
+      function sublishDirectoryRequestsFrom ( filesToPublish ) {
+        console.log ( 'sublishDirectoryRequestsFrom' )
+        return filesToPublish
+          .filter( isSubpublish )
+          .filter( function isIndex ( file ) {
+            return ( file.indexOf( '/index.html' ) !== -1 ) &&
+              ( file !== ( [ subpublish, 'index.html' ].join( '/' ) ) )
+          } )
+          .map( toUploadOptions )
+          .map( subpublishFileOption )
+          .map( function sliceIndex ( options ) {
+            return Object.assign( options, {
+              file: options.file.slice( 0, - ( '/index.html'.length ) ),
+            } )
+          } )
+          .map( toUploadRequests )
+      }
+
+      function sublishDeleteRequestsFrom ( filesToDelete ) {
+          return Object.keys( deleteList )
+            .map( isSubpublish )
+            .map( sliceSubpublish )
+            .map( fileToDeleteRequestOptions )
+            .map( toDeleteRequests );
+      }
+
+
+
+      function isSubpublish ( file ) {
+        return ( file === subpublish ) ||
+         ( file.indexOf( ( subpublish + '/' ) ) === 0 )
+      }
+
+      function sliceSubpublish ( file ) {
+        // if ( file === subpublish ) console.log ( 'index.html' )
+        if ( file === subpublish ) return ( 'index.html' )
+
+        // console.log( 'slicePublish:', file.slice( ( subpublish + '/' ).length ) );
+
+        return file.slice( ( subpublish + '/' ).length )
+      }
+
+      function toUploadOptions ( file ) {
+        return { file: file, source: [ folder, file ].join('/') }
+      }
+
+      function subpublishFileOption (options) {
+        return Object.assign( options, {
+          file: sliceSubpublish( options.file )
+        } )
+      } 
+
+      function toUploadRequests ( options ) {
+        // console.log( 'subpublish:upload-req:', options.file )
+        return function uploadRequest ( step ) {
+          cloudStorage.objects.uploadCompressed(
+            subpublishDomain(),
+            options.source,
+            options.file,
+            'no-cache', // cache value
+            function uploadResponse(err, body) {
+              console.log( 'subpublish:upload-res:', options.file )
+              if ( err ) {
+                console.log( err )
+              }
+              console.log( body )
+              step()
+            } )
+        }
+      }
+
+      function fileToDeleteRequestOptions ( file ) {
+        return {
+          key: file
+        }
+      }
+
+      function toDeleteRequests ( options ) {
+        console.log( 'subpublish:delete-req:', options.key )
+        return function deleteRequest  ( step ) {
+          cloudStorage.objects.del(
+            subpublishDomain(),
+            options.key,
+            function deleteResponse ( error, body ) {
+              console.log( 'subpublish:delete-res:', options.key )
+              if ( err ) {
+                console.log( error )
+              }
+              console.log( body )
+              step()
+            } )
+        }
+      }
+
+      function subpublishDomain () {
+        return [ subpublish, 'risd.systems' ].join( '.' )
+      }
+
+      // subpublish -- end
+
+
       // Run the uploads in parallel
       async.parallelLimit(funcs, 100, function() {
-
+        console.log('upload:complete:');
         cloudStorage.buckets.updateIndex(siteBucket, 'index.html', '404.html', function(err, body) {
           console.log('updated');
           callback();
