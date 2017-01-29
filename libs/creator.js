@@ -109,24 +109,40 @@ module.exports.start = function (config, logger) {
 
     var siteBucket = unescapeSite(site);
 
+    console.log('setting up site')
+    console.log(siteBucket)
+    console.log(key)
+
     // Create a bucket in cloud storage
     cloudStorage.buckets.create(siteBucket, function(err, body) {
 
+      console.log('done creating bucket')
+
       if(err) {
+        console.log(err)
         callback(err);
         return;
       }
 
+      console.log('update acls')
+
       // Adjust the ACLS
       cloudStorage.buckets.updateAcls(siteBucket, function(err, body) {
 
+        console.log('done updating acls')
+
         if(err) {
+          console.log(err)
           callback(err);
           return;
         }
 
+        console.log('setting key')
+
         // Generate and set the access key
         siteRef.child('key').set(key, function(err) {
+          console.log('setting billing')
+          console.log(err)
           // Set some billing info, not used by self-hosting, but required to run
           siteRef.root().child('billing/sites/' + siteData.name()).set({
             'plan-id': 'mainplan',
@@ -135,6 +151,8 @@ module.exports.start = function (config, logger) {
             'active': true,
             'endTrial' : Date.now()
           }, function(err) {
+            console.log('done')
+            console.log(err)
             callback();
           });
         });
