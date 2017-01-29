@@ -57,6 +57,8 @@ module.exports.start = function (config, logger) {
     { commands: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
   ];
 
+  // var build_queue = BuildQueue()
+
   self.root.auth(config.get('firebaseSecret'), function(err) {
     if(err) {
       console.log(err.red);
@@ -104,15 +106,35 @@ module.exports.start = function (config, logger) {
     console.log('Queueing Command for ' + item.tube);
 
     // Identifier is a uuid for the given command, so we lock it and just let it expire in an hour
-    memcached.add(item.lock + '_' + lockId + '_queued', 'locked', 60 * 60, function(err) {
+    var memcaheLockId = item.lock + '_' + lockId + '_queued';
+    console.log('memcaheLockId');
+    console.log(memcaheLockId);
+
+    var LOCKED = 'locked'
+
+    try {
+      memcached.get(memcaheLockId, function (err, lock_value) {
+        console.log('current lock value for ' + memcaheLockId)
+        console.log('is: ' + lock_value)
+        if (lock_value === LOCKED) return;
+      });
+    } catch (e) {
+      console.log('could not get memcaheLockId')
+      console.log(e)
+    }
+
+    memcached.add(memcaheLockId, LOCKED, 60 * 60, function(err) {
       if(err) {
         return;
       } else {
         // We give it a TTL of 3 minutes
+        console.log('client.put')
+        console.log(JSON.stringify(identifier))
+        console.log('payload')
+        console.log(JSON.stringify(payload))
         client.put(1, 0, (60 * 3), JSON.stringify({ identifier: identifier, payload: payload }), function() { callback(); });
       }
     });
-
   };
 
   // After creating a client we listen in firebase for jobs,
@@ -121,22 +143,61 @@ module.exports.start = function (config, logger) {
     console.log('Waiting on commands for ' + item.tube);
     self.root.child(item.commands).on('child_added', function(commandData) {
 
-      handlingCommand = handlingCommand + 1;
-
       var payload = commandData.val();
       var identifier = commandData.name();
       var lockId = payload.id || 'noneya';
 
+      var retries = 0;
+
       // We remove the data immediately to avoid duplicates
       commandData.ref().remove();
-      
-      queueCommand(client, item, identifier, lockId, payload, function() {
+
+      console.log('handlingCommand')
+      console.log(identifier)
+      console.log(lockId)
+      console.log(JSON.stringify(payload))
+
+      // if we are building, lets make sure we aren't
+      // already building the same site
+      var queue_task = true
+      if ( item.tube === 'build' )
+        lockId = payload.sitename
+        // queue_task = build_queue.add( identifier )
+
+      if ( queue_task ) {
+        console.log('queueing task');
+        handlingCommand = handlingCommand + 1;
+        queueCommand(client, item, identifier, lockId, payload, onQueueComplete);
+      } else {
+        console.log('task is already queued');
+        maybeDie()
+      }
+
+      function onQueueComplete ( error ) {
+        // build only throws error when templates don't compile correctly
+        // which, they always should. so lets restart that task
+        if ( item.tube === 'build') {
+          if ( error ) retries += 1
+
+          if ( error && retries < 5 ) {
+            console.log( 'build:retrying:' + identifier )
+            queueCommand(client, item, identifier, lockId, payload, onQueueComplete)
+            return;
+          }
+        }
+
+        // build_queue.remove( identifier )
+
         handlingCommand = handlingCommand - 1;
+        maybeDie()
+      }
+
+      function maybeDie () {
         // If we had a sigterm and no one is handling commands, die
         if(dieSoon && (handlingCommand === 0)) {
           process.exit(0);
         }
-      });
+      }
 
     }, function(err) {
       console.log(err);
@@ -145,3 +206,56 @@ module.exports.start = function (config, logger) {
 
   return this;
 };
+
+function BuildQueue () {
+  // the number of identifiers we want in our build queue
+  var instances_allowed = 1
+
+  // list of identifiers ( siteName ) being built
+  var building = []
+
+  var instances = function countOfSiteInBuildQueue ( siteName ) {
+    return building
+      .filter(function ( identifier ) {
+        return ( identifier === siteName )
+      })
+      .length
+  }
+
+  // returns true if we should build
+  // returns false if we are already building
+  var add = function addSiteToBuildQueue ( siteName ) {
+    console.log( 'addSiteToBuildQueue' )
+    console.log( siteName )
+    var current_instances = instances( siteName )
+    console.log( current_instances )
+    console.log( instances_allowed )
+
+    if ( current_instances >= instances_allowed ) return false
+    
+    building = building.concat( [ siteName ] )
+    console.log( building )
+
+    return true
+  }
+
+  // returns true if we removed the siteName from the build queue
+  // returns false if there was no instance of the siteName
+  var remove = function removeSiteFromBuildQueue ( siteName ) {
+    console.log( 'removeSiteFromBuildQueue' )
+    console.log( siteName )
+
+    var siteNameIndex = building.indexOf( siteName )
+    if ( siteNameIndex === -1 ) return false
+    
+    building = building.slice(0, siteNameIndex).concat(
+        building.slice(siteNameIndex + 1))
+    
+    return true
+  }
+
+  return {
+    add: add,
+    remove: remove,
+  }
+}
