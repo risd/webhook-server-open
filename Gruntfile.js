@@ -14,7 +14,7 @@
 *    extractKey       - A utility to extract the SSH key for a google service acccount
 */
 
-var builder = require('./libs/builder-netlify.js');
+var builder = require('./libs/builder.js');
 var inviter = require('./libs/invite.js');
 var creator = require('./libs/creator.js');
 var server = require('./libs/server.js');
