@@ -171,12 +171,6 @@ function NetlifyCDN ( options ) {
             } )
             .forEach( function ( site ) {
               if ( createdDeploy ) return
-
-              // var deploying = netlifyClient.deploy( {
-              //   access_token: access_token,
-              //   site_id: toName( domain ),
-              //   dir: directory,
-              // } )
               
               site.createDeploy( { dir: directory } )
                 .then( function ( deployed ) {
@@ -219,6 +213,8 @@ function NetlifyCDN ( options ) {
   }
 
   var update = function ( domain, callback ) {
+    var blankDomain = '';
+    
     client( function ( error, netlifyClient ) {
       if ( error ) return callback( error, undefined )
       netlifyClient.sites()
@@ -232,7 +228,7 @@ function NetlifyCDN ( options ) {
 
             site.update( {
                 name: toName( domain ),
-                customDomain: domain,
+                customDomain: blankDomain,
                 notificationEmail: siteNotification,
               } )
               .then( function ( updated ) {
