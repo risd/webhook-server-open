@@ -96,6 +96,13 @@ module.exports.start = function (config, logger) {
 
     // Wait for a build job, extract info from payload
     jobQueue.reserveJob('build', 'build', function(payload, identifier, data, client, callback) {
+      console.log('Triggered command!');
+      console.log('payload')
+      console.log(JSON.stringify(payload))
+      console.log('identifier')
+      console.log(identifier)
+      console.log('data')
+      console.log(JSON.stringify(data))
       var userid = data.userid;
       var site = data.sitename;
       var noDelay = data.noDelay || false;
@@ -135,7 +142,7 @@ module.exports.start = function (config, logger) {
                 // Dont upload failed builds, simply send error to CMS
                 reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
                 console.log('done with errors');
-                callback();
+                callback( err );
               } else {
 
                 // If there was a delay, push it back into beanstalk, then upload to the bucket
@@ -290,7 +297,7 @@ module.exports.start = function (config, logger) {
                   console.log('upload:func:', file);
                   console.log(err);
                 }
-                step();
+                step( null, body );
               });
             });
 
@@ -304,7 +311,7 @@ module.exports.start = function (config, logger) {
                     console.log('upload:func-dircopy:', file);
                     console.log(err);
                   }
-                  step();
+                  step( null, body );
                 });
               });
             }
@@ -324,10 +331,10 @@ module.exports.start = function (config, logger) {
         funcs.push( function(step) {
           cloudStorage.objects.del(siteBucket, key, function(err, body) {
             if (err) {
-              console.log( 'upload:delete:', file);
+              console.log( 'upload:delete:', key);
               console.log( err );
             }
-            step();
+            step( null, body );
           });
         });
 
@@ -337,6 +344,7 @@ module.exports.start = function (config, logger) {
 
       // subpublish
       // alumni.risd.systems
+      console.log( 'pre-subpublish:upload-funcs:', funcs.length )
       var subpublish = 'alumni';
       if ( siteBucket === 'edu.risd.systems' ) {
         console.log( 'subpublish:alumni.risd.systems' );
@@ -351,6 +359,8 @@ module.exports.start = function (config, logger) {
         )
 
       }
+
+      console.log( 'post-subpublish:upload-funcs:', funcs.length )
 
       function subpublishRequestsFrom ( filesToPublish ) {
         return filesToPublish
@@ -383,6 +393,7 @@ module.exports.start = function (config, logger) {
           .map( toUploadOptions )
           .map( subpublishFileOption )
           .map( function sliceIndex ( options ) {
+            console.log( 'sliceIndex:file:', options.file )
             return Object.assign( options, {
               file: options.file.slice( 0, - ( '/index.html'.length ) ),
             } )
@@ -391,11 +402,12 @@ module.exports.start = function (config, logger) {
       }
 
       function sublishDeleteRequestsFrom ( filesToDelete ) {
-          return Object.keys( deleteList )
-            .map( isSubpublish )
-            .map( sliceSubpublish )
-            .map( fileToDeleteRequestOptions )
-            .map( toDeleteRequests );
+        console.log ( 'sublishDeleteRequestsFrom' )
+        return Object.keys( deleteList )
+          .filter( isSubpublish )
+          .map( sliceSubpublish )
+          .map( fileToDeleteRequestOptions )
+          .map( toDeleteRequests );
       }
 
 
@@ -419,8 +431,9 @@ module.exports.start = function (config, logger) {
       }
 
       function subpublishFileOption (options) {
+        var subpublishFile = sliceSubpublish( options.file )
         return Object.assign( options, {
-          file: sliceSubpublish( options.file )
+          file: ( subpublishFile.length > 0 ) ? subpublishFile : ''
         } )
       } 
 
@@ -437,8 +450,7 @@ module.exports.start = function (config, logger) {
               if ( err ) {
                 console.log( err )
               }
-              console.log( body )
-              step()
+              step( null, body )
             } )
         }
       }
@@ -460,22 +472,24 @@ module.exports.start = function (config, logger) {
               if ( err ) {
                 console.log( error )
               }
-              console.log( body )
-              step()
+              step( null, body )
             } )
         }
       }
 
       function subpublishDomain () {
-        return [ subpublish, 'risd.systems' ].join( '.' )
+        // return [ subpublish, 'risd.systems' ].join( '.' )
+        return 'alumni.risd.edu'
       }
 
       // subpublish -- end
 
 
       // Run the uploads in parallel
-      async.parallelLimit(funcs, 100, function() {
+      console.log( 'async funcs' )
+      async.parallelLimit(funcs, Math.min(funcs.length, 100), function(asyncError, asyncResults) {
         console.log('upload:complete:');
+        console.log('upload:complete:error:', asyncError);
         cloudStorage.buckets.updateIndex(siteBucket, 'index.html', '404.html', function(err, body) {
           console.log('updated');
           callback();
