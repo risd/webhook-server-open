@@ -57,8 +57,6 @@ module.exports.start = function (config, logger) {
     { commands: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
   ];
 
-  // var build_queue = BuildQueue()
-
   self.root.auth(config.get('firebaseSecret'), function(err) {
     if(err) {
       console.log(err.red);
@@ -106,33 +104,23 @@ module.exports.start = function (config, logger) {
     console.log('Queueing Command for ' + item.tube);
 
     // Identifier is a uuid for the given command, so we lock it and just let it expire in an hour
-    var memcaheLockId = item.lock + '_' + lockId + '_queued';
-    console.log('memcaheLockId');
-    console.log(memcaheLockId);
 
     var LOCKED = 'locked'
 
-    try {
-      memcached.get(memcaheLockId, function (err, lock_value) {
-        console.log('current lock value for ' + memcaheLockId)
-        console.log('is: ' + lock_value)
-        if (lock_value === LOCKED) return;
-      });
-    } catch (e) {
-      console.log('could not get memcaheLockId')
-      console.log(e)
-    }
-
-    memcached.add(memcaheLockId, LOCKED, 60 * 60, function(err) {
+    memcached.add(lockId, LOCKED, 60 * 60, function(err) {
       if(err) {
+        console.log('memcached:add:err')
+        callback(err)
         return;
       } else {
+        console.log('memcached:add')
         // We give it a TTL of 3 minutes
-        console.log('client.put')
+        console.log('client-put:start')
         console.log(JSON.stringify(identifier))
-        console.log('payload')
         console.log(JSON.stringify(payload))
-        client.put(1, 0, (60 * 3), JSON.stringify({ identifier: identifier, payload: payload }), function() { callback(); });
+        client.put(1, 0, (60 * 3),
+          JSON.stringify({ identifier: identifier, payload: payload }),
+          function(err) { console.log('client-put:end'); callback(err); });
       }
     });
   };
@@ -146,6 +134,14 @@ module.exports.start = function (config, logger) {
       var payload = commandData.val();
       var identifier = commandData.name();
       var lockId = payload.id || 'noneya';
+      
+      if ( item.tube === 'build' )
+        lockId = payload.sitename
+      
+      var memcaheLockId = item.lock + '_' + lockId + '_queued';
+
+      console.log('memcaheLockId');
+      console.log(memcaheLockId);
 
       var retries = 0;
 
@@ -155,41 +151,24 @@ module.exports.start = function (config, logger) {
       console.log('handlingCommand')
       console.log(identifier)
       console.log(lockId)
+      console.log(memcaheLockId)
       console.log(JSON.stringify(payload))
 
-      // if we are building, lets make sure we aren't
-      // already building the same site
-      var queue_task = true
-      if ( item.tube === 'build' )
-        lockId = payload.sitename
-        // queue_task = build_queue.add( identifier )
+      console.log('queueing task');
+      handlingCommand = handlingCommand + 1;
 
-      if ( queue_task ) {
-        console.log('queueing task');
-        handlingCommand = handlingCommand + 1;
-        queueCommand(client, item, identifier, lockId, payload, onQueueComplete);
-      } else {
-        console.log('task is already queued');
-        maybeDie()
-      }
+      queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
 
-      function onQueueComplete ( error ) {
-        // build only throws error when templates don't compile correctly
-        // which, they always should. so lets restart that task
-        if ( item.tube === 'build') {
-          if ( error ) retries += 1
-
-          if ( error && retries < 5 ) {
-            console.log( 'build:retrying:' + identifier )
-            queueCommand(client, item, identifier, lockId, payload, onQueueComplete)
-            return;
-          }
+      function onQueueComplete (error) {
+        if (error) {
+          console.log('command not queued');
         }
 
-        // build_queue.remove( identifier )
-
-        handlingCommand = handlingCommand - 1;
-        maybeDie()
+        memcached.del(memcaheLockId, function () {
+          console.log('memcached:del:', memcaheLockId)
+          handlingCommand = handlingCommand - 1;
+          maybeDie()
+        })
       }
 
       function maybeDie () {
