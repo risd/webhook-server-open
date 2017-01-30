@@ -12,12 +12,11 @@ var fs   = require('fs');
 var zlib = require('zlib');
 
 var oauthToken = '';
-var projectName = '';
-
-var googleServiceAccount = '';
+var projectName = process.env.GOOGLE_PROJECT_ID || '';
+var googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT || '';
 
 // Contains google service accounts SSH key
-var keyFile = 'libs/keyfile.key';
+var keyFile = process.env.GOOGLE_KEY_FILE || '';
 
 /* 
 * Refreshes the token used to access google cloud storage
