@@ -86,9 +86,13 @@ module.exports.init = function (config) {
                   });
 
                   domainInstance.run(function() {
-                    cb(payload, identifier, data, conn, function() { 
-                      console.log('Done job'); 
+                    cb(payload, identifier, data, conn, function(err) { 
+                      console.log('Done job');
+                      console.log('job-queue:err')
+                      console.log(err)
                       callback(function() { 
+                        console.log('job-queue:inner-callback:')
+                        console.log(arguments)
                         processing = false;
 
                         // Someone signaled for us to die while processing, die after being done
