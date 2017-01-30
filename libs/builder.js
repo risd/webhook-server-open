@@ -178,6 +178,7 @@ module.exports.start = function (config, logger) {
         var domainInstance = domain.create();
 
         domainInstance.on('error', function(err) { 
+          console.log('domain-instance:error');
           console.log(err);
           reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
           callback();
@@ -217,7 +218,7 @@ module.exports.start = function (config, logger) {
 
 
       }, function(err) {
-        callback();
+        callback(err);
       });
     });
 
