@@ -16,7 +16,7 @@ var projectName = process.env.GOOGLE_PROJECT_ID || '';
 var googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT || '';
 
 // Contains google service accounts SSH key
-var keyFile = process.env.GOOGLE_KEY_FILE || '';
+var keyFile = process.env.GOOGLE_KEY_FILE || 'libs/keyfile.key';
 
 /* 
 * Refreshes the token used to access google cloud storage
@@ -27,7 +27,7 @@ var refreshToken = function(callback) {
   var gapi = new GAPI({
       iss: googleServiceAccount,
       scope: 'https://www.googleapis.com/auth/devstorage.full_control https://www.googleapis.com/auth/siteverification',
-      keyFile: keyFile
+      keyFile: keyFile,
   }, function(err) {
      if (err) { console.log(err); process.exit(1); }
 
@@ -211,7 +211,7 @@ module.exports.buckets = {
     });
   },
 
-  // Updates the website index on the bucket, unused
+  // Updates the website index on the bucket, used on create
   updateIndex: function(bucketName, indexFile, notFoundFile, callback) {
 
     var data = {
