@@ -76,6 +76,10 @@ module.exports.start = function (config, logger) {
   */
   var downloadSiteZip = function(buildFolders, site, callback) {
     cloudStorage.objects.get(config.get('sitesBucket'), site + '.zip', function(err, data) {
+
+      console.log( 'download-site-zip:err' )
+      console.log( err )
+
       if(fs.existsSync(buildFolders + '/' + site + '.zip')) {
         fs.unlinkSync(buildFolders + '/' + site + '.zip');
       }
@@ -127,6 +131,7 @@ module.exports.start = function (config, logger) {
         // Process the site, this is abstracted into a function so we can wrap it
         // in a Domain to catch exceptions
         function processSite(buildFolder) { 
+          console.log( 'process-site:', buildFolder )
           // Only admin or the site owners can trigger a build
           if(_(siteValues.owners).has(escapeUserId(userid)) || _(siteValues.users).has(escapeUserId(userid)) || userid === 'admin')
           {
@@ -186,18 +191,26 @@ module.exports.start = function (config, logger) {
 
         domainInstance.run(function() {
           // Check if latest version of site, if not download and unzip latest version
+          console.log( 'domain-instance:run:build-folder' )
+          console.log( buildFolder )
+          console.log( 'domain-instance:run:version' )
+          console.log( siteValues.version )
           if(!fs.existsSync(buildFolder + '/.fb_version' + siteValues.version)) {
 
-            console.log('Downloading zip');
+            console.log('download-zip:start')
             downloadSiteZip('../build-folders' , siteName, function() {
 
+              console.log('download-zip:done')
+
               var unzipStuff = function() {
+                console.log( 'unzip-stuff:start' )
                 mkdirp.sync(buildFolder);
 
                 runInDir('unzip', buildFolder, ['-q', '../' + site + '.zip'], function(err) {
                   fs.unlinkSync('../build-folders/' + site + '.zip');
                   touch.sync(buildFolder + '/.fb_version' + siteValues.version);
 
+                  console.log( 'unzip-stuff:done' )
                   processSite(buildFolder);
                 });
               };
@@ -212,6 +225,7 @@ module.exports.start = function (config, logger) {
 
             })
           } else {
+            console.log( 'process without downloading' )
             processSite(buildFolder);
           }
         })
