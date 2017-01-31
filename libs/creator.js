@@ -14,6 +14,7 @@ var _ = require('lodash');
 var uuid = require('node-uuid');
 var JobQueue = require('./jobQueue.js');
 var request = require('request');
+var miss = require('mississippi');
 
 var cloudStorage = require('./cloudStorage.js');
 
@@ -113,51 +114,200 @@ module.exports.start = function (config, logger) {
     console.log(siteBucket)
     console.log(key)
 
-    // Create a bucket in cloud storage
-    cloudStorage.buckets.create(siteBucket, function(err, body) {
+    var setupSiteWith = function (input) {
+      var readIndex = 0;
+      var emitter = miss.through.obj();
 
-      console.log('done creating bucket')
+      process.nextTick(function () {
+        if ( !Array.isArray( input ) )
+          return emitter.push( null )
 
-      if(err) {
-        console.log(err)
-        callback(err);
-        return;
-      }
+        if ( input[ input.length - 1] !== null )
+          input = input.concat( [ null ] )
+        
+        input.forEach( function ( item ) {
+          process.nextTick( function () {
+            emitter.push( item )
+          } )
+        } )
+      })
 
-      console.log('update acls')
+      return emitter;
+    }
 
-      // Adjust the ACLS
-      cloudStorage.buckets.updateAcls(siteBucket, function(err, body) {
+    // Does the bucket exist? Useful for setting up buckets
+    // against domains that are verified, but cause issues
+    // creating through this interface
+    var getBucket = function () {
+      return miss.through.obj(function (row, enc, next) {
+        console.log( 'site-setup:get-bucket:', row.siteBucket )
+        cloudStorage.buckets.get(row.siteBucket, function (err, body) {
+          if ( err ) {
+            console.log( 'site-setup:get-bucket:error' )
+            return next( null, row )
+          }
 
-        console.log('done updating acls')
+          row.bucketExists = true;
+          return next( null, row );
+        })
+      })
+    }
 
-        if(err) {
-          console.log(err)
-          callback(err);
-          return;
+    var createBucket = function () {
+      return miss.through.obj(function (row, enc, next) {
+        if ( row.bucketExists === false ) {
+          console.log( 'site-setup:create-bucket:', row.siteBucket )
+          cloudStorage.buckets.create(row.siteBucket, function (err, body) {
+            if ( err ) {
+              console.log( 'site-setup:create-bucket:error' )
+              return next( err, null )
+            }
+
+            row.bucketExists = true;
+            next( null, row );
+          })
         }
-
-        console.log('setting key')
-
-        // Generate and set the access key
-        siteRef.child('key').set(key, function(err) {
-          console.log('setting billing')
-          console.log(err)
-          // Set some billing info, not used by self-hosting, but required to run
-          siteRef.root().child('billing/sites/' + siteData.name()).set({
-            'plan-id': 'mainplan',
-            'email': userid,
-            'status': 'paid',
-            'active': true,
-            'endTrial' : Date.now()
-          }, function(err) {
-            console.log('done')
-            console.log(err)
-            callback();
-          });
-        });
+        else {
+          next( null, row )
+        }
       });
-    });
+    }
+
+    var updateAcls = function () {
+      return miss.through.obj(function (row, enc, next) {
+        if ( row.bucketExists === false ) return next( null, row)
+        
+        console.log( 'site-setup:update-acls:', row.siteBucket )
+        cloudStorage.buckets.updateAcls( row.siteBucket, function (err, body) {
+          if ( err )
+            return next( err, null)
+
+          next( null, row )
+        } )
+
+      });
+    }
+
+    var updateIndex = function () {
+      return miss.through.obj(function (row, enc, next) {
+        if ( row.bucketExists === false ) return next( null, row )
+
+        console.log( 'site-setup:update-index:', row.siteBucket )
+        cloudStorage.buckets.updateIndex(
+          row.siteBucket,
+          'index.html', '404.html',
+          function ( err, body ) {
+            if ( err ) return next( err, null )
+
+            next( null, row )
+          } )
+      });
+    }
+
+    var generateKey = function () {
+      return miss.through.obj(function (row, enc, next) {
+        if ( row.bucketExists === true && row.siteKey.length > 0 ) {
+          console.log( 'site-setup:generate-key:', row.siteBucket )
+
+          siteRef.child('key').set(row.siteKey, function(err) {
+            console.log('site-setup:generate-key:setting-billing:')
+            console.log(err)
+
+            // Set some billing info, not used by self-hosting, but required to run
+            siteRef.root().child('billing/sites/' + row.siteName).set({
+              'plan-id': 'mainplan',
+              'email': userid,
+              'status': 'paid',
+              'active': true,
+              'endTrial' : Date.now()
+            }, function(err) {
+              console.log( 'site-setup:generate-key:' )
+              next( null, row );
+            });
+          });
+        }
+        else {
+          next( null, row );
+        }
+      });
+    }
+
+    var sink = function () {
+      return miss.through.obj( function ( row, enc, next ) {
+        next();
+      } )
+    }
+
+    miss.pipe(
+        setupSiteWith([{
+          siteName:     site,
+          siteBucket:   siteBucket,
+          bucketExists: false,
+          siteKey:      key
+        }]),
+        getBucket(),
+        createBucket(),
+        updateAcls(),
+        updateIndex(),
+        generateKey(),
+        sink(),
+        function onEnd ( error ) {
+          if ( error ) return callback( error )
+          else return callback();
+        }
+      )
+
+    // Create a bucket in cloud storage
+    // cloudStorage.buckets.create(siteBucket, function(err, body) {
+
+    //   console.log('done creating bucket')
+
+    //   if(err) {
+    //     console.log(err)
+    //     try {
+    //       console.log( err.message )
+    //       console.log( JSON.stringify(err) )
+    //     } catch (e) {
+    //       console.log('could not log')
+    //     }
+    //     callback(err);
+    //     return;
+    //   }
+
+    //   console.log('update acls')
+
+    //   // Adjust the ACLS
+    //   cloudStorage.buckets.updateAcls(siteBucket, function(err, body) {
+
+    //     console.log('done updating acls')
+
+    //     if(err) {
+    //       console.log(err)
+    //       callback(err);
+    //       return;
+    //     }
+
+    //     console.log('setting key')
+
+    //     // Generate and set the access key
+    //     siteRef.child('key').set(key, function(err) {
+    //       console.log('setting billing')
+    //       console.log(err)
+    //       // Set some billing info, not used by self-hosting, but required to run
+    //       siteRef.root().child('billing/sites/' + siteData.name()).set({
+    //         'plan-id': 'mainplan',
+    //         'email': userid,
+    //         'status': 'paid',
+    //         'active': true,
+    //         'endTrial' : Date.now()
+    //       }, function(err) {
+    //         console.log('done')
+    //         console.log(err)
+    //         callback();
+    //       });
+    //     });
+    //   });
+    // });
 
   }
 
