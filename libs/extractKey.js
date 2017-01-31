@@ -18,7 +18,7 @@ module.exports.start = function (file, config, logger) {
   var contents = fs.readFileSync(file).toString();
   var obj = JSON.parse(contents);
 
-  var keyFile = fs.writeFileSync('libs/keyfile.key', obj.private_key);
+  var keyFile = fs.writeFileSync(__dirname + '/keyfile.key', obj.private_key);
 
   console.log('Keyfile written'.green);
 };
