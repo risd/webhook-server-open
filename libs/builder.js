@@ -162,8 +162,11 @@ module.exports.start = function (config, logger) {
               } else {
 
               	var uploadDeploys = function ( deploys ) {
+              		console.log( 'upload-deploys' )
+
               		// assumes: siteValues &  buildFolder + '/.build'
               		var doneDeploying = function () {
+              			console.log( 'upload-deploys:done' )
               			reportStatus(siteName, 'Built and uploaded.', 0);
                     console.log('done');
                     processSiteCallback();
@@ -172,8 +175,10 @@ module.exports.start = function (config, logger) {
               		var to_deploy = deploys.length;
 
               		deploys.forEach( function ( environment ) {
+              			console.log( 'upload-deploys:start:' + environment.bucket )
               			uploadToBucket( environment.bucket, siteValues, buildFolder + '/.build', function () {
               				to_deploy -= 1;
+              				console.log( 'upload-deploys:done:' + environment.bucket )
               				if ( to_deploy === 0 ) doneDeploying();
               			} )
               		} )
