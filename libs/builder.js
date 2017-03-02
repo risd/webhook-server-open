@@ -25,7 +25,7 @@ var unescapeSite = function(site) {
   return site.replace(/,1/g, '.');
 }
 
-function noop {}
+function noop () {}
 
 /**
  * The main build worker. The way this works is that it first checks to
@@ -174,8 +174,7 @@ module.exports.start = function (config, logger) {
               		deploys.forEach( function ( environment ) {
               			uploadToBucket( environment.bucket, siteValues, buildFolder + '/.build', function () {
               				to_deploy -= 1;
-              				if ( to_deploy === 0 )
-              					doneDeploying();
+              				if ( to_deploy === 0 ) doneDeploying();
               			} )
               		} )
               	}
