@@ -15,6 +15,7 @@ var crypto = require('crypto');
 var JobQueue = require('./jobQueue.js');
 var touch = require('touch');
 var domain = require('domain');
+var Deploys = require('./deploys.js');
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -23,6 +24,8 @@ var escapeUserId = function(userid) {
 var unescapeSite = function(site) {
   return site.replace(/,1/g, '.');
 }
+
+function noop {}
 
 /**
  * The main build worker. The way this works is that it first checks to
@@ -44,6 +47,8 @@ module.exports.start = function (config, logger) {
   var firebaseUrl = config.get('firebase') || '';
 
   this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/buckets');
+
+  var deploys = Deploys( this.root );
 
   /*
   *  Reports the status to firebase, used to display messages in the CMS
@@ -99,7 +104,7 @@ module.exports.start = function (config, logger) {
     console.log('Waiting for commands'.red);
 
     // Wait for a build job, extract info from payload
-    jobQueue.reserveJob('build', 'build', function(payload, identifier, data, client, callback) {
+    jobQueue.reserveJob('build', 'build', function(payload, identifier, data, client, jobCallback) {
       console.log('Triggered command!');
       console.log('payload')
       console.log(JSON.stringify(payload))
@@ -107,6 +112,7 @@ module.exports.start = function (config, logger) {
       console.log(identifier)
       console.log('data')
       console.log(JSON.stringify(data))
+
       var userid = data.userid;
       var site = data.sitename;
       var noDelay = data.noDelay || false;
@@ -118,7 +124,7 @@ module.exports.start = function (config, logger) {
 
         // If the site does not exist, may be stale build, should no longer happen
         if(!siteValues) {
-          callback();
+          jobCallback();
           return;
         }
 
@@ -130,7 +136,12 @@ module.exports.start = function (config, logger) {
 
         // Process the site, this is abstracted into a function so we can wrap it
         // in a Domain to catch exceptions
-        function processSite(buildFolder) { 
+        /**
+         * @param  {string}    buildFolder
+         * @param  {Function}  finishedProcessing callback
+         * @return {undefined}
+         */
+        function processSite(buildFolder, processSiteCallback) { 
           console.log( 'process-site:', buildFolder )
           // Only admin or the site owners can trigger a build
           if(_(siteValues.owners).has(escapeUserId(userid)) || _(siteValues.users).has(escapeUserId(userid)) || userid === 'admin')
@@ -147,8 +158,27 @@ module.exports.start = function (config, logger) {
                 // Dont upload failed builds, simply send error to CMS
                 reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
                 console.log('done with errors');
-                callback( err );
+                processSiteCallback( err );
               } else {
+
+              	var uploadDeploys = function ( deploys ) {
+              		// assumes: siteValues &  buildFolder + '/.build'
+              		var doneDeploying = function () {
+              			reportStatus(siteName, 'Built and uploaded.', 0);
+                    console.log('done');
+                    processSiteCallback();
+              		}
+
+              		var to_deploy = deploys.length;
+
+              		deploys.forEach( function ( environment ) {
+              			uploadToBucket( environment.bucket, siteValues, buildFolder + '/.build', function () {
+              				to_deploy -= 1;
+              				if ( to_deploy === 0 )
+              					doneDeploying();
+              			} )
+              		} )
+              	}
 
                 // If there was a delay, push it back into beanstalk, then upload to the bucket
                 if(buildDiff > 0 && !noDelay) {
@@ -157,25 +187,32 @@ module.exports.start = function (config, logger) {
                   data['noDelay'] = true;
 
                   client.put(1, buildDiff, (60 * 3), JSON.stringify({ identifier: identifier, payload: data }), function() {
-                    uploadToBucket(siteName, siteValues, buildFolder + '/.build', function() {
-                      reportStatus(siteName, 'Built and uploaded.', 0);
-                      console.log('done');
-                      callback();
-                    });
+                    // uploadToBucket(siteName, siteValues, buildFolder + '/.build', function() {
+                    //   reportStatus(siteName, 'Built and uploaded.', 0);
+                    //   console.log('done');
+                    //   processSiteCallback();
+                    // });
+                    // Get deploy configuration, if none is there, a default is supplied
+				            deploys.get( siteName, function ( error, deployConfiguration ) {
+				            	uploadDeploys( deployConfiguration.deploys )
+				            } )
                   });
                 } else {
                   // No delay, upload right away
-                  uploadToBucket(siteName, siteValues, buildFolder + '/.build', function() {
-                    reportStatus(siteName, 'Built and uploaded.', 0);
-                    console.log('done');
-                    callback();
-                  });
+                  // uploadToBucket(siteName, siteValues, buildFolder + '/.build', function() {
+                  //   reportStatus(siteName, 'Built and uploaded.', 0);
+                  //   console.log('done');
+                  //   processSiteCallback();
+                  // });
+                  deploys.get( siteName, function ( error, deployConfiguration ) {
+			            	uploadDeploys( deployConfiguration.deploys )
+			            } )
                 }
               }
             });
           } else {
             console.log('Site does not exist or no permissions');
-            callback();
+            processSiteCallback();
           }
         }
 
@@ -186,7 +223,7 @@ module.exports.start = function (config, logger) {
           console.log('domain-instance:error');
           console.log(err);
           reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
-          callback();
+          jobCallback();
         });
 
         domainInstance.run(function() {
@@ -211,7 +248,7 @@ module.exports.start = function (config, logger) {
                   touch.sync(buildFolder + '/.fb_version' + siteValues.version);
 
                   console.log( 'unzip-stuff:done' )
-                  processSite(buildFolder);
+                  processSite(buildFolder, jobCallback);
                 });
               };
               
@@ -226,13 +263,13 @@ module.exports.start = function (config, logger) {
             })
           } else {
             console.log( 'process without downloading' )
-            processSite(buildFolder);
+            processSite(buildFolder, jobCallback);
           }
         })
 
 
       }, function(err) {
-        callback(err);
+        jobCallback(err);
       });
     });
 
