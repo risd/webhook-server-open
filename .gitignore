@@ -16,3 +16,5 @@ node_modules
 
 libs/keyfile.key
 .env
+google-compute-engine-id.json
+beanstalk
