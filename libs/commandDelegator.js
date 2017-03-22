@@ -14,6 +14,8 @@ var async = require('async');
 var beanstalkd = require('./node-beanstalkd.js');
 var cloudStorage = require('./cloudStorage.js');
 var Memcached = require('memcached');
+var Deploys = require( 'webhook-deploy-configuration' )
+var miss = require( 'mississippi' )
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -47,6 +49,8 @@ module.exports.start = function (config, logger) {
   var self = this;
   var firebaseUrl = config.get('firebase') || '';
   this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/');
+
+  var deploys = Deploys( this.root.child( 'buckets' ) )
 
   // Where in firebase we look for commands, plus the name of the locks we use in memcached
   var commandUrls = [
@@ -95,7 +99,7 @@ module.exports.start = function (config, logger) {
   *
   * @param client     The beanstalk client
   * @param item       The item containing tube/lock information
-  * @param identifier Unique identifer for the command
+  * @param identifier Unique identifier for the command
   * @param lockId     Lock to use
   * @param payload    Payload of the command to queue up
   * @param callback   Called when finished
@@ -134,48 +138,91 @@ module.exports.start = function (config, logger) {
       var payload = commandData.val();
       var identifier = commandData.name();
       var lockId = payload.id || 'noneya';
-      
-      if ( item.tube === 'build' )
-        lockId = payload.sitename
-      
       var memcaheLockId = item.lock + '_' + lockId + '_queued';
-
-      console.log('memcaheLockId');
-      console.log(memcaheLockId);
-
-      var retries = 0;
 
       // We remove the data immediately to avoid duplicates
       commandData.ref().remove();
 
-      console.log('handlingCommand')
-      console.log(identifier)
-      console.log(lockId)
-      console.log(memcaheLockId)
-      console.log(JSON.stringify(payload))
+      var queueCommandArgs = [ { identifier: identifier, memcaheLockId: memcaheLockId, payload: payload } ]
+      
+      if ( item.tube === 'build' ) {
+      	console.log( 'building' )
+      	// lock id should be site name and site branch
+      	// since the branch is linked to the zip file that
+      	// gets used to build the site
+      	// if no branch is defined, then queue a command for
+      	// each of the branches
+      	deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
+					if ( error ) {
+						console.log( error )
+						return;
+					}
 
-      console.log('queueing task');
-      handlingCommand = handlingCommand + 1;
+					if ( payload.branch ) {
+						var branches = [ payload.branch ]
+					} else {
+						var branches = configuration.deploys.map( function ( deploy ) { return deploy.branch; } )
+					}
 
-      queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
+					branches = _.uniq( branches );
 
-      function onQueueComplete (error) {
-        if (error) {
-          console.log('command not queued');
-        }
+					queueCommandArgs = branches.map( function ( branch ) {
+						var identifier = [ payload.sitename, branch ].join( '_' )
+						payload.branch = branch;
+						return {
+							identifier: identifier,
+							memcaheLockId: [ item.lock, identifier, 'queued' ].join( '_' ),
+							payload: Object.assign( {}, payload ),
+						}
+					} )
 
-        memcached.del(memcaheLockId, function () {
-          console.log('memcached:del:', memcaheLockId)
-          handlingCommand = handlingCommand - 1;
-          maybeDie()
-        })
+					queueCommandArgs.forEach( queueCommandForArgs )					
+
+	    	} )
+
+      } else {
+      	queueCommandArgs.forEach( queueCommandForArgs )
       }
 
-      function maybeDie () {
-        // If we had a sigterm and no one is handling commands, die
-        if(dieSoon && (handlingCommand === 0)) {
-          process.exit(0);
-        }
+    	function queueCommandForArgs ( args ) {
+      	var identifier = args.identifier;
+      	var memcaheLockId = args.memcaheLockId;
+      	var payload = args.payload;
+
+      	console.log('memcaheLockId');
+	      console.log(memcaheLockId);
+
+	      console.log('handlingCommand')
+	      console.log(identifier)
+	      console.log(lockId)
+	      console.log(memcaheLockId)
+	      console.log(JSON.stringify(payload))
+
+	      console.log('queueing task');
+
+	      handlingCommand = handlingCommand + 1;
+
+	      queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
+
+	      function onQueueComplete (error) {
+	        if (error) {
+	          console.log('command not queued');
+	        }
+
+	        memcached.del(memcaheLockId, function () {
+	          console.log('memcached:del:', memcaheLockId)
+	          handlingCommand = handlingCommand - 1;
+	          maybeDie()
+	        })
+	      }
+
+	      function maybeDie () {
+	        // If we had a sigterm and no one is handling commands, die
+	        if(dieSoon && (handlingCommand === 0)) {
+	          process.exit(0);
+	        }
+	      }
+
       }
 
     }, function(err) {
@@ -184,57 +231,20 @@ module.exports.start = function (config, logger) {
   }
 
   return this;
+
+  // Build/Deploy functions
+
+
+	// function GetDeployConfiguration ( opts ) {
+	// 	return miss.from.obj( [ {
+	// 		siteName: opts.siteName,
+	// 	}, null ] )
+
+	// 	function () {
+	// 		miss.through.obj( function ( row, enc, next ) {
+
+	// 		} )
+	// 	}
+		
+	// }
 };
-
-function BuildQueue () {
-  // the number of identifiers we want in our build queue
-  var instances_allowed = 1
-
-  // list of identifiers ( siteName ) being built
-  var building = []
-
-  var instances = function countOfSiteInBuildQueue ( siteName ) {
-    return building
-      .filter(function ( identifier ) {
-        return ( identifier === siteName )
-      })
-      .length
-  }
-
-  // returns true if we should build
-  // returns false if we are already building
-  var add = function addSiteToBuildQueue ( siteName ) {
-    console.log( 'addSiteToBuildQueue' )
-    console.log( siteName )
-    var current_instances = instances( siteName )
-    console.log( current_instances )
-    console.log( instances_allowed )
-
-    if ( current_instances >= instances_allowed ) return false
-    
-    building = building.concat( [ siteName ] )
-    console.log( building )
-
-    return true
-  }
-
-  // returns true if we removed the siteName from the build queue
-  // returns false if there was no instance of the siteName
-  var remove = function removeSiteFromBuildQueue ( siteName ) {
-    console.log( 'removeSiteFromBuildQueue' )
-    console.log( siteName )
-
-    var siteNameIndex = building.indexOf( siteName )
-    if ( siteNameIndex === -1 ) return false
-    
-    building = building.slice(0, siteNameIndex).concat(
-        building.slice(siteNameIndex + 1))
-    
-    return true
-  }
-
-  return {
-    add: add,
-    remove: remove,
-  }
-}

@@ -24,6 +24,7 @@ var mime = require('mime');
 var ElasticSearchClient = require('elasticsearchclient');
 var archiver   = require('archiver');
 var _ = require('lodash');
+var deployUtilities = require( 'webhook-deploy-configuration' ).utilities;
 
 // Some string functions worth having
 String.prototype.endsWith = function(suffix) {
@@ -643,6 +644,7 @@ module.exports.start = function(config, logger)
 
     var site = req.body.site;
     var token = req.body.token;
+    var branch = req.body.branch || deployUtilities.defaultBranch();
     var payload = req.files.payload; 
 
     if(!payload || !payload.path) {
@@ -664,7 +666,7 @@ module.exports.start = function(config, logger)
         if(data === token)
         {
           // If key is good, repackage the zip files into a new zip and upload
-          sendFiles(site, payload.path, function(err) {
+          sendFiles(site, branch, payload.path, function(err) {
 
             if(err) {
               cleanUpFiles(req);
@@ -684,14 +686,19 @@ module.exports.start = function(config, logger)
 
     });
 
-    function sendFiles(site, path, callback) {
+    function sendFiles(site, branch, path, callback) {
       // When done zipping up, upload to our archive in cloud storage
-      cloudStorage.objects.upload(config.get('sitesBucket'), path, site + '.zip', function(err, data) {
+      cloudStorage.objects.upload(config.get('sitesBucket'), path, deployUtilities.fileForSiteBranch( site, branch ), function(err, data) {
         fs.unlinkSync(path);
         // Signal build worker to build the site
         var ts = Date.now();
         fireUtil.set(firebaseRoot + '/management/sites/' + site + '/version', ts, function(){
-          fireUtil.set(firebaseRoot + '/management/commands/build/' + site, { userid: 'admin', sitename: site, id: uniqueId() }, function(){
+          fireUtil.set(firebaseRoot + '/management/commands/build/' + site, {
+          		userid: 'admin',
+          		sitename: site,
+          		id: uniqueId(),
+          		branch: branch,
+          	}, function(){
             callback();
           });
         });

@@ -15,7 +15,8 @@ var crypto = require('crypto');
 var JobQueue = require('./jobQueue.js');
 var touch = require('touch');
 var domain = require('domain');
-var Deploys = require('./deploys.js');
+var Deploys = require( 'webhook-deploy-configuration' )
+var SetupBucketWithCloudStorage = require('./creator.js').setupBucketWithCloudStorage;
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -48,7 +49,9 @@ module.exports.start = function (config, logger) {
 
   this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/buckets');
 
+  var buildFolderRoot = '../build-folders';
   var deploys = Deploys( this.root );
+  var setupBucket = SetupBucketWithCloudStorage( cloudStorage );
 
   /*
   *  Reports the status to firebase, used to display messages in the CMS
@@ -74,25 +77,44 @@ module.exports.start = function (config, logger) {
 
   /*
   * Downloads the site archive from cloud storage
+  * Tries to download {sitename}_{branch}.zip, if that is not
+  * available, it falls back to downloading {sitename}
+  * This is useful for the time between branch deploys on a site.
+  * Regardless of what file is pulled down, it is saved with
+  * {sitename}_{branch}.zip, since this is also used for the 
+  * command delegator queue lock id.
   *
   * @param buildFolders The folder to write the archive to
-  * @param site         Name of the site
+  * @param siteName     For the templates that we want
+  * @param branch      
   * @param callback     Callback to call when downloaded
   */
-  var downloadSiteZip = function(buildFolders, site, callback) {
-    cloudStorage.objects.get(config.get('sitesBucket'), site + '.zip', function(err, data) {
+  var downloadSiteZip = function(buildFolders, sitename, branch, callback) {
+  	var branchFileName = Deploys.utilities.fileForSiteBranch( sitename, branch )
+    cloudStorage.objects.get(config.get('sitesBucket'), branchFileName, function(err, data) {
+    	if ( err ) {
+    		var defaultFileName = sitename + '.zip'
+    		cloudStorage.objects.get(config.get('sitesBucket'), defaultFileName, onDownload)
+    	} else {
+    		onDownload( err, data )
+    	}
 
-      console.log( 'download-site-zip:err' )
-      console.log( err )
+	    function onDownload ( err, data ) {
+	    	if ( err ) callback( err )
+	    	console.log( 'download-site-zip:err' )
+	      console.log( err )
 
-      if(fs.existsSync(buildFolders + '/' + site + '.zip')) {
-        fs.unlinkSync(buildFolders + '/' + site + '.zip');
-      }
+	      if(fs.existsSync(buildFolders + '/' + branchFileName )) {
+	        fs.unlinkSync(buildFolders + '/' + branchFileName);
+	      }
 
-      fs.writeFileSync(buildFolders + '/' + site + '.zip', data);
+	      fs.writeFileSync(buildFolders + '/' + branchFileName, data);
 
-      callback();
-    });
+	      callback( null, branchFileName );
+	    }
+	  })
+
+	  return branchFileName.slice( 0, branchFileName.indexOf( '.zip' ) )
   }
 
   self.root.auth(config.get('firebaseSecret'), function(err) {
@@ -115,6 +137,7 @@ module.exports.start = function (config, logger) {
 
       var userid = data.userid;
       var site = data.sitename;
+      var branch = data.branch;
       var noDelay = data.noDelay || false;
 
       console.log('Processing Command For '.green + site.red);
@@ -132,12 +155,15 @@ module.exports.start = function (config, logger) {
         mkdirp.sync('../build-folders/');
 
         var siteName = siteData.name();
-        var buildFolder = '../build-folders/' + siteName;
+        var buildFolderRoot = '../build-folders';
+        var buildFolder = buildFolderRoot + '/' + [ site, branch ].join( '_' );
 
         // Process the site, this is abstracted into a function so we can wrap it
         // in a Domain to catch exceptions
         /**
-         * @param  {string}    buildFolder
+         * @param  {object}    opts
+         * @param  {string}    opts.buildFolderRoot
+         * @param  {string}    opts.branch
          * @param  {Function}  finishedProcessing callback
          * @return {undefined}
          */
@@ -161,27 +187,43 @@ module.exports.start = function (config, logger) {
                 processSiteCallback( err );
               } else {
 
-              	var uploadDeploys = function ( deploys ) {
-              		console.log( 'upload-deploys' )
+              	var uploadDeploys = function usingConfiguration ( configuration ) {
+              		console.log( 'upload-deploys:start' )
+              		console.log( configuration.deploys )
 
               		// assumes: siteValues &  buildFolder + '/.build'
               		var doneDeploying = function () {
-              			console.log( 'upload-deploys:done' )
               			reportStatus(siteName, 'Built and uploaded.', 0);
-                    console.log('done');
+                    console.log( 'upload-deploys:done' )
                     processSiteCallback();
               		}
 
-              		var to_deploy = deploys.length;
+                  var deployTasks = configuration.deploys
+                  	.filter( function isDeployForBranch ( deploy ) { return branch === deploy.branch } )
+	                  .map( function makeUploadTask ( environment ) {
+	                    return function uploadTask ( uploadTaskComplete ) {
+	                      
+	                      var uploadDone = function () {
+	                        console.log( 'upload-deploys:done:' + environment.bucket )
+	                        uploadTaskComplete()
+	                      }
 
-              		deploys.forEach( function ( environment ) {
-              			console.log( 'upload-deploys:start:' + environment.bucket )
-              			uploadToBucket( environment.bucket, siteValues, buildFolder + '/.build', function () {
-              				to_deploy -= 1;
-              				console.log( 'upload-deploys:done:' + environment.bucket )
-              				if ( to_deploy === 0 ) doneDeploying();
-              			} )
-              		} )
+	                      console.log( 'deploy task for ' + JSON.stringify( environment ) )
+	                      return uploadDone()
+
+	                      setupBucket( environment.bucket, function ( error ) {
+	                        if ( error ) uploadDone( error )
+	                        else {
+	                          uploadToBucket( environment.bucket,
+	                            buildFolder + '/.build',
+	                            uploadDone )
+	                        }
+	                      } )
+	                    }
+	                  } )
+
+                  async.parallel( deployTasks, doneDeploying );
+
               	}
 
                 // If there was a delay, push it back into beanstalk, then upload to the bucket
@@ -191,25 +233,25 @@ module.exports.start = function (config, logger) {
                   data['noDelay'] = true;
 
                   client.put(1, buildDiff, (60 * 3), JSON.stringify({ identifier: identifier, payload: data }), function() {
-                    // uploadToBucket(siteName, siteValues, buildFolder + '/.build', function() {
+                    // uploadToBucket(siteName, buildFolder + '/.build', function() {
                     //   reportStatus(siteName, 'Built and uploaded.', 0);
                     //   console.log('done');
                     //   processSiteCallback();
                     // });
                     // Get deploy configuration, if none is there, a default is supplied
-				            deploys.get( siteName, function ( error, deployConfiguration ) {
-				            	uploadDeploys( deployConfiguration.deploys )
+				            deploys.get( { siteName: siteName }, function ( error, deployConfiguration ) {
+				            	uploadDeploys( deployConfiguration )
 				            } )
                   });
                 } else {
                   // No delay, upload right away
-                  // uploadToBucket(siteName, siteValues, buildFolder + '/.build', function() {
+                  // uploadToBucket(siteName, buildFolder + '/.build', function() {
                   //   reportStatus(siteName, 'Built and uploaded.', 0);
                   //   console.log('done');
                   //   processSiteCallback();
                   // });
-                  deploys.get( siteName, function ( error, deployConfiguration ) {
-			            	uploadDeploys( deployConfiguration.deploys )
+                  deploys.get( { siteName: siteName }, function ( error, deployConfiguration ) {
+			            	uploadDeploys( deployConfiguration )
 			            } )
                 }
               }
@@ -239,7 +281,8 @@ module.exports.start = function (config, logger) {
           if(!fs.existsSync(buildFolder + '/.fb_version' + siteValues.version)) {
 
             console.log('download-zip:start')
-            downloadSiteZip('../build-folders' , siteName, function() {
+            downloadSiteZip(buildFolderRoot, site, branch, function( downloadError, downloadedFile ) {
+            	if ( downloadError ) throw error;
 
               console.log('download-zip:done')
 
@@ -247,8 +290,8 @@ module.exports.start = function (config, logger) {
                 console.log( 'unzip-stuff:start' )
                 mkdirp.sync(buildFolder);
 
-                runInDir('unzip', buildFolder, ['-q', '../' + site + '.zip'], function(err) {
-                  fs.unlinkSync('../build-folders/' + site + '.zip');
+                runInDir('unzip', buildFolder, ['-q', '../' + downloadedFile], function(err) {
+                  fs.unlinkSync(buildFolderRoot + '/' + downloadedFile);
                   touch.sync(buildFolder + '/.fb_version' + siteValues.version);
 
                   console.log( 'unzip-stuff:done' )
@@ -284,15 +327,14 @@ module.exports.start = function (config, logger) {
   * that havent changed.
   *
   * @param siteName   Name of the site
-  * @param siteValues Values for the site object in firebase
   * @param folder     Folder to upload from
   * @param callback   Callback to call when done
   */
-  function uploadToBucket(siteName, siteValues, folder, callback) {
+  function uploadToBucket(siteName, folder, callback) {
 
     if(!fs.existsSync(folder)) {
-      callback({ error: 'No directory at ' + folder});
-      return;
+      var error = new Error( 'No directory at ' + folder );
+      return callback( error );
     }
 
     var files = wrench.readdirSyncRecursive(folder);
@@ -307,7 +349,7 @@ module.exports.start = function (config, logger) {
     cloudStorage.objects.list(siteBucket, function(err, body) {
 
       if(err) {
-        callback( { error: err } );
+        callback( err );
       }
 
       // Get a list of all objects already existing in cloud storage,
