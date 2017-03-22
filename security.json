@@ -72,6 +72,11 @@
                   root.child('management/sites/'+ $site + '/users').hasChild(auth.email.replace('.', ',1'))) &&
                   (root.child('management/sites/' + $site + '/users').hasChild(auth.email.replace('.', ',1')))"
                 }, 
+                "deploys": {
+                  ".write": "root.child('management/sites/' + $site + '/owners').hasChild(auth.email.replace('.', ',1'))",
+                  // Anyone can read to it as long as its active
+                  ".read": "!root.child('billing/sites/' + $site).hasChild('active') || root.child('billing/sites/' + $site + '/active').val() == true",
+                },
               },
               ".write": "root.child('management/sites/' + $site + '/owners').hasChild(auth.email.replace('.', ',1'))",
               // Anyone can read to it as long as its active
