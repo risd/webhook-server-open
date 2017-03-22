@@ -114,96 +114,6 @@ module.exports.start = function (config, logger) {
     console.log(siteBucket)
     console.log(key)
 
-    var setupSiteWith = function (input) {
-      var readIndex = 0;
-      var emitter = miss.through.obj();
-
-      process.nextTick(function () {
-        if ( !Array.isArray( input ) )
-          return emitter.push( null )
-
-        if ( input[ input.length - 1] !== null )
-          input = input.concat( [ null ] )
-        
-        input.forEach( function ( item ) {
-          process.nextTick( function () {
-            emitter.push( item )
-          } )
-        } )
-      })
-
-      return emitter;
-    }
-
-    // Does the bucket exist? Useful for setting up buckets
-    // against domains that are verified, but cause issues
-    // creating through this interface
-    var getBucket = function () {
-      return miss.through.obj(function (row, enc, next) {
-        console.log( 'site-setup:get-bucket:', row.siteBucket )
-        cloudStorage.buckets.get(row.siteBucket, function (err, body) {
-          if ( err ) {
-            console.log( 'site-setup:get-bucket:error' )
-            return next( null, row )
-          }
-
-          row.bucketExists = true;
-          return next( null, row );
-        })
-      })
-    }
-
-    var createBucket = function () {
-      return miss.through.obj(function (row, enc, next) {
-        if ( row.bucketExists === false ) {
-          console.log( 'site-setup:create-bucket:', row.siteBucket )
-          cloudStorage.buckets.create(row.siteBucket, function (err, body) {
-            if ( err ) {
-              console.log( 'site-setup:create-bucket:error' )
-              return next( err, null )
-            }
-
-            row.bucketExists = true;
-            next( null, row );
-          })
-        }
-        else {
-          next( null, row )
-        }
-      });
-    }
-
-    var updateAcls = function () {
-      return miss.through.obj(function (row, enc, next) {
-        if ( row.bucketExists === false ) return next( null, row)
-        
-        console.log( 'site-setup:update-acls:', row.siteBucket )
-        cloudStorage.buckets.updateAcls( row.siteBucket, function (err, body) {
-          if ( err )
-            return next( err, null)
-
-          next( null, row )
-        } )
-
-      });
-    }
-
-    var updateIndex = function () {
-      return miss.through.obj(function (row, enc, next) {
-        if ( row.bucketExists === false ) return next( null, row )
-
-        console.log( 'site-setup:update-index:', row.siteBucket )
-        cloudStorage.buckets.updateIndex(
-          row.siteBucket,
-          'index.html', '404.html',
-          function ( err, body ) {
-            if ( err ) return next( err, null )
-
-            next( null, row )
-          } )
-      });
-    }
-
     var generateKey = function () {
       return miss.through.obj(function (row, enc, next) {
         if ( row.bucketExists === true && row.siteKey.length > 0 ) {
@@ -232,18 +142,14 @@ module.exports.start = function (config, logger) {
       });
     }
 
-    var sink = function () {
-      return miss.through.obj( function ( row, enc, next ) {
-        next();
-      } )
-    }
-
     miss.pipe(
         setupSiteWith([{
-          siteName:     site,
           siteBucket:   siteBucket,
           bucketExists: false,
-          siteKey:      key
+          cloudStorage: cloudStorage,
+          // specifically for generating the key
+          siteKey:      key,
+          siteName:     site,
         }]),
         getBucket(),
         createBucket(),
@@ -256,59 +162,124 @@ module.exports.start = function (config, logger) {
           else return callback();
         }
       )
-
-    // Create a bucket in cloud storage
-    // cloudStorage.buckets.create(siteBucket, function(err, body) {
-
-    //   console.log('done creating bucket')
-
-    //   if(err) {
-    //     console.log(err)
-    //     try {
-    //       console.log( err.message )
-    //       console.log( JSON.stringify(err) )
-    //     } catch (e) {
-    //       console.log('could not log')
-    //     }
-    //     callback(err);
-    //     return;
-    //   }
-
-    //   console.log('update acls')
-
-    //   // Adjust the ACLS
-    //   cloudStorage.buckets.updateAcls(siteBucket, function(err, body) {
-
-    //     console.log('done updating acls')
-
-    //     if(err) {
-    //       console.log(err)
-    //       callback(err);
-    //       return;
-    //     }
-
-    //     console.log('setting key')
-
-    //     // Generate and set the access key
-    //     siteRef.child('key').set(key, function(err) {
-    //       console.log('setting billing')
-    //       console.log(err)
-    //       // Set some billing info, not used by self-hosting, but required to run
-    //       siteRef.root().child('billing/sites/' + siteData.name()).set({
-    //         'plan-id': 'mainplan',
-    //         'email': userid,
-    //         'status': 'paid',
-    //         'active': true,
-    //         'endTrial' : Date.now()
-    //       }, function(err) {
-    //         console.log('done')
-    //         console.log(err)
-    //         callback();
-    //       });
-    //     });
-    //   });
-    // });
-
   }
 
 };
+
+module.exports.setupBucketWithCloudStorage = setupBucketWithCloudStorage;
+module.exports.setupBucket = setupBucket;
+
+function setupBucketWithCloudStorage ( cloudStorage ) {
+  return function wrapSetupBucket ( siteBucket, callback ) {
+    return setupBucket( siteBucket, cloudStorage, callback )
+  }
+}
+
+function setupBucket ( siteBucket, cloudStorage, callback ) {
+  return miss.pipe(
+    setupSiteWith([{
+      siteBucket:   siteBucket,
+      bucketExists: false,
+      cloudStorage: cloudStorage,
+    }]),
+    getBucket(),
+    createBucket(),
+    updateAcls(),
+    updateIndex(),
+    sink(),
+    callback)
+}
+
+
+function setupSiteWith (input) {
+  var readIndex = 0;
+  var emitter = miss.through.obj();
+
+  process.nextTick(function () {
+    if ( !Array.isArray( input ) )
+      return emitter.push( null )
+
+    if ( input[ input.length - 1 ] !== null )
+      input = input.concat( [ null ] )
+    
+    input.forEach( function ( item ) {
+      process.nextTick( function () {
+        emitter.push( item )
+      } )
+    } )
+  })
+
+  return emitter;
+}
+
+// Does the bucket exist? Useful for setting up buckets
+// against domains that are verified, but cause issues
+// creating through this interface
+function getBucket () {
+  return miss.through.obj(function (row, enc, next) {
+    console.log( 'site-setup:get-bucket:', row.siteBucket )
+    row.cloudStorage.buckets.get(row.siteBucket, function (err, body) {
+      if ( err ) {
+        console.log( 'site-setup:get-bucket:error' )
+        console.log( err )
+      }
+      else row.bucketExists = true;
+
+      return next( null, row );
+    })
+  })
+}
+
+function createBucket () {
+  return miss.through.obj(function (row, enc, next) {
+    if ( row.bucketExists === false ) {
+      console.log( 'site-setup:create-bucket:', row.siteBucket )
+      row.cloudStorage.buckets.create(row.siteBucket, function (err, body) {
+        if ( err ) {
+          console.log( 'site-setup:create-bucket:error' )
+          console.log( err )
+        }
+        else row.bucketExists = true;
+        
+        next( null, row );
+      })
+    }
+    else {
+      next( null, row )
+    }
+  });
+}
+
+function updateAcls () {
+  return miss.through.obj(function (row, enc, next) {
+    if ( row.bucketExists === false ) return next( null, row)
+    
+    console.log( 'site-setup:update-acls:', row.siteBucket )
+    row.cloudStorage.buckets.updateAcls( row.siteBucket, function (err, body) {
+      if ( err ) next( err, null)
+      else next( null, row )
+    } )
+
+  });
+}
+
+function updateIndex () {
+  return miss.through.obj(function (row, enc, next) {
+    if ( row.bucketExists === false ) return next( null, row )
+
+    console.log( 'site-setup:update-index:', row.siteBucket )
+    row.cloudStorage.buckets.updateIndex(
+      row.siteBucket,
+      'index.html', '404.html',
+      function ( err, body ) {
+        if ( err ) return next( err, null )
+        else next( null, row )
+      } )
+  });
+}
+
+function sink () {
+  return miss.through.obj( function ( row, enc, next ) {
+    next();
+  } )
+}
