@@ -14,6 +14,8 @@ var Zip   = require('adm-zip');
 var request = require('request');
 var fs = require('fs');
 var mkdirp = require('mkdirp');
+var async = require('async');
+var Firebase = require('firebase');
 var fireUtil = require('./firebase-util.js');
 var wrench = require('wrench');
 var path = require('path');
@@ -24,7 +26,7 @@ var mime = require('mime');
 var ElasticSearchClient = require('elasticsearchclient');
 var archiver   = require('archiver');
 var _ = require('lodash');
-var deployUtilities = require( 'webhook-deploy-configuration' ).utilities;
+var Deploys = require( 'webhook-deploy-configuration' );
 
 // Some string functions worth having
 String.prototype.endsWith = function(suffix) {
@@ -118,6 +120,17 @@ module.exports.start = function(config, logger)
   app.use(errorHandler);
 
   var firebaseRoot = 'https://' + firebaseUrl +  '.firebaseio.com';
+
+  var bucketsRootPath = [ firebaseRoot, 'buckets' ].join( '/' )
+  var bucketsRoot = new Firebase( bucketsRootPath );
+  bucketsRoot.auth( config.get('firebaseSecret'), function ( error ) {
+    if ( error ){
+      console.log( 'Error connecting to buckets root.' ); console.log( error );
+    }
+    else console.log( 'Connected to Buckets root for Deploys' )
+  } )
+
+  var deploys = Deploys( bucketsRoot )
 
   // Used to know that the program is working
   app.get('/', function(req, res) {
@@ -253,13 +266,30 @@ module.exports.start = function(config, logger)
 
                 var mimeType = mime.lookup(url);
 
-                // Upload to cloud storage with caching enabled
-                cloudStorage.objects.upload(siteBucket, fp, 'webhook-uploads/' + fileName, 'public,max-age=86400', mimeType, function(err, data) {
-                  fs.unlinkSync(fp); // Remove temp file
-                  if(err) {
-                    cleanUpFiles(originReq);
-                    res.json(500, { error: err});
-                  } else {
+                console.log( 'upload-url' )
+                console.log( siteBucket )
+                console.log( fileName )
+
+                deploys.get( { siteName: siteBucket }, function ( error, deployConfiguration ) {
+
+                  var uploadTasks = deployConfiguration.map( uploadTaskForDeploy )
+
+                  async.parallel( uploadTasks, onUploadTasksComplete )
+
+                  function uploadTaskForDeploy ( deploy ) {
+                    return function uploadTask ( step ) {
+                      // Upload to cloud storage with caching
+                      cloudStorage.objects.upload(deploy.bucket, fp, 'webhook-uploads/' + fileName, 'public,max-age=86400', mimeType, step)
+                    }
+                  }
+
+                  function onUploadTasksComplete ( error, results ) {
+                    fs.unlinkSync(fp); // Remove temp file
+                    if(error) {
+                      cleanUpFiles(originReq);
+                      res.json(500, { error: error});
+                      return;
+                    }
 
                     // If resize url requested, send request to Google App for resize url
                     if(resizeUrlRequested) {
@@ -289,9 +319,10 @@ module.exports.start = function(config, logger)
                         'mimeType' : mimeType 
                       });
                     }
-
                   }
-                });
+
+                } )
+
               }
             });
           });
@@ -350,16 +381,30 @@ module.exports.start = function(config, logger)
             var timestamp = new Date().getTime();
             var fileName = timestamp + '_' + origFilename;
 
-            // Upload to cloud storage with caching
-            cloudStorage.objects.upload(siteBucket, payload.path, 'webhook-uploads/' + fileName, 'public,max-age=86400', function(err, data) { 
+            deploys.get( { siteName: siteBucket }, function ( error, deployConfiguration ) {
 
-              if(err) {
-                cleanUpFiles(req);
-                res.json(500, { error: err});
-              } else {
+              var uploadTasks = deployConfiguration.deploys.map( uploadTaskForDeploy )
+
+              async.parallel( uploadTasks, onUploadTasksComplete )
+
+
+              function uploadTaskForDeploy ( deploy ) {
+                return function uploadTask ( step ) {
+                  // Upload to cloud storage with caching
+                  cloudStorage.objects.upload(deploy.bucket, payload.path, 'webhook-uploads/' + fileName, 'public,max-age=86400', step)
+                }
+              }
+
+              function onUploadTasksComplete ( error, results ) {
+                if(error) {
+                  cleanUpFiles(req);
+                  res.json(500, { error: error});
+                  return;
+                }
+
                 var mimeType = mime.lookup(payload.path);
-
                 cleanUpFiles(req);
+
                 // If resize url needed, send request to google app engine app
                 if(resizeUrlRequested) {
                   request('http://' + config.get('googleProjectId') + '.appspot.com/' + siteBucket + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
@@ -375,7 +420,9 @@ module.exports.start = function(config, logger)
                   res.json(200, { 'message' : 'Finished', 'url' : '/webhook-uploads/' + encodeURIComponent(fileName) });
                 }
               }
-            });
+
+            } )
+
           } else {
             cleanUpFiles(req);
             res.json(401, {'error' : 'Invalid token'});
@@ -642,10 +689,17 @@ module.exports.start = function(config, logger)
   // The Payload file is the zip file containing the site generated by wh deploy
   app.post('/upload/', function(req, res) {
 
+    console.log( 'upload' )
+
     var site = req.body.site;
     var token = req.body.token;
-    var branch = req.body.branch || deployUtilities.defaultBranch();
-    var payload = req.files.payload; 
+    var branch = req.body.branch || Deploys.utilities.defaultBranch();
+    var payload = req.files.payload;
+
+    console.log( 'with arguments' )
+    console.log( site )
+    console.log( token )
+    console.log( branch )
 
     if(!payload || !payload.path) {
       cleanUpFiles(req);
@@ -653,31 +707,43 @@ module.exports.start = function(config, logger)
       res.end();
     }
 
+    
+    console.log( 'firebase-active?' )
+
     // Check active status of site and if the key is correct
     fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
       if(active === false) {
+        console.log( 'firebase-active?:false' )
         cleanUpFiles(req);
         res.json(500, { error: 'Site not active, please check billing status.' });
         res.end();
         return;
       }
 
+      console.log( 'firebase-active?:true' )
+      console.log( 'matching-token?' )
+
       fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(data) {
         if(data === token)
         {
+          console.log( 'matching-token?:true' )
+          console.log( 'send-files' )
           // If key is good, repackage the zip files into a new zip and upload
           sendFiles(site, branch, payload.path, function(err) {
 
             if(err) {
+              console.log( 'send-files:done' )
               cleanUpFiles(req);
               res.json(500, { error: err });
             } else {
+              console.log( 'send-files:err' )
               cleanUpFiles(req);
               res.json(200, { 'message': 'Finished' });
             }
 
           });
         } else {
+          console.log( 'matching-token?:false' )
           cleanUpFiles(req);
           res.json(401, {'error' : 'Invalid token'});
         } 
@@ -688,7 +754,12 @@ module.exports.start = function(config, logger)
 
     function sendFiles(site, branch, path, callback) {
       // When done zipping up, upload to our archive in cloud storage
+      console.log( 'upload-file' )
       cloudStorage.objects.upload(config.get('sitesBucket'), path, deployUtilities.fileForSiteBranch( site, branch ), function(err, data) {
+        console.log( 'upload-file:done' )
+        
+        if ( err ) console.log( 'upload-file:done:err' ); console.log( err )
+
         fs.unlinkSync(path);
         // Signal build worker to build the site
         var ts = Date.now();
@@ -699,6 +770,8 @@ module.exports.start = function(config, logger)
           		id: uniqueId(),
           		branch: branch,
           	}, function(){
+            console.log( 'build-signal-submitted' )
+            console.log( 'send-files:done' )
             callback();
           });
         });
