@@ -209,7 +209,6 @@ module.exports.start = function (config, logger) {
 	                      }
 
 	                      console.log( 'deploy task for ' + JSON.stringify( environment ) )
-	                      return uploadDone()
 
 	                      setupBucket( environment.bucket, function ( error ) {
 	                        if ( error ) uploadDone( error )
@@ -221,6 +220,9 @@ module.exports.start = function (config, logger) {
 	                      } )
 	                    }
 	                  } )
+
+                  console.log( 'running deploys: ' + deployTasks.length )
+                  if ( deployTasks.length === 0 ) return doneDeploying();
 
                   async.parallel( deployTasks, doneDeploying );
 
