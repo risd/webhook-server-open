@@ -252,10 +252,12 @@ function createBucket () {
 
 function updateAcls () {
   return miss.through.obj(function (row, enc, next) {
-    if ( row.bucketExists === false ) return next( null, row)
+    if ( row.bucketExists === false ) return next( null, row )
     
     console.log( 'site-setup:update-acls:', row.siteBucket )
     row.cloudStorage.buckets.updateAcls( row.siteBucket, function (err, body) {
+      console.log( err )
+      console.log( body )
       if ( err ) next( err, null)
       else next( null, row )
     } )
