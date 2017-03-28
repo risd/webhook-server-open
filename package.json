@@ -9,7 +9,8 @@
     "invite-worker": "grunt inviteWorker",
     "create-worker": "grunt createWorker",
     "build-worker": "grunt buildWorker",
-    "backup-cron": "grunt backupCron"
+    "backup-cron": "grunt backupCron",
+    "extract-key": "grunt extractKey"
   },
   "dependencies": {
     "adm-zip": "~0.4.3",
