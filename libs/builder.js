@@ -156,7 +156,7 @@ module.exports.start = function (config, logger) {
 
         var siteName = siteData.name();
         var buildFolderRoot = '../build-folders';
-        var buildFolder = buildFolderRoot + '/' + [ site, branch ].join( '_' );
+        var buildFolder = buildFolderRoot + '/' + Deploys.utilities.nameForSiteBranch( site, branch );
 
         // Process the site, this is abstracted into a function so we can wrap it
         // in a Domain to catch exceptions
@@ -292,7 +292,7 @@ module.exports.start = function (config, logger) {
                 console.log( 'unzip-stuff:start' )
                 mkdirp.sync(buildFolder);
 
-                runInDir('unzip', buildFolder, ['-q', '../' + downloadedFile], function(err) {
+                runInDir('unzip', buildFolder, ['-q', '-o', '../' + downloadedFile], function(err) {
                   fs.unlinkSync(buildFolderRoot + '/' + downloadedFile);
                   touch.sync(buildFolder + '/.fb_version' + siteValues.version);
 

@@ -167,7 +167,7 @@ module.exports.start = function (config, logger) {
 					branches = _.uniq( branches );
 
 					queueCommandArgs = branches.map( function ( branch ) {
-						var identifier = [ payload.sitename, branch ].join( '_' )
+						var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, branch )
 						payload.branch = branch;
 						return {
 							identifier: identifier,
