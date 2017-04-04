@@ -15,3 +15,40 @@ If you are interested in self-hosting Webhook, [check the instructions here](htt
 This repository contains the code needed to run a Webhook server.
 
 A description of how to contribute and the various files that are in the repo can be found [here](https://github.com/webhook/webhook-server-open/blob/master/Contributing.md)
+
+## Development
+
+Install [node & npm](https://nodejs.org/en/download/), [beanstalkd](http://kr.github.io/beanstalkd/download.html) & [memcached](https://memcached.org/downloads).
+
+When all are available on your path, `npm install`.
+
+A `.env` file that includes the following values is expected in order to run in development and production.
+
+```
+GOOGLE_PROJECT_ID=
+ELASTIC_SEARCH_SERVER=
+MAILGUN_SECRET_KEY=
+EMBEDLY_KEY=
+FIREBASE=
+FIREBASE_KEY=
+FROM_EMAIL=
+SITES_BUCKET=
+BACKUPS_BUCKET=
+GOOGLE_SERVICE_ACCOUNT=
+GOOGLE_KEY_FILE=
+ELASTIC_SEARCH_USER=
+ELASTIC_SEARCH_PASSWORD=
+```
+
+The `GOOGLE_KEY_FILE` location can be defined by the path to the file produced by running `grunt extractKey=gcloud.json`, where `gcloud.json` is the Google Service Account JSON file associated with the project.
+
+
+With everything in place, `npm run dev` will start all the processes as defined in `Procfile.dev`:
+
+- memcached
+- beanstalkd
+- webhook_server
+- command_delegator
+- invite_worker
+- create_worker
+- build_worker
