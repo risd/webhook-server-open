@@ -755,7 +755,7 @@ module.exports.start = function(config, logger)
     function sendFiles(site, branch, path, callback) {
       // When done zipping up, upload to our archive in cloud storage
       console.log( 'upload-file' )
-      cloudStorage.objects.upload(config.get('sitesBucket'), path, deployUtilities.fileForSiteBranch( site, branch ), function(err, data) {
+      cloudStorage.objects.upload(config.get('sitesBucket'), path, Deploys.utilities.fileForSiteBranch( site, branch ), function(err, data) {
         console.log( 'upload-file:done' )
         
         if ( err ) console.log( 'upload-file:done:err' ); console.log( err )
