@@ -348,6 +348,9 @@ module.exports.start = function(config, logger)
     var resizeUrlRequested = req.body.resize_url || false;
     var payload = req.files.payload; 
 
+    console.log( 'upload-file' )
+    console.log( site )
+
     // 50 MB file size limit
     if(payload.size > (50 * 1024 * 1024)) 
     {
@@ -391,16 +394,44 @@ module.exports.start = function(config, logger)
               function uploadTaskForDeploy ( deploy ) {
                 return function uploadTask ( step ) {
                   // Upload to cloud storage with caching
-                  cloudStorage.objects.upload(deploy.bucket, payload.path, 'webhook-uploads/' + fileName, 'public,max-age=86400', step)
+                  var localFile = payload.path;
+                  var remoteFile = 'webhook-uploads/' + fileName;
+                  var cacheControl = 'public,max-age=86400';
+                  cloudStorage.objects.upload(deploy.bucket, localFile, remoteFile, cacheControl, function ( error, result ) {
+                    var resultData = {
+                      bucket: deploy.bucket,
+                      local: localFile,
+                      remote: remoteFile,
+                      cacheControl: cacheControl,
+                    }
+                    if ( error ) {
+                      resultData.error = error;
+                      return step( null, resultData )
+                    } else {
+                      resultData.error = false;
+                      return step( null, resultData )
+                    }
+
+                  })
                 }
               }
 
+              function allResultsErrored ( results ) {
+                return results.length === results.filter( function ( result ) { return result.error !== false } )
+              }
+
               function onUploadTasksComplete ( error, results ) {
-                if(error) {
+                if( allResultsErrored( results ) ) {
+                  console.log( 'upload-task-complete:error' )
+                  console.log( error )
+                  console.log( JSON.stringify( results ) )
                   cleanUpFiles(req);
                   res.json(500, { error: error});
                   return;
                 }
+
+                console.log( 'upload-task-complete' )
+                console.log( JSON.stringify( results ) )
 
                 var mimeType = mime.lookup(payload.path);
                 cleanUpFiles(req);
@@ -469,9 +500,16 @@ module.exports.start = function(config, logger)
         "highlight" : { "fields" : { "*" : {} }, "encoder": "html" }
     };
 
+    console.log( 'elastic-search' )
+    console.log( 'site:' + site )
+    console.log( 'typeName:' + typeName )
+    console.log( 'qryObj:' + JSON.stringify( qryObj ) )
+
     if(typeName) {
       elastic.search(site, typeName, qryObj)
           .on('data', function(data) {
+            console.log( 'result:' + data )
+            
             data = JSON.parse(data);
             callback(null, data);
           }).on('error', function(err) {
@@ -558,6 +596,12 @@ module.exports.start = function(config, logger)
           var parsed = JSON.parse(data);
           parsed.__oneOff = oneOff;
 
+          console.log( 'elastic-index' )
+          console.log( 'site:' +  unescapeSite(site) )
+          console.log( 'typeName:' + typeName )
+          console.log( 'parsed:' + JSON.stringify( parsed ) )
+          console.log( 'id:' + id )
+
           elastic.index(unescapeSite(site), typeName, parsed, id).on('data', function(data) {
             if(data) {
               data = JSON.parse(data);
@@ -600,6 +644,12 @@ module.exports.start = function(config, logger)
 
       fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(key) {
         if(key === token) {
+
+          console.log( 'elastic-delete' )
+          console.log( 'site:' +  unescapeSite(site) )
+          console.log( 'typeName:' + typeName )
+          console.log( 'id:' + id )
+
           elastic.deleteDocument(unescapeSite(site), typeName, id).on('data', function(data) {
             res.json(200, {'message' : 'success'});
           }).exec();
@@ -639,6 +689,10 @@ module.exports.start = function(config, logger)
             }
           };
 
+          console.log( 'elastic-delete-type' )
+          console.log( 'site:' +  unescapeSite(site) )
+          console.log( 'typeName:' + typeName )
+
           elastic.deleteMapping(unescapeSite(site), typeName).on('data', function(data) {
             res.json(200, {'message' : 'success'});
           }).exec();
@@ -672,6 +726,9 @@ module.exports.start = function(config, logger)
       fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(key) {
         if(key === token) {
 
+          console.log( 'elastic-delete-site' )
+          console.log( 'site:' +  unescapeSite(site) )
+
           elastic.deleteIndex(unescapeSite(site)).on('data', function(data) {
             res.json(200, {'message' : 'success'});
           }).exec();
@@ -698,7 +755,6 @@ module.exports.start = function(config, logger)
 
     console.log( 'with arguments' )
     console.log( site )
-    console.log( token )
     console.log( branch )
 
     if(!payload || !payload.path) {
@@ -732,11 +788,12 @@ module.exports.start = function(config, logger)
           sendFiles(site, branch, payload.path, function(err) {
 
             if(err) {
-              console.log( 'send-files:done' )
+              console.log( 'send-files:done:err' )
+              console.log( err )
               cleanUpFiles(req);
               res.json(500, { error: err });
             } else {
-              console.log( 'send-files:err' )
+              console.log( 'send-files:done' )
               cleanUpFiles(req);
               res.json(200, { 'message': 'Finished' });
             }
