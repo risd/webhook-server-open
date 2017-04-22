@@ -7,7 +7,7 @@ var cloudStorage = require( '../libs/cloudStorage.js' );
 
 cloudStorage.buckets.list( function ( error, buckets ) {
 
-  var tasks = buckets.items.map( updateIndexForBucket )
+  var tasks = buckets.items.map( updatePropertiesForBucket )
 
   async.parallel( tasks, function ( error, results ) {
     if ( error ) console.log( error )
@@ -16,7 +16,7 @@ cloudStorage.buckets.list( function ( error, buckets ) {
 
 } ) 
 
-function updateIndexForBucket ( bucket ) {
+function updatePropertiesForBucket ( bucket ) {
   return function task ( next ) {
     cloudStorage.buckets.updateIndex( bucket.name, 'index.html', '404.html', next )
   }
