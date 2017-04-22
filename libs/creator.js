@@ -176,18 +176,23 @@ function setupBucketWithCloudStorage ( cloudStorage ) {
 }
 
 function setupBucket ( siteBucket, cloudStorage, callback ) {
+  var bucketToSetup = {
+    siteBucket:   siteBucket,
+    bucketExists: false,
+    createdBucket: false,
+    cloudStorage: cloudStorage,
+  }
   return miss.pipe(
-    setupSiteWith([{
-      siteBucket:   siteBucket,
-      bucketExists: false,
-      cloudStorage: cloudStorage,
-    }]),
+    setupSiteWith([ bucketToSetup ]),
     getBucket(),
     createBucket(),
     updateAcls(),
     updateIndex(),
     sink(),
-    callback)
+    function ( error ) {
+      if ( error ) return callback( error )
+      else return callback( null, bucketToSetup )
+    })
 }
 
 
@@ -239,7 +244,10 @@ function createBucket () {
           console.log( 'site-setup:create-bucket:error' )
           console.log( err )
         }
-        else row.bucketExists = true;
+        else {
+          row.bucketExists = true;
+          row.createdBucket = true;
+        }
         
         next( null, row );
       })

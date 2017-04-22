@@ -14,8 +14,17 @@ var domain = require('domain');
 
 module.exports.init = function (config) {
 
+  // For testing purposes, we can suppress using this job queue
+  // and return a mocked object that every worker expects to exist.
+  if ( config.get('suppressJobQueue') === true ) {
+     return {
+       reserveJob: function noop ( tube, lockRoot, callback ) {}
+     }
+  }
+
   // We use memcached to maintain some simple locks
   var memcached = new Memcached(config.get('memcachedServers'));
+  
 
   var self = this;
   var processing = false;
@@ -44,6 +53,7 @@ module.exports.init = function (config) {
     // Connect to beanstalk
     client.connect(config.get('beanstalkServer'), function(err, conn) {
       if(err) {
+        console.log( 'connect-error' )
         console.log('Error: ' + err);
         process.exit(1);
       }

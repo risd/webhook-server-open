@@ -15,7 +15,9 @@ var crypto = require('crypto');
 var JobQueue = require('./jobQueue.js');
 var touch = require('touch');
 var domain = require('domain');
-var Deploys = require( 'webhook-deploy-configuration' )
+var Deploys = require( 'webhook-deploy-configuration' );
+var miss = require( 'mississippi' );
+var path = require( 'path' )
 var SetupBucketWithCloudStorage = require('./creator.js').setupBucketWithCloudStorage;
 
 var escapeUserId = function(userid) {
@@ -42,6 +44,7 @@ module.exports.start = function (config, logger) {
   cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
 
   // This is a beanstalk based worker, so it uses JobQueue
+  console.log( 'jobqueue' )
   var jobQueue = JobQueue.init(config);
 
   var self = this;
@@ -50,7 +53,6 @@ module.exports.start = function (config, logger) {
   this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/buckets');
 
   var buildFolderRoot = '../build-folders';
-  var deploys = Deploys( this.root );
   var setupBucket = SetupBucketWithCloudStorage( cloudStorage );
 
   /*
@@ -126,201 +128,7 @@ module.exports.start = function (config, logger) {
     console.log('Waiting for commands'.red);
 
     // Wait for a build job, extract info from payload
-    jobQueue.reserveJob('build', 'build', function(payload, identifier, data, client, jobCallback) {
-      console.log('Triggered command!');
-      console.log('payload')
-      console.log(JSON.stringify(payload))
-      console.log('identifier')
-      console.log(identifier)
-      console.log('data')
-      console.log(JSON.stringify(data))
-
-      var userid = data.userid;
-      var site = data.sitename;
-      var branch = data.branch;
-      var noDelay = data.noDelay || false;
-
-      console.log('Processing Command For '.green + site.red);
-
-      self.root.root().child('management/sites/' + site).once('value', function(siteData) {
-        var siteValues = siteData.val();
-
-        // If the site does not exist, may be stale build, should no longer happen
-        if(!siteValues) {
-          jobCallback();
-          return;
-        }
-
-        // Create build-folders if it isnt there
-        mkdirp.sync('../build-folders/');
-
-        var siteName = siteData.name();
-        var buildFolderRoot = '../build-folders';
-        var buildFolder = buildFolderRoot + '/' + Deploys.utilities.nameForSiteBranch( site, branch );
-
-        // Process the site, this is abstracted into a function so we can wrap it
-        // in a Domain to catch exceptions
-        /**
-         * @param  {object}    opts
-         * @param  {string}    opts.buildFolderRoot
-         * @param  {string}    opts.branch
-         * @param  {Function}  finishedProcessing callback
-         * @return {undefined}
-         */
-        function processSite(buildFolder, processSiteCallback) { 
-          console.log( 'process-site:', buildFolder )
-          // Only admin or the site owners can trigger a build
-          if(_(siteValues.owners).has(escapeUserId(userid)) || _(siteValues.users).has(escapeUserId(userid)) || userid === 'admin')
-          {
-            // If build time is defined, we build it now, then put in a job back to beanstalk with a delay
-            // to build it later as well.
-            var now = Date.now();
-            var buildtime = data.build_time ? Date.parse(data.build_time) : now;
-            var buildDiff = Math.floor((buildtime - now)/1000);
-
-            // Build the site, strict will cause death if any error is thrown
-            runInDir('grunt', buildFolder , ['build', '--strict=true'], function(err) {
-              if(err) {
-                // Dont upload failed builds, simply send error to CMS
-                reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
-                console.log('done with errors');
-                processSiteCallback( err );
-              } else {
-
-              	var uploadDeploys = function usingConfiguration ( configuration ) {
-              		console.log( 'upload-deploys:start' )
-              		console.log( configuration.deploys )
-
-              		// assumes: siteValues &  buildFolder + '/.build'
-              		var doneDeploying = function () {
-              			reportStatus(siteName, 'Built and uploaded.', 0);
-                    console.log( 'upload-deploys:done' )
-                    processSiteCallback();
-              		}
-
-                  var deployTasks = configuration.deploys
-                  	.filter( function isDeployForBranch ( deploy ) { return branch === deploy.branch } )
-	                  .map( function makeUploadTask ( environment ) {
-	                    return function uploadTask ( uploadTaskComplete ) {
-	                      
-	                      var uploadDone = function () {
-	                        console.log( 'upload-deploys:done:' + environment.bucket )
-	                        uploadTaskComplete()
-	                      }
-
-	                      console.log( 'deploy task for ' + JSON.stringify( environment ) )
-
-	                      setupBucket( environment.bucket, function ( error ) {
-	                        if ( error ) uploadDone( error )
-	                        else {
-	                          uploadToBucket( environment.bucket,
-	                            buildFolder + '/.build',
-	                            uploadDone )
-	                        }
-	                      } )
-	                    }
-	                  } )
-
-                  console.log( 'running deploys: ' + deployTasks.length )
-                  if ( deployTasks.length === 0 ) return doneDeploying();
-
-                  async.parallel( deployTasks, doneDeploying );
-
-              	}
-
-                // If there was a delay, push it back into beanstalk, then upload to the bucket
-                if(buildDiff > 0 && !noDelay) {
-                  var diff = data.build_time - now;
-
-                  data['noDelay'] = true;
-
-                  client.put(1, buildDiff, (60 * 3), JSON.stringify({ identifier: identifier, payload: data }), function() {
-                    // uploadToBucket(siteName, buildFolder + '/.build', function() {
-                    //   reportStatus(siteName, 'Built and uploaded.', 0);
-                    //   console.log('done');
-                    //   processSiteCallback();
-                    // });
-                    // Get deploy configuration, if none is there, a default is supplied
-				            deploys.get( { siteName: siteName }, function ( error, deployConfiguration ) {
-				            	uploadDeploys( deployConfiguration )
-				            } )
-                  });
-                } else {
-                  // No delay, upload right away
-                  // uploadToBucket(siteName, buildFolder + '/.build', function() {
-                  //   reportStatus(siteName, 'Built and uploaded.', 0);
-                  //   console.log('done');
-                  //   processSiteCallback();
-                  // });
-                  deploys.get( { siteName: siteName }, function ( error, deployConfiguration ) {
-			            	uploadDeploys( deployConfiguration )
-			            } )
-                }
-              }
-            });
-          } else {
-            console.log('Site does not exist or no permissions');
-            processSiteCallback();
-          }
-        }
-
-        // Run a domain so we can survive any errors
-        var domainInstance = domain.create();
-
-        domainInstance.on('error', function(err) { 
-          console.log('domain-instance:error');
-          console.log(err);
-          reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
-          jobCallback();
-        });
-
-        domainInstance.run(function() {
-          // Check if latest version of site, if not download and unzip latest version
-          console.log( 'domain-instance:run:build-folder' )
-          console.log( buildFolder )
-          console.log( 'domain-instance:run:version' )
-          console.log( siteValues.version )
-          if(!fs.existsSync(buildFolder + '/.fb_version' + siteValues.version)) {
-
-            console.log('download-zip:start')
-            downloadSiteZip(buildFolderRoot, site, branch, function( downloadError, downloadedFile ) {
-            	if ( downloadError ) throw error;
-
-              console.log('download-zip:done')
-
-              var unzipStuff = function() {
-                console.log( 'unzip-stuff:start' )
-                mkdirp.sync(buildFolder);
-
-                runInDir('unzip', buildFolder, ['-q', '-o', '../' + downloadedFile], function(err) {
-                  fs.unlinkSync(buildFolderRoot + '/' + downloadedFile);
-                  touch.sync(buildFolder + '/.fb_version' + siteValues.version);
-
-                  console.log( 'unzip-stuff:done' )
-                  processSite(buildFolder, jobCallback);
-                });
-              };
-              
-              if(fs.existsSync(buildFolder)) {
-                runInDir('rm', buildFolder + '/..', ['-rf', buildFolder], function(err) {
-                  unzipStuff();
-                });
-              } else {
-                unzipStuff();
-              }
-
-            })
-          } else {
-            console.log( 'process without downloading' )
-            processSite(buildFolder, jobCallback);
-          }
-        })
-
-
-      }, function(err) {
-        jobCallback(err);
-      });
-    });
+    jobQueue.reserveJob('build', 'build', buildJob);
 
   });
 
@@ -592,7 +400,7 @@ module.exports.start = function (config, logger) {
         console.log('upload:complete:error:', asyncError);
         cloudStorage.buckets.updateIndex(siteBucket, 'index.html', '404.html', function(err, body) {
           console.log('updated');
-          callback();
+          callback( null );
         });
         
       });
@@ -600,6 +408,414 @@ module.exports.start = function (config, logger) {
     });
 
   }
+
+  function buildJob (payload, identifier, data, client, jobCallback) {
+    console.log('Triggered command!');
+    console.log('payload')
+    console.log(JSON.stringify(payload))
+    console.log('identifier')
+    console.log(identifier)
+    console.log('data')
+    console.log(JSON.stringify(data))
+
+    var userid = data.userid;
+    var site = data.sitename;
+    var branch = data.branch;
+    var deploys = data.deploys;
+    var noDelay = data.noDelay || false;
+
+    console.log('Processing Command For '.green + site.red);
+
+    self.root.root().child('management/sites/' + site).once('value', function(siteData) {
+      var siteValues = siteData.val();
+
+      // If the site does not exist, may be stale build, should no longer happen
+      if(!siteValues) {
+        jobCallback();
+        return;
+      }
+
+      // Create build-folders if it isnt there
+      mkdirp.sync('../build-folders/');
+
+      var siteName = siteData.name();
+      var buildFolderRoot = '../build-folders';
+      var buildFolder = buildFolderRoot + '/' + Deploys.utilities.nameForSiteBranch( site, branch );
+
+      // Process the site, this is abstracted into a function so we can wrap it
+      // in a Domain to catch exceptions
+      /**
+       * @param  {object}    opts
+       * @param  {string}    opts.buildFolderRoot
+       * @param  {string}    opts.branch
+       * @param  {Function}  finishedProcessing callback
+       * @return {undefined}
+       */
+      function processSite(buildFolder, processSiteCallback) { 
+        console.log( 'process-site:', buildFolder )
+        // Only admin or the site owners can trigger a build
+        if(_(siteValues.owners).has(escapeUserId(userid)) || _(siteValues.users).has(escapeUserId(userid)) || userid === 'admin')
+        {
+          // If build time is defined, we build it now, then put in a job back to beanstalk with a delay
+          // to build it later as well.
+          var now = Date.now();
+          var buildtime = data.build_time ? Date.parse(data.build_time) : now;
+          var buildDiff = Math.floor((buildtime - now)/1000);
+
+          var pipelineArgs = {
+            siteName: siteName,
+            siteKey: siteValues.key,
+            // buildSite args
+            buildFolder: buildFolder,
+            // queueDelayedJob args
+            buildJobIdentifier: identifier,
+            buildJobData: data,
+            buildDiff: buildDiff,
+            noDelay: noDelay,
+            // uploadDeploys args
+            staticBuiltFolder: buildFolder + '/.build',
+            deploys: deploys,
+            branch: branch,
+          }
+
+          miss.pipe(
+            usingArguments( pipelineArgs ),
+            buildSite(),
+            addStaticRedirects(),
+            queueDelayedJob(),
+            uploadDeploys(),
+            sink(),
+            function onComplete ( error ) {
+              if ( error ) {
+                if ( typeof error.reportStatus ) {
+                  reportStatus( error.reportStatus.site, error.reportStatus.message, error.reportStatus.status )
+                  console.log( error.reportStatus.message );
+                }
+              }
+
+              processSiteCallback( error )
+            })
+          
+          function usingArguments ( args ) {
+            return miss.from.obj( [ args, null ] )
+          }
+
+          function buildSite () {
+            return miss.through.obj( function ( args, enc, next ) {
+              runInDir( 'grunt', args.buildFolder, [ 'build', '--strict=true' ], function ( error ) {
+                if ( error ) {
+                  error.reportStatus = {
+                    site: args.siteName,
+                    message: 'Failed to build, errors encountered in build process',
+                    status: 1,
+                  }
+                  return next( error )
+                }
+                else next( null, args )
+              } )
+            } )
+          }
+
+          function addStaticRedirects () {
+            return miss.through.obj( function ( args, enc, next ) {
+              console.log( 'add-redirects:start' )
+
+              self.root.child( args.siteName ).child( args.siteKey ).child( 'dev/settings/redirect' )
+                .once( 'value', withRedirects, withoutRedirects )
+
+              function withRedirects ( snapshot ) {
+                var redirectsObject = snapshot.val();
+                var redirects = []
+
+                try {
+                  Object.keys( redirectsObject ).forEach( function ( key ) {
+                    redirects.push( redirectsObject[ key ] )
+                  } )
+                } catch ( error ) {
+                  console.log( 'add-redirects:end:none-found' )
+                  return next( null, args )
+                }
+
+                if ( redirects.length === 0 ) return next( null, args )
+
+                var redirectTasks = redirects.map( createRedirectTask )
+
+                async.parallel( redirectTasks, function () {
+                  console.log( 'add-redirects:done' )
+                  next( null, args )
+                } )
+              }
+
+              function withoutRedirects () {
+                console.log( 'add-redirects:done:none-found' )
+                next( null, args )
+              }
+
+              function createRedirectTask ( redirect ) {
+                var source = sourceFromPattern( redirect.pattern )
+                var redirectFiles = [
+                  [ args.staticBuiltFolder, source, 'index.html' ].join( '/' ),
+                ]
+
+                var writeRedirectTasks = redirectFiles.map( createWriteRedirectTask( redirect.destination ) )
+
+                return function redirectTask ( taskComplete ) {
+                  async.parallel( writeRedirectTasks, function ( error ) {
+                    taskComplete();
+                  } )
+                }
+              }
+
+              function sourceFromPattern ( path ) {
+                // in order to create a file at the returned path & path/index.html
+                if ( typeof path !== 'string' ) return null;
+                // remove leading /
+                if ( path.indexOf( '/' ) === 0 ) path = path.slice( 1 )
+                // remove .html extension
+                if ( path.slice( -5 ) === ( '.html' ) ) path = path.slice( 0, -5 )
+                // remove trailing /?$
+                if ( path.slice( '-2' ) === ( '?$' ) ) path = path.slice( -2 )
+                // remove trailing /
+                if ( path.slice( '-1' ) === ( '/' ) ) path = path.slice( -1 )
+                
+                return path;
+              }
+
+              function createWriteRedirectTask ( destination ) {
+                var template = redirectTemplateForDestination( destination )
+                return function forSourceFile ( sourceFile ) {
+                  return function writeFileTask ( writeTaskComplete ) {
+                    // only write a file if there isn't one that was just built there
+                    fs.readFile( sourceFile, function ( readError ) {
+                      if ( readError ) {
+                        mkdirp( path.dirname( sourceFile ), function () {
+                          fs.writeFile( sourceFile, template, function ( error ) {
+                            writeTaskComplete()
+                          } )
+                        } )
+                      }
+                      else writeTaskComplete()
+                    } )
+                  }
+                }
+              }
+
+              function redirectTemplateForDestination( destination ) {
+                return [
+                  '<html>',
+                    '<head>',
+                      '<meta charset="utf-8" />',
+                    '</head>',
+                    '<body>',
+                      '<script>',
+                        'window.location="', destination , '";',
+                      '</script>',
+                    '</body>',
+                  '</html>',
+                ].join( '' )
+              }
+              
+            } )
+          }
+
+          function queueDelayedJob () {
+            // not sure this works as intended
+            return miss.through.obj( function ( args, enc, next ) {
+              if ( args.buildDiff > 0 && !args.noDelay ) {
+                // push job back into beanstalk, then upload
+                args.buildJobData[ 'noDelay' ] = true;
+                return client.put(1, buildDiff, (60 * 3), JSON.stringify({ identifier: args.buildJobIdentifier, payload: args.buildJobData }), function() {
+                  next( null, args )
+                })
+              }
+              else next( null, args )
+            } )
+          }
+
+          function uploadDeploys () {
+            return miss.through.obj( function ( args, enc, next ) {
+
+              console.log( 'upload-deploys:start' )
+              console.log( args.deploys )
+
+              var doneDeploying = function ( error ) {
+                // reportStatus is called per bucket, so no need
+                // to call it out for the total task.
+                if ( error ) {
+                  console.log( 'upload-deploys:done:error' )
+                  console.log( error )
+                }
+                else console.log( 'upload-deploys:done' )
+                next( null, args );
+              }
+
+              var deployTasks = args.deploys
+                .filter( function isDeployForBranch ( deploy ) { return args.branch === deploy.branch } )
+                .map( function makeUploadTask ( environment ) {
+                  return function uploadTask ( uploadTaskComplete ) {
+                    
+                    var uploadDone = function ( error ) {
+                      if ( error ) reportStatus(args.siteName, 'Built but failed to uploaded to ' + environment.bucket + '.', 1);  
+                      else reportStatus(args.siteName, 'Built and uploaded to ' + environment.bucket + '.', 0);
+
+                      console.log( 'upload-deploys:done:' + environment.bucket )
+                      
+                      uploadTaskComplete()
+                    }
+
+                    console.log( 'deploy task for ' + JSON.stringify( environment ) )
+
+                    setupBucket( environment.bucket, function ( error, bucketSetupResults ) {
+                      if ( error ) return uploadDone( error )
+                      uploadToBucket( environment.bucket, args.staticBuiltFolder, uploadDone )
+                    } )
+                  }
+                } )
+
+              console.log( 'running deploys: ' + deployTasks.length )
+              if ( deployTasks.length === 0 ) return doneDeploying( null );
+
+              async.parallel( deployTasks, doneDeploying );
+
+            } )
+          }
+
+          function sink () {
+            return miss.through.obj( function ( args, enc, next ) {
+              next()
+            } )
+          }
+
+          // Build the site, strict will cause death if any error is thrown
+          // runInDir('grunt', buildFolder , ['build', '--strict=true'], function(err) {
+          //   if(err) {
+          //     // Dont upload failed builds, simply send error to CMS
+          //     reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
+          //     console.log('done with errors');
+          //     processSiteCallback( err );
+          //   } else {
+
+          //     var uploadDeploys = function usingConfiguration ( deploys, uploadDeploysCallback ) {
+          //       console.log( 'upload-deploys:start' )
+          //       console.log( deploys )
+
+          //       // assumes: siteValues &  buildFolder + '/.build'
+          //       var doneDeploying = function () {
+          //         reportStatus(siteName, 'Built and uploaded.', 0);
+          //         console.log( 'upload-deploys:done' )
+          //         uploadDeploysCallback();
+          //       }
+
+          //       var deployTasks = deploys
+          //         .filter( function isDeployForBranch ( deploy ) { return branch === deploy.branch } )
+          //         .map( function makeUploadTask ( environment ) {
+          //           return function uploadTask ( uploadTaskComplete ) {
+                      
+          //             var uploadDone = function () {
+          //               console.log( 'upload-deploys:done:' + environment.bucket )
+          //               uploadTaskComplete()
+          //             }
+
+          //             console.log( 'deploy task for ' + JSON.stringify( environment ) )
+
+          //             setupBucket( environment.bucket, function ( error, bucketSetupResults ) {
+          //               if ( error ) uploadDone( error )
+          //               else {
+          //                 console.log( 'bucketSetupResults' )
+          //                 console.log( bucketSetupResults )
+
+          //                 uploadToBucket( environment.bucket, staticBuiltFolder, uploadDone )
+          //               }
+          //             } )
+          //           }
+          //         } )
+
+          //       console.log( 'running deploys: ' + deployTasks.length )
+          //       if ( deployTasks.length === 0 ) return doneDeploying();
+
+          //       async.parallel( deployTasks, doneDeploying );
+
+          //     }
+
+          //     // If there was a delay, push it back into beanstalk, then upload to the bucket
+          //     if(buildDiff > 0 && !noDelay) {
+          //       var diff = data.build_time - now;
+
+          //       data['noDelay'] = true;
+
+          //       client.put(1, buildDiff, (60 * 3), JSON.stringify({ identifier: identifier, payload: data }), function() {
+          //         uploadDeploys( deploys, processSiteCallback )
+          //       });
+          //     } else {
+          //       uploadDeploys( deploys, processSiteCallback )
+          //     }
+          //   }
+          // });
+        } else {
+          console.log('Site does not exist or no permissions');
+          processSiteCallback( null );
+        }
+      }
+
+      // Run a domain so we can survive any errors
+      var domainInstance = domain.create();
+
+      domainInstance.on('error', function(err) { 
+        console.log('domain-instance:error');
+        console.log(err);
+        reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
+        jobCallback();
+      });
+
+      domainInstance.run(function() {
+        // Check if latest version of site, if not download and unzip latest version
+        console.log( 'domain-instance:run:build-folder' )
+        console.log( buildFolder )
+        console.log( 'domain-instance:run:version' )
+        console.log( siteValues.version )
+        if(!fs.existsSync(buildFolder + '/.fb_version' + siteValues.version)) {
+
+          console.log('download-zip:start')
+          downloadSiteZip(buildFolderRoot, site, branch, function( downloadError, downloadedFile ) {
+            if ( downloadError ) throw error;
+
+            console.log('download-zip:done')
+
+            var unzipStuff = function() {
+              console.log( 'unzip-stuff:start' )
+              mkdirp.sync(buildFolder);
+
+              runInDir('unzip', buildFolder, ['-q', '-o', '../' + downloadedFile], function(err) {
+                fs.unlinkSync(buildFolderRoot + '/' + downloadedFile);
+                touch.sync(buildFolder + '/.fb_version' + siteValues.version);
+
+                console.log( 'unzip-stuff:done' )
+                processSite(buildFolder, jobCallback);
+              });
+            };
+            
+            if(fs.existsSync(buildFolder)) {
+              runInDir('rm', buildFolder + '/..', ['-rf', buildFolder], function(err) {
+                unzipStuff();
+              });
+            } else {
+              unzipStuff();
+            }
+
+          })
+        } else {
+          console.log( 'process without downloading' )
+          processSite(buildFolder, jobCallback);
+        }
+      })
+
+
+    }, function(err) {
+      jobCallback(err);
+    });
+  }
+
+  return buildJob;
 
 };
 
