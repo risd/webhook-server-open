@@ -9,6 +9,7 @@
     "invite-worker": "grunt inviteWorker",
     "create-worker": "grunt createWorker",
     "build-worker": "grunt buildWorker",
+    "site-index-worker": "grunt siteIndexWorker",
     "backup-cron": "grunt backupCron",
     "extract-key": "grunt extractKey",
     "dev": "nf start --procfile=Procfile.dev"
@@ -49,6 +50,8 @@
     "temp": "~0.6.0",
     "touch": "0.0.3",
     "webhook-deploy-configuration": "^1.0.0",
+    "webhook-elastic-search": "^1.0.1",
+    "webhook-site-data": "^1.0.0",
     "win-spawn": "~2.0.0",
     "wrench": "~1.5.8"
   },

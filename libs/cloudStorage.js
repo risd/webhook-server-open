@@ -143,6 +143,12 @@ module.exports.setKeyFile = function(file) {
 
 // This object contains all methods that have to do with manipulating
 // buckets
+var cors = [{
+  origin: [ "*.risd.systems" ],
+  responseHeader: [ "Content-Type" ],
+  method: [ "GET", "HEAD", "OPTIONS" ],
+  maxAgeSeconds: 3600
+}]
 module.exports.buckets = {
   // Get a bucket's meta data from google cloud storage
   get: function(bucketName, callback) {
@@ -172,7 +178,8 @@ module.exports.buckets = {
       website: {
         mainPageSuffix: 'index.html',
         notFoundPage: '404.html'
-      }
+      },
+      cors: cors
     };
 
     jsonRequest({
@@ -218,7 +225,8 @@ module.exports.buckets = {
       website: {
         mainPageSuffix: indexFile,
         notFoundPage: notFoundFile
-      }
+      },
+      cors: cors,
     };
 
     jsonRequest({
@@ -249,12 +257,28 @@ module.exports.objects = {
     }, callback);
   },
 
+  // list webhook-uploads
+  listUploads: function(bucket, callback) {
+    jsonRequest({
+      url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o',
+      qs: { fields: 'kind,items(name,md5Hash)', prefix: 'webhook-uploads/' }
+    }, callback);
+  },
+
   // List all objects with more information (md5hash, updated time)
   listMore: function(bucket, callback) {
     jsonRequest({
       url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o',
       qs: { fields: 'kind,items(name,md5Hash,updated)', delimiter: 'webhook-uploads/' }
     }, callback);
+  },
+
+  // Copy an object
+  copy: function ( sourceBucket, sourceFile, destinationBucket, destinationFile, callback ) {
+    jsonRequest({
+      url: 'https://www.googleapis.com/storage/v1/b/' + sourceBucket + '/o/' + sourceFile + '/copyTo/b/' + destinationBucket + '/o/' + destinationFile,
+      method: 'POST',
+    }, callback)
   },
 
   // Get an object from a bucket, return stream for caller to manipulate

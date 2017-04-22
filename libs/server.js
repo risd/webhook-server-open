@@ -177,6 +177,12 @@ module.exports.start = function(config, logger)
 
   });
 
+  // Files are uploaded to the same `uploadsBucket`, at the URL returned
+  // for the given `fileName`
+  var fileUrlForFileName = function ( fileName ) {
+    return [ 'https://', config.get( 'uploadsBucket' ), '/webhook-uploads/', encodeURIComponent( fileName ) ].join( '' )
+  }
+
   // Handles uploading a file from a url
   // Post body contains site, token, resize_url, and url
   // site and token are the site and token for the site to upload to
@@ -265,63 +271,52 @@ module.exports.start = function(config, logger)
               } else {
 
                 var mimeType = mime.lookup(url);
+                var fileUrl = fileUrlForFileName( fileName );
 
                 console.log( 'upload-url' )
                 console.log( siteBucket )
                 console.log( fileName )
+                console.log( fileUrl )
 
-                deploys.get( { siteName: siteBucket }, function ( error, deployConfiguration ) {
+                cloudStorage.objects.upload(config.get( 'uploadsBucket' ), fp, 'webhook-uploads/' + fileName, 'public,max-age=86400', mimeType, onUploadTaskComplete)
 
-                  var uploadTasks = deployConfiguration.map( uploadTaskForDeploy )
-
-                  async.parallel( uploadTasks, onUploadTasksComplete )
-
-                  function uploadTaskForDeploy ( deploy ) {
-                    return function uploadTask ( step ) {
-                      // Upload to cloud storage with caching
-                      cloudStorage.objects.upload(deploy.bucket, fp, 'webhook-uploads/' + fileName, 'public,max-age=86400', mimeType, step)
-                    }
+                function onUploadTaskComplete ( error, results ) {
+                  fs.unlinkSync(fp); // Remove temp file
+                  if(error) {
+                    cleanUpFiles(originReq);
+                    res.json(500, { error: error});
+                    return;
                   }
 
-                  function onUploadTasksComplete ( error, results ) {
-                    fs.unlinkSync(fp); // Remove temp file
-                    if(error) {
-                      cleanUpFiles(originReq);
-                      res.json(500, { error: error});
-                      return;
-                    }
+                  // If resize url requested, send request to Google App for resize url
+                  if(resizeUrlRequested) {
+                    request('http://' + config.get('googleProjectId') + '.appspot.com/' + siteBucket + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
+                      var resizeUrl = '';
 
-                    // If resize url requested, send request to Google App for resize url
-                    if(resizeUrlRequested) {
-                      request('http://' + config.get('googleProjectId') + '.appspot.com/' + siteBucket + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
-                        var resizeUrl = '';
+                      if(data && data.statusCode === 200) {
+                        resizeUrl = body;
+                      }
 
-                        if(data && data.statusCode === 200) {
-                          resizeUrl = body;
-                        }
-
-                        cleanUpFiles(originReq);
-                        res.json(200, { 
-                          'message' : 'Finished', 
-                          'url' : '/webhook-uploads/' + encodeURIComponent(fileName), 
-                          'size' : stat.size, 
-                          'mimeType' : mimeType,
-                          'resize_url' : resizeUrl
-                        });
-
-                      });
-                    } else {
                       cleanUpFiles(originReq);
                       res.json(200, { 
                         'message' : 'Finished', 
-                        'url' : '/webhook-uploads/' + encodeURIComponent(fileName), 
+                        'url' : fileUrl,
                         'size' : stat.size, 
-                        'mimeType' : mimeType 
+                        'mimeType' : mimeType,
+                        'resize_url' : resizeUrl
                       });
-                    }
-                  }
 
-                } )
+                    });
+                  } else {
+                    cleanUpFiles(originReq);
+                    res.json(200, { 
+                      'message' : 'Finished', 
+                      'url' : fileUrl, 
+                      'size' : stat.size, 
+                      'mimeType' : mimeType 
+                    });
+                  }
+                }
 
               }
             });
@@ -383,76 +378,44 @@ module.exports.start = function(config, logger)
             var origFilename = path.basename(payload.originalFilename);
             var timestamp = new Date().getTime();
             var fileName = timestamp + '_' + origFilename;
+            var fileUrl = fileUrlForFileName( fileName );
 
-            deploys.get( { siteName: siteBucket }, function ( error, deployConfiguration ) {
-
-              var uploadTasks = deployConfiguration.deploys.map( uploadTaskForDeploy )
-
-              async.parallel( uploadTasks, onUploadTasksComplete )
-
-
-              function uploadTaskForDeploy ( deploy ) {
-                return function uploadTask ( step ) {
-                  // Upload to cloud storage with caching
-                  var localFile = payload.path;
-                  var remoteFile = 'webhook-uploads/' + fileName;
-                  var cacheControl = 'public,max-age=86400';
-                  cloudStorage.objects.upload(deploy.bucket, localFile, remoteFile, cacheControl, function ( error, result ) {
-                    var resultData = {
-                      bucket: deploy.bucket,
-                      local: localFile,
-                      remote: remoteFile,
-                      cacheControl: cacheControl,
-                    }
-                    if ( error ) {
-                      resultData.error = error;
-                      return step( null, resultData )
-                    } else {
-                      resultData.error = false;
-                      return step( null, resultData )
-                    }
-
-                  })
-                }
-              }
-
-              function allResultsErrored ( results ) {
-                return results.length === results.filter( function ( result ) { return result.error !== false } )
-              }
-
-              function onUploadTasksComplete ( error, results ) {
-                if( allResultsErrored( results ) ) {
-                  console.log( 'upload-task-complete:error' )
-                  console.log( error )
-                  console.log( JSON.stringify( results ) )
-                  cleanUpFiles(req);
-                  res.json(500, { error: error});
-                  return;
-                }
-
-                console.log( 'upload-task-complete' )
-                console.log( JSON.stringify( results ) )
-
-                var mimeType = mime.lookup(payload.path);
+            var localFile = payload.path;
+            var remoteFile = 'webhook-uploads/' + fileName;
+            var cacheControl = 'public,max-age=86400';
+            
+            cloudStorage.objects.upload( config.get( 'uploadsBucket' ), localFile, remoteFile, cacheControl, function ( error, result ) {
+              
+              if ( error ) {
+                console.log( 'upload-task-complete:error' )
+                console.log( error )
+                console.log( JSON.stringify( result ) )
                 cleanUpFiles(req);
-
-                // If resize url needed, send request to google app engine app
-                if(resizeUrlRequested) {
-                  request('http://' + config.get('googleProjectId') + '.appspot.com/' + siteBucket + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
-                    var resizeUrl = '';
-
-                    if(data && data.statusCode === 200) {
-                      resizeUrl = body;
-                    }
-                    
-                    res.json(200, { 'message' : 'Finished', 'url' : '/webhook-uploads/' + encodeURIComponent(fileName), 'resize_url' : resizeUrl });
-                  });
-                } else {
-                  res.json(200, { 'message' : 'Finished', 'url' : '/webhook-uploads/' + encodeURIComponent(fileName) });
-                }
+                res.json(500, { error: error});
+                return;
               }
 
-            } )
+              console.log( 'upload-task-complete' )
+              console.log( JSON.stringify( result ) )
+
+              var mimeType = mime.lookup(payload.path);
+              cleanUpFiles(req);
+
+              // If resize url needed, send request to google app engine app
+              if(resizeUrlRequested) {
+                request('http://' + config.get('googleProjectId') + '.appspot.com/' + config.get( 'uploadsBucket' ) + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
+                  var resizeUrl = '';
+
+                  if(data && data.statusCode === 200) {
+                    resizeUrl = body;
+                  }
+                  
+                  res.json(200, { 'message' : 'Finished', 'url' : fileUrl, 'resize_url' : resizeUrl });
+                });
+              } else {
+                res.json(200, { 'message' : 'Finished', 'url' : fileUrl });
+              }
+            })
 
           } else {
             cleanUpFiles(req);

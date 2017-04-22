@@ -59,6 +59,7 @@ module.exports.start = function (config, logger) {
     { commands: 'management/commands/verification/', lock: 'verification', tube: 'verification' },
     { commands: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
     { commands: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
+    { commands: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
   ];
 
   self.root.auth(config.get('firebaseSecret'), function(err) {
@@ -169,6 +170,7 @@ module.exports.start = function (config, logger) {
 					queueCommandArgs = branches.map( function ( branch ) {
 						var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, branch )
 						payload.branch = branch;
+            payload.deploys = configuration.deploys;
 						return {
 							identifier: identifier,
 							memcaheLockId: [ item.lock, identifier, 'queued' ].join( '_' ),
@@ -232,19 +234,4 @@ module.exports.start = function (config, logger) {
 
   return this;
 
-  // Build/Deploy functions
-
-
-	// function GetDeployConfiguration ( opts ) {
-	// 	return miss.from.obj( [ {
-	// 		siteName: opts.siteName,
-	// 	}, null ] )
-
-	// 	function () {
-	// 		miss.through.obj( function ( row, enc, next ) {
-
-	// 		} )
-	// 	}
-		
-	// }
 };

@@ -7,6 +7,7 @@
 * The gruntfile contains the following tasks:
 *    commandDelegator - The command delegator, which queues commands from firebase into beanstalk
 *    buildWorker      - The worker responsible for building sites
+*    siteIndexWorker  - The worker responsible for updating a sites search index
 *    inviteWorker     - The worker responsible for handling invite emails
 *    createWorker     - The worker responsible for handling creating sites
 *    startServer      - The main webhook server, handles file uploads and searches
@@ -15,6 +16,7 @@
 */
 
 var builder = require('./libs/builder.js');
+var siteIndexer = require('./libs/siteIndex.js');
 var inviter = require('./libs/invite.js');
 var creator = require('./libs/creator.js');
 var server = require('./libs/server.js');
@@ -42,6 +44,7 @@ module.exports = function(grunt) {
     googleProjectId: process.env.GOOGLE_PROJECT_ID,                                 // Your google project ID. Usually something like whatever-123
     sitesBucket: process.env.SITES_BUCKET,                             // The name of the build bucket on Google Cloud Storage
     backupBucket: process.env.BACKUPS_BUCKET,                          // The name of the backup bucket on Google Cloud Storage
+    uploadsBucket: process.env.UPLOADS_BUCKET,                         // The name of the bucket to push all file uploads to
     googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,  // The email of your projects Service Acccount
     newrelicEnabled: false,                                             // Set to true to enable NewRelic monitoring (also make sure that a newrelic.js file exists)
     memcachedServers: [
@@ -58,6 +61,11 @@ module.exports = function(grunt) {
   grunt.registerTask('buildWorker', 'Worker that handles building sites', function() {
     var done = this.async();
     builder.start(grunt.config, grunt.log);
+  });
+
+  grunt.registerTask('siteIndexWorker', 'Worker that handles building sites', function() {
+    var done = this.async();
+    siteIndexer.start(grunt.config, grunt.log);
   });
 
   grunt.registerTask('inviteWorker', 'Worker that handles inviting team members', function() {

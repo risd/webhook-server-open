@@ -1,0 +1,271 @@
+#!/usr/bin/env node
+
+require( 'dotenv' ).config()
+
+var async = require( 'async' )
+var traverse = require( 'traverse' )
+var cheerio = require( 'cheerio' )
+var cloudStorage = require( '../libs/cloudStorage.js' )
+var Firebase = require( 'firebase' )
+
+var uploadsBucket = process.env.UPLOADS_BUCKET;
+var firebaseName = process.env.FIREBASE;
+var firebaseKey = process.env.FIREBASE_KEY;
+
+// Copy files
+// list buckets
+// list uploads in buckets
+// upload to cdn.risd.webhook under the same path
+CopyFiles()
+
+// Prefix all firebase data
+// list site data
+// list file uploads
+// list wyswsig items
+PrefixData()
+
+// Copy files
+function CopyFiles () {
+
+  var copyToDestination = {
+    destinationBucket: uploadsBucket,
+  }
+
+  cloudStorage.buckets.list( function ( error, buckets ) {
+
+    // build up copyTaskArguments
+    // first get a sourceBucket
+
+    // copyTaskArguments = { sourceBucket }
+    var copyTaskArgumentsSourceBuckets = buckets.items.map( function ( bucket ) { return { sourceBucket: bucket.name } } )
+
+    var copyTaskArgumentsAddSourceFilesTasks = copyTaskArgumentsSourceBuckets.map( addSourceFilesTasks )
+
+    async.parallel( copyTaskArgumentsAddSourceFilesTasks, copyTaskArgumentsWithSourceKeys )
+
+    function copyTaskArgumentsWithSourceKeys ( error, results ) {
+      if ( error ) return console.log( error )
+
+      // copyTaskArgumentsWithSourceFiles = { sourceBucket, sourceFile, sourceMd5Hash }
+      var copyTaskArgumentsWithSourceFiles = results.reduce( function ( previous, current ) { return previous.concat( current ) }, [] )
+
+      // copyTaskArgumentsWithDestination = { sourceBucket, sourceFile, sourceMd5Hash, destinationBucket, destinationFile }
+      var copyTaskArgumentsWithDestination = copyTaskArgumentsWithSourceFiles.map( addDestionationArguments )
+
+      // filter copyTaskArguments, removing tasks that represent destination files that already exist
+      filterCopyTasksForDestination( copyTaskArgumentsWithDestination, function ( error, remainingCopyTasks ) {
+
+        var copyTasks = remainingCopyTasks.map( makeCopyTasks )
+
+        async.parallelLimit( copyTasks, 100, function ( error, results ) {
+          if ( error ) return console.log( error.message )
+
+          console.log( results )
+        } )
+
+      } )
+    }
+
+  } ) 
+
+  /**
+   * Updates copyTaskArguments with sourceFile & sourceMd5Hash values
+   * sourceFile    is the file path to the source file to copy
+   * sourceMd5Hash is the md5 hash of the source file to copy
+   *
+   * input:  copyTaskArgument = { sourceBucket }
+   * output: copyTaskArgument = { sourceBucket, sourceFile, sourceMd5Hash }
+   *
+   * This function tasks a list of arguments, and returns async tasks
+   * that will update each object with the new values.
+   * 
+   * @param {object} copyTaskArgument
+   * @param {string} copyTaskArgument.sourceBucket
+   */
+  function addSourceFilesTasks ( copyTaskArgument ) {
+    return function getSourceFilesTask ( taskComplete ) {
+      cloudStorage.objects.listUploads( copyTaskArgument.sourceBucket, function ( error, sourceFiles ) {
+        if ( error ) return taskComplete( error )
+        if ( !sourceFiles.items ) return taskComplete( null, [] )
+        var copyTaskArgumentsWithSourceFiles = sourceFiles.items.map( function ( sourceFile ) {
+          return Object.assign(
+            copyTaskArgument, {
+              sourceFile: encodeURIComponent( sourceFile.name ),
+              sourceMd5Hash: sourceFile.md5Hash
+            } ) } )
+
+        taskComplete( null, copyTaskArgumentsWithSourceFiles )
+      } )
+    }
+  }
+
+  /**
+   * Updates copyTaskArguments with destinationBucket & destinationFile values
+   * destinationBucket is the bucket the file will be copied to
+   * destinationFile   is the file path the file will be copied to
+   *  
+   * input:  copyTaskArgument = { sourceBucket, sourceFile, sourceMd5Hash }
+   * output: copyTaskArgument = { sourceBucket, sourceFile, sourceMd5Hash, destinationBucket, destinationFile }
+   * 
+   * This function tasks a list of arguments, and returns async tasks
+   * that will update each object with the new values.
+   * 
+   * @param {object} copyTaskArgument
+   * @param {string} copyTaskArgument.sourceBucket
+   * @param {string} copyTaskArgument.sourceFile
+   * @param {string} copyTaskArgument.sourceMd5Hash
+   */
+  function addDestionationArguments ( copyTaskArgument ) {
+    return Object.assign( copyTaskArgument, copyToDestination, { destinationFile: copyTaskArgument.sourceFile } )
+  }
+
+  /**
+   * Given a list of copyTaskArguments, callback with the set of arguments
+   * that represent files that do not currently exist in the destination bucket
+   * with the same file name and md5 hash as the source. This means the file
+   * has already been copied.
+   *
+   * input:  copyTaskArguemnts [{ sourceBucket, sourceFile, sourceMd5Hash, destinationBucket, destinationFile }]
+   * output: filteredCopyTaskArguemnts [{ sourceBucket, sourceFile, sourceMd5Hash, destinationBucket, destinationFile }]
+   *
+   * @param {object}   copyTaskArguments[]
+   * @param {Function} callback
+   */
+  function filterCopyTasksForDestination ( copyTaskArguemnts, callback ) {
+    cloudStorage.objects.listUploads( copyToDestination.destinationBucket, function ( error, destinationFiles ) {
+      // error, return callback with error
+      if ( error ) return callback( error )
+
+      // no files in destination bucket to filter against, callback with all copy task arguments
+      if ( !destinationFiles.items ) return callback( null, copyTaskArguemnts )
+
+      // filter copy tasks based on files in the destination bucket
+      var filteredCopyTasks = copyTaskArguemnts.filter( argumentsForFilesThatExistInDestination )
+
+      callback( null, filteredCopyTasks )
+
+      function argumentsForFilesThatExistInDestination ( copyTaskArgument ) {
+        // keep arguments for tasks that speak to files that do not exist
+        var doesNotExist = true;
+        for (var i = destinationFiles.length - 1; i >= 0; i--) {
+          var encodedDestinationName = encodeURIComponent( destinationFiles[ i ].name )
+          if ( encodedDestinationName === copyTaskArgument.sourceFile ) {
+              // the source file exists in the destination bucket
+            if ( destinationFiles[ i ].md5Hash === copyTaskArgument.sourceMd5Hash ) {
+              // the source file with the same md5 has exists in the destination bucket
+              doesNotExist = false;
+              console.log( 'filtering:' + encodedDestinationName )
+            }
+            break;
+          }
+        }
+        return doesNotExist;
+      } 
+
+    } )
+  }
+
+  function makeCopyTasks ( copyTaskArgument ) {
+    return function ( taskComplete ) {
+      cloudStorage.objects.copy( copyTaskArgument.sourceBucket, copyTaskArgument.sourceFile, copyTaskArgument.destinationBucket, copyTaskArgument.destinationFile, function ( error, results ) {
+        if ( error ) return taskComplete( error )
+
+        taskComplete( null, results )
+      } )
+    }
+  }
+
+}
+
+function PrefixData () {
+  var firebase = new Firebase( 'https://' + firebaseName + '.firebaseio.com' )
+
+  getWebhookBucketsData( firebaseKey, function ( error, bucketRoot ) {
+    
+    Object.keys( bucketRoot ).forEach( function ( site ) {
+      Object.keys( bucketRoot[ site ] ).forEach( function ( key ) {
+
+        traverse( bucketRoot[ site ][ key ].dev.data )
+          .map( function ( dataValue ) {
+            if ( this.isLeaf ) {
+              if ( isWYSIWYG( dataValue) ) {
+                this.update( updateHTML( dataValue ) )
+              }
+              else if ( isUrlKey( this.path ) ) {
+                this.update( updateUrl( dataValue ) )
+              }
+            }
+          } )
+
+      } )
+    } )
+
+    return process.exit( 0 )
+    // set bucket data
+    // setWebhookBucketsData( bucketRoot, function ( error ) {
+    //   if ( error ) console.log( error )
+    // } )
+
+  } )
+
+
+  function getWebhookBucketsData ( secret, callback ) {
+    firebase.auth( firebaseKey, function ( error ) {
+      if ( error ) return callback( error );
+
+      firebase.child( 'buckets' ).once( 'value',
+        function ( snapshot ) {
+          var bucketRoot = snapshot.val();
+          callback( null, bucketRoot )
+        },
+        function ( error ) {
+          callback( error )
+        } )
+    } )
+  }
+
+  function setWebhookBucketsData( data, callback ) {
+    firebase.child( 'buckets' ).set( data, function callback )
+  }
+
+  function isWYSIWYG ( value ) {
+    if ( typeof value === 'string' && value.length > 0 ) {
+      return value.indexOf( '<p>' ) === 0;
+    }
+    return false;
+  }
+
+  function updateHTML ( html ) {
+    var $ = cheerio.load( html );
+    $( 'a' ).each( function ( index, element ) {
+      var href = $( this ).attr( 'href' )
+      $( this ).attr( 'href', updateUrl( href ) )
+    } )
+    $( 'img' ).each( function ( index, element ) {
+      var src = $( this ).attr( 'src' )
+      $( this ).attr( 'href', updateUrl( src ) )
+    } )
+    return $.html()
+  }
+
+  function isUrlKey ( path ) {
+    return path.slice( -3 ) === 'url';
+  }
+
+  function updateUrl ( url ) {
+    var uploadsDirectory = '/webhook-uploads/';
+    if ( ! ( typeof url === 'string' && url.length > 0 ) ) return url;
+    if ( url.indexOf( uploadsDirectory ) === 0 ) {
+      return [ 'https://', uploadsBucket, url ].join( '' );
+    }
+    else if ( url.indexOf( uploadsDirectory ) > 0 ) {
+      // in case the uploads bucket changes
+      // https://domain.com/other-location/webhook-uploads/path-to-file.ext
+      var urlParts = url.split( uploadsDirectory )
+      return [ 'https://', uploadsBucket, uploadsDirectory, urlParts[ 1 ] ].join( '' )
+    }
+    else {
+      return url;
+    }
+  }
+}
