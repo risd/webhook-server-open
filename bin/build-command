@@ -1,0 +1,65 @@
+#!/usr/bin/env node
+
+var grunt = require( 'grunt' );
+var webhookTasks = require( '../Gruntfile.js' );
+var builder = require( '../libs/builder.js' );
+
+webhookTasks( grunt );
+
+// merge this config in order to run just the builder command
+grunt.config.merge( {
+  suppressJobQueue: true
+} )
+
+var build = builder.start( grunt.config, grunt.log )
+
+var payload = {
+  "identifier":"unique-cli-test,1risd,1systems_master",
+  "payload": {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"unique-cli-test,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+    "deploys": [{
+      "bucket": "unique-cli-test.risd.systems",
+      "branch": "master",
+    },
+    {
+      "bucket": "dev.unique-cli-test.risd.systems",
+      "branch": "develop",
+    }]
+  },
+}
+
+var identifier = 'unique-cli-test,1risd,1systems_master'
+var data = {
+  "build_time":"2017-04-10T10:10:00-04:00",
+  "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+  "sitename":"unique-cli-test,1risd,1systems",
+  "userid":"rrodrigu@risd.edu",
+  "branch":"develop",
+  "deploys": [{
+    "bucket": "unique-cli-test.risd.systems",
+    "branch": "master",
+  },
+  {
+    "bucket": "dev.unique-cli-test.risd.systems",
+    "branch": "develop",
+  }]
+}
+
+var mockClient = {
+  put: function (first, second, third, fourth, jobExecuter) {
+    console.log( 'uses mock beanstalk client' )
+    jobExecuter()
+  }
+}
+
+var jobCallback = function ( error ) {
+  if ( error ) console.log( error )
+  else console.log( arguments )
+  process.exit( error ? 1 : 0 )
+}
+
+build( payload, identifier, data, mockClient, jobCallback  )
