@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+
+require( 'dotenv' ).config()
+
+var async = require( 'async' )
+var cloudStorage = require( '../libs/cloudStorage.js' );
+
+cloudStorage.buckets.list( function ( error, buckets ) {
+
+  var tasks = buckets.items.map( updateIndexForBucket )
+
+  async.parallel( tasks, function ( error, results ) {
+    if ( error ) console.log( error )
+    else console.log( results )
+  } )
+
+} ) 
+
+function updateIndexForBucket ( bucket ) {
+  return function task ( next ) {
+    cloudStorage.buckets.updateIndex( bucket.name, 'index.html', '404.html', next )
+  }
+}
