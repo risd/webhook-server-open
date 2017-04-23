@@ -16,16 +16,19 @@ var firebaseKey = process.env.FIREBASE_KEY;
 // list buckets
 // list uploads in buckets
 // upload to cdn.risd.webhook under the same path
-CopyFiles()
+CopyFiles( function ( error, results ) {
+  // console.log( error )
+  // console.log( results )
+} )
 
 // Prefix all firebase data
 // list site data
 // list file uploads
 // list wyswsig items
-PrefixData()
+// PrefixData()
 
 // Copy files
-function CopyFiles () {
+function CopyFiles ( copyFilesDone ) {
 
   var copyToDestination = {
     destinationBucket: uploadsBucket,
@@ -44,7 +47,7 @@ function CopyFiles () {
     async.parallel( copyTaskArgumentsAddSourceFilesTasks, copyTaskArgumentsWithSourceKeys )
 
     function copyTaskArgumentsWithSourceKeys ( error, results ) {
-      if ( error ) return console.log( error )
+      if ( error ) return copyFilesDone( error )
 
       // copyTaskArgumentsWithSourceFiles = { sourceBucket, sourceFile, sourceMd5Hash }
       var copyTaskArgumentsWithSourceFiles = results.reduce( function ( previous, current ) { return previous.concat( current ) }, [] )
@@ -52,15 +55,15 @@ function CopyFiles () {
       // copyTaskArgumentsWithDestination = { sourceBucket, sourceFile, sourceMd5Hash, destinationBucket, destinationFile }
       var copyTaskArgumentsWithDestination = copyTaskArgumentsWithSourceFiles.map( addDestionationArguments )
 
+      console.log( 'pre-filter-count:' + copyTaskArgumentsWithDestination.length )
+
       // filter copyTaskArguments, removing tasks that represent destination files that already exist
       filterCopyTasksForDestination( copyTaskArgumentsWithDestination, function ( error, remainingCopyTasks ) {
 
         var copyTasks = remainingCopyTasks.map( makeCopyTasks )
 
-        async.parallelLimit( copyTasks, 100, function ( error, results ) {
-          if ( error ) return console.log( error.message )
-
-          console.log( results )
+        async.parallelLimit( copyTasks, 5, function ( error, results ) {
+          copyFilesDone( error, results )
         } )
 
       } )
@@ -90,7 +93,7 @@ function CopyFiles () {
         var copyTaskArgumentsWithSourceFiles = sourceFiles.items.map( function ( sourceFile ) {
           return Object.assign(
             copyTaskArgument, {
-              sourceFile: encodeURIComponent( sourceFile.name ),
+              sourceFile: sourceFile.name,
               sourceMd5Hash: sourceFile.md5Hash
             } ) } )
 
@@ -139,6 +142,8 @@ function CopyFiles () {
       // no files in destination bucket to filter against, callback with all copy task arguments
       if ( !destinationFiles.items ) return callback( null, copyTaskArguemnts )
 
+      console.log( 'destination-count:' + destinationFiles.items.length )
+
       // filter copy tasks based on files in the destination bucket
       var filteredCopyTasks = copyTaskArguemnts.filter( argumentsForFilesThatExistInDestination )
 
@@ -147,14 +152,14 @@ function CopyFiles () {
       function argumentsForFilesThatExistInDestination ( copyTaskArgument ) {
         // keep arguments for tasks that speak to files that do not exist
         var doesNotExist = true;
-        for (var i = destinationFiles.length - 1; i >= 0; i--) {
-          var encodedDestinationName = encodeURIComponent( destinationFiles[ i ].name )
+        for (var i = destinationFiles.items.length - 1; i >= 0; i--) {
+          var encodedDestinationName = encodeURIComponent( destinationFiles.items[ i ].name )
           if ( encodedDestinationName === copyTaskArgument.sourceFile ) {
               // the source file exists in the destination bucket
-            if ( destinationFiles[ i ].md5Hash === copyTaskArgument.sourceMd5Hash ) {
+            if ( destinationFiles.items[ i ].md5Hash === copyTaskArgument.sourceMd5Hash ) {
               // the source file with the same md5 has exists in the destination bucket
               doesNotExist = false;
-              console.log( 'filtering:' + encodedDestinationName )
+              // console.log( 'filtering:' + encodedDestinationName )
             }
             break;
           }
@@ -167,7 +172,7 @@ function CopyFiles () {
 
   function makeCopyTasks ( copyTaskArgument ) {
     return function ( taskComplete ) {
-      cloudStorage.objects.copy( copyTaskArgument.sourceBucket, copyTaskArgument.sourceFile, copyTaskArgument.destinationBucket, copyTaskArgument.destinationFile, function ( error, results ) {
+      cloudStorage.objects.copy( copyTaskArgument.sourceBucket, encodeURIComponent( copyTaskArgument.sourceFile ), copyTaskArgument.destinationBucket, encodeURIComponent( copyTaskArgument.destinationFile ), function ( error, results ) {
         if ( error ) return taskComplete( error )
 
         taskComplete( null, results )
@@ -225,7 +230,7 @@ function PrefixData () {
   }
 
   function setWebhookBucketsData( data, callback ) {
-    firebase.child( 'buckets' ).set( data, function callback )
+    firebase.child( 'buckets' ).set( data, callback )
   }
 
   function isWYSIWYG ( value ) {
