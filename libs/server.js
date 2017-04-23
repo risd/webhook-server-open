@@ -180,7 +180,7 @@ module.exports.start = function(config, logger)
   // Files are uploaded to the same `uploadsBucket`, at the URL returned
   // for the given `fileName`
   var fileUrlForFileName = function ( fileName ) {
-    return [ 'https://', config.get( 'uploadsBucket' ), '/webhook-uploads/', encodeURIComponent( fileName ) ].join( '' )
+    return [ '//', config.get( 'uploadsBucket' ), '/webhook-uploads/', encodeURIComponent( fileName ) ].join( '' )
   }
 
   // Handles uploading a file from a url
