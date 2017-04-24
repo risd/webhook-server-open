@@ -18,7 +18,7 @@ var domain = require('domain');
 var Deploys = require( 'webhook-deploy-configuration' );
 var miss = require( 'mississippi' );
 var path = require( 'path' )
-var SetupBucketWithOptions = require('./creator.js').setupBucketWithOptions;
+var setupBucket = require('./creator.js').setupBucket;
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -53,7 +53,10 @@ module.exports.start = function (config, logger) {
   this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/buckets');
 
   var buildFolderRoot = '../build-folders';
-  var setupBucket = SetupBucketWithOptions( { cloudStorage: cloudStorage, cloudflare: config.get( 'cloudflare' ) } );
+  var setupBucketOptions = {
+    cloudStorage: cloudStorage,
+    cloudflare: config.get( 'cloudflare' )
+  }
 
   /*
   *  Reports the status to firebase, used to display messages in the CMS
@@ -665,7 +668,7 @@ module.exports.start = function (config, logger) {
 
                     console.log( 'deploy task for ' + JSON.stringify( environment ) )
 
-                    setupBucket( environment.bucket, function ( error, bucketSetupResults ) {
+                    setupBucket( Object.assign( setupBucketOptions, { siteBucket: environment.bucket } ), function ( error, bucketSetupResults ) {
                       if ( error ) return uploadDone( error )
                       uploadToBucket( environment.bucket, args.staticBuiltFolder, uploadDone )
                     } )

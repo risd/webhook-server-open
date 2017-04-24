@@ -170,28 +170,13 @@ module.exports.start = function (config, logger) {
   return createSite;
 };
 
-module.exports.setupBucketWithOptions = setupBucketWithOptions;
 module.exports.setupBucket = setupBucket;
 module.exports.createCnameRecord = createCnameRecord;
 
-/**
- * @param  {object}   options
- * @param  {object}   options.cloudStorage
- * @param  {object}   options.cloudflare
- * @param  {object}   options.cloudflare.client
- * @param  {string}   options.cloudflare.client.key
- * @param  {string}   options.cloudflare.client.email
- * @param  {string}   options.cloudflare.zone_id
- * @return {Function}
- */
-function setupBucketWithOptions ( options ) {
-  return function wrapSetupBucket ( siteBucket, callback ) {
-    return setupBucket( siteBucket, options, callback )
-  }
-}
 
 /**
- * @param  {string}   siteBucket
+ * @param  {object}   options
+ * @param  {string}   options.siteBucket
  * @param  {object}   options.cloudStorage
  * @param  {object}   options.cloudflare
  * @param  {object}   options.cloudflare.client
@@ -201,9 +186,9 @@ function setupBucketWithOptions ( options ) {
  * @param  {Function} callback
  * @return {Function}
  */
-function setupBucket ( siteBucket, options, callback ) {
+function setupBucket ( options, callback ) {
   var bucketToSetup = {
-    siteBucket:   siteBucket,
+    siteBucket:   options.siteBucket,
     bucketExists: false,
     createdBucket: false,
     cloudStorage: options.cloudStorage,
@@ -329,18 +314,27 @@ function ensureCname ( options ) {
     content: 'c.storage.googleapis.com',
   } )
 
+  var canCreateCname = function ( site ) {
+    return site.endsWith( 'risd.systems' )
+  }
+
   return miss.through.obj( function ( row, enc, next ) {
 
-    console.log( 'site-setup:ensure-cname' )
+    if ( canCreateCname( row.siteBucket ) ) {
+      console.log( 'site-setup:ensure-cname' )
 
-    var createCnameRecordOptions = Object.assign( baseCreateCnameRecordOptions, { record: row.siteBucket } )
-    createCnameRecord( createCnameRecordOptions, function ( error, cname ) {
-      row.cname = cname;
+      var createCnameRecordOptions = Object.assign( baseCreateCnameRecordOptions, { record: row.siteBucket } )
+      createCnameRecord( createCnameRecordOptions, function ( error, cname ) {
+        row.cname = cname;
 
-      console.log( 'site-setup:ensure-cname:done' )
+        console.log( 'site-setup:ensure-cname:done' )
 
-      next( null, row );
-    } )
+        next( null, row );
+      } )
+    } else {
+      console.log( 'site-setup:ensure-cname:skipping' )
+      next( null, row )
+    }
 
   } )
 }
