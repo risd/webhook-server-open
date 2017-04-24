@@ -56,3 +56,4 @@ With everything in place, `npm run dev` will start all the processes as defined 
 - invite_worker
 - create_worker
 - build_worker
+- reindex_worker
