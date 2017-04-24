@@ -51,6 +51,13 @@ module.exports = function(grunt) {
       'localhost:11211'
     ],
     beanstalkServer: 'localhost:11300',
+    cloudflare: {
+      client: {
+        email: process.env.CLOUDFLARE_EMAIL,
+        key: process.env.CLOUDFLARE_KEY,
+      },
+      zone_id: process.env.CLOUDFLARE_ZONE,
+    },
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {

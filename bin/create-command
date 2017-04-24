@@ -1,0 +1,60 @@
+#!/usr/bin/env node
+
+var grunt = require( 'grunt' );
+var Firebase = require( 'firebase' )
+var webhookTasks = require( '../Gruntfile.js' );
+var creator = require( '../libs/creator.js' );
+
+webhookTasks( grunt );
+
+// merge this config in order to run just the builder command
+grunt.config.merge( {
+  suppressJobQueue: true
+} )
+
+var create = creator.start( grunt.config, grunt.log )
+
+var owners = {
+  "rrodrigu@risd,1edu": "rrodrigu@risd.edu"
+}
+
+var identifier = 'id'
+
+var data = {
+  "sitename": "create-command,1risd,1systems",
+  "userid": "rrodrigu@risd.edu",
+}
+
+var payload = {
+  "identifier": identifier,
+  "payload": data,
+}
+
+var mockClient = {
+  put: function (first, second, third, fourth, jobExecuter) {
+    jobExecuter()
+  }
+}
+
+var jobCallback = function ( error ) {
+  if ( error ) console.log( error )
+  else console.log( arguments )
+  process.exit( error ? 1 : 0 )
+}
+
+
+var management = new Firebase( 'https://' + grunt.config.get( 'firebase' ) + '.firebaseio.com/management' )
+
+management.auth( grunt.config.get( 'firebaseSecret' ), function ( error ) {
+  if ( error ) return console.log( error )
+
+  var owner = 
+
+  management.child( 'sites/'+ data.sitename + '/owners' ).set(owners, function(err) {
+    if ( error ) return console.log( error )
+
+    create( payload, identifier, data, mockClient, jobCallback  )
+
+  } )
+
+} )

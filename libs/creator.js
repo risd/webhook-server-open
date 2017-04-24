@@ -50,49 +50,51 @@ module.exports.start = function (config, logger) {
     console.log('Waiting for commands'.red);
 
     // Wait for create commands from firebase
-    jobQueue.reserveJob('create', 'create', function(payload, identifier, data, client, callback) {
-      var userid = data.userid;
-      var site = data.sitename;
-
-      console.log('Processing Command For '.green + site.red);
-      self.root.child('management/sites/' + site).once('value', function(siteData) {
-        var siteValues = siteData.val();
-
-        // IF site already has a key, we alraedy created it, duplicate job
-        if(siteValues.key)
-        {
-          console.log('Site already has key');
-          callback();
-        }
-        // Else if the site owner is requesting, we need to make it
-        else if(_(siteValues.owners).has(escapeUserId(userid)))
-        {
-          self.root.child('management/sites/' + site + '/error/').set(false, function(err) {
-            // We setup the site, add the user as an owner (if not one) and finish up
-            setupSite(site, siteValues, siteData, siteData.ref(), userid, function(err) {
-              if(err) {
-                self.root.child('management/sites/' + site + '/error/').set(true, function(err) {
-                  console.log('Error Creating Site For '.green + site.red);
-                  callback();
-                });
-              } else {
-                self.root.child('management/users/' + escapeUserId(userid) + '/sites/owners/' + site).set(true, function(err) {
-                  console.log('Done Creating Site For '.green + site.red);
-                  callback();
-                });
-              }
-            });
-          });
-        } else {
-          // Someone is trying to do something they shouldn't
-          console.log('Site does not exist or no permissions');
-          callback();
-        }
-      }, function(err) {
-        callback();
-      });
-    });
+    jobQueue.reserveJob('create', 'create', createSite);
   });
+
+  function createSite (payload, identifier, data, client, callback) {
+    var userid = data.userid;
+    var site = data.sitename;
+
+    console.log('Processing Command For '.green + site.red);
+    self.root.child('management/sites/' + site).once('value', function(siteData) {
+      var siteValues = siteData.val();
+
+      // IF site already has a key, we alraedy created it, duplicate job
+      if(siteValues.key)
+      {
+        console.log('Site already has key');
+        callback();
+      }
+      // Else if the site owner is requesting, we need to make it
+      else if(_(siteValues.owners).has(escapeUserId(userid)))
+      {
+        self.root.child('management/sites/' + site + '/error/').set(false, function(err) {
+          // We setup the site, add the user as an owner (if not one) and finish up
+          setupSite(site, siteValues, siteData, siteData.ref(), userid, function(err) {
+            if(err) {
+              self.root.child('management/sites/' + site + '/error/').set(true, function(err) {
+                console.log('Error Creating Site For '.green + site.red);
+                callback();
+              });
+            } else {
+              self.root.child('management/users/' + escapeUserId(userid) + '/sites/owners/' + site).set(true, function(err) {
+                console.log('Done Creating Site For '.green + site.red);
+                callback();
+              });
+            }
+          });
+        });
+      } else {
+        // Someone is trying to do something they shouldn't
+        console.log('Site does not exist or no permissions');
+        callback();
+      }
+    }, function(err) {
+      callback();
+    });
+  }
 
 
   /*
@@ -155,6 +157,7 @@ module.exports.start = function (config, logger) {
         createBucket(),
         updateAcls(),
         updateIndex(),
+        ensureCname( config.get( 'cloudflare' ) ),
         generateKey(),
         sink(),
         function onEnd ( error ) {
@@ -164,23 +167,31 @@ module.exports.start = function (config, logger) {
       )
   }
 
+  return createSite;
 };
 
-module.exports.setupBucketWithCloudStorage = setupBucketWithCloudStorage;
 module.exports.setupBucket = setupBucket;
+module.exports.createCnameRecord = createCnameRecord;
 
-function setupBucketWithCloudStorage ( cloudStorage ) {
-  return function wrapSetupBucket ( siteBucket, callback ) {
-    return setupBucket( siteBucket, cloudStorage, callback )
-  }
-}
 
-function setupBucket ( siteBucket, cloudStorage, callback ) {
+/**
+ * @param  {object}   options
+ * @param  {string}   options.siteBucket
+ * @param  {object}   options.cloudStorage
+ * @param  {object}   options.cloudflare
+ * @param  {object}   options.cloudflare.client
+ * @param  {string}   options.cloudflare.client.key
+ * @param  {string}   options.cloudflare.client.email
+ * @param  {string}   options.cloudflare.zone_id
+ * @param  {Function} callback
+ * @return {Function}
+ */
+function setupBucket ( options, callback ) {
   var bucketToSetup = {
-    siteBucket:   siteBucket,
+    siteBucket:   options.siteBucket,
     bucketExists: false,
     createdBucket: false,
-    cloudStorage: cloudStorage,
+    cloudStorage: options.cloudStorage,
   }
   return miss.pipe(
     setupSiteWith([ bucketToSetup ]),
@@ -188,6 +199,7 @@ function setupBucket ( siteBucket, cloudStorage, callback ) {
     createBucket(),
     updateAcls(),
     updateIndex(),
+    ensureCname( options.cloudflare ),
     sink(),
     function ( error ) {
       if ( error ) return callback( error )
@@ -266,8 +278,7 @@ function updateAcls () {
     row.cloudStorage.buckets.updateAcls( row.siteBucket, function (err, body) {
       console.log( err )
       console.log( body )
-      if ( err ) next( err, null)
-      else next( null, row )
+      next( null, row )
     } )
 
   });
@@ -288,8 +299,132 @@ function updateIndex () {
   });
 }
 
+/**
+ * @param  {object}    options
+ * @param  {object}    options.client
+ * @param  {string}    options.client.key
+ * @param  {string}    options.client.email
+ * @param  {string}    options.zone_id
+ * @return {Function}  transform stream
+ */
+function ensureCname ( options ) {
+
+  var baseCreateCnameRecordOptions = Object.assign( options, {
+    content: 'c.storage.googleapis.com',
+  } )
+
+  var canCreateCname = function ( site ) {
+    return site.endsWith( 'risd.systems' )
+  }
+
+  return miss.through.obj( function ( row, enc, next ) {
+
+    if ( canCreateCname( row.siteBucket ) ) {
+      console.log( 'site-setup:ensure-cname' )
+
+      var createCnameRecordOptions = Object.assign( baseCreateCnameRecordOptions, { record: row.siteBucket } )
+      createCnameRecord( createCnameRecordOptions, function ( error, cname ) {
+        row.cname = cname;
+        next( null, row );
+      } )
+    } else {
+      console.log( 'site-setup:ensure-cname:skipping' )
+      next( null, row )
+    }
+
+  } )
+}
+
 function sink () {
   return miss.through.obj( function ( row, enc, next ) {
     next();
   } )
+}
+
+
+/**
+ * Create a CNAME record in CloudFlare for the given `row.siteBucket`
+ * 
+ * @param  {object} options
+ * @param  {object} options.client
+ * @param  {string} options.client.email
+ * @param  {string} options.client.key
+ * @param  {string} options.record
+ * @param  {string} options.content
+ * @param  {string} options.zone_id
+ * @param  {Function} onComplete ( Error|null, Boolean|CnameRecord )
+ */
+function createCnameRecord ( options, onComplete ) {
+  var Cloudflare = require('cloudflare');
+
+  var client = new Cloudflare( options.client )
+  var cnameRecord  = options.record
+  var cnameContent = options.content
+  var zone_id = options.zone_id
+
+  var recordCreated = false;
+  
+  var createRecordOptions = { type: 'CNAME', zone_id: zone_id, proxied: true }
+
+  function createRecord ( withRecord ) {
+
+    var dnsCnameRecord = Cloudflare.DNSRecord.create( Object.assign( createRecordOptions, {
+        name: cnameRecord,
+        content: cnameContent,
+      } ) );
+
+    client.addDNS( dnsCnameRecord )
+      .then( function ( cname ) {
+        return onComplete( null, cname )
+      } )
+      .catch( function ( error ) {
+        onComplete( error, recordCreated )
+      } )
+
+  }
+
+  return gatherCnames( zone_id, function ( error, cnames ) {
+    if ( error ) return onComplete( error, recordCreated )
+
+    if ( cnames.indexOf( cnameRecord ) === -1 ) return createRecord( onComplete )
+    else return onComplete( null, ( recordCreated = true ) )
+
+  } )
+
+  function gatherCnames ( zone_id, withCnames ) {
+
+    var gatherOptions = { type: 'CNAME' }
+    var cnameSources = [];
+
+    function pluckCnamesFromRecords ( records ) {
+      cnameSources = cnameSources.concat(
+        records.map( function( record ) { return record.name } ) )
+    }
+
+    function getPageOfCnames ( pageOptions, withPage ) {
+      if ( !pageOptions ) pageOptions = {};
+
+      client.browseDNS( zone_id, Object.assign( gatherOptions, pageOptions ) )
+        .then( function ( response ) {
+          pluckCnamesFromRecords( response.result )
+          withPage( null, { page: response.page, totalPages: response.totalPages, } )
+        } )
+        .catch( function ( error ) {
+          withPage( error )
+        } )
+
+    }
+
+    function paginate ( error, pagination ) {
+      if ( error ) return withCnames( error )
+
+      if ( pagination.page < pagination.totalPages ) return getPageOfCnames( { page: pagination.page++ }, paginate )
+
+      else return withCnames( null, cnameSources )
+    }
+
+    return getPageOfCnames( { page: 1 }, paginate )
+
+  }
+
 }
