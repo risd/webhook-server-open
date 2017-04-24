@@ -46,7 +46,6 @@ CLOUDFLARE_ZONE=
 
 The `GOOGLE_KEY_FILE` location can be defined by the path to the file produced by running `grunt extractKey=gcloud.json`, where `gcloud.json` is the Google Service Account JSON file associated with the project.
 
-
 With everything in place, `npm run dev` will start all the processes as defined in `Procfile.dev`:
 
 - memcached
