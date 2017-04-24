@@ -278,8 +278,7 @@ function updateAcls () {
     row.cloudStorage.buckets.updateAcls( row.siteBucket, function (err, body) {
       console.log( err )
       console.log( body )
-      if ( err ) next( err, null)
-      else next( null, row )
+      next( null, row )
     } )
 
   });
@@ -326,9 +325,6 @@ function ensureCname ( options ) {
       var createCnameRecordOptions = Object.assign( baseCreateCnameRecordOptions, { record: row.siteBucket } )
       createCnameRecord( createCnameRecordOptions, function ( error, cname ) {
         row.cname = cname;
-
-        console.log( 'site-setup:ensure-cname:done' )
-
         next( null, row );
       } )
     } else {

@@ -55,7 +55,7 @@ module.exports.start = function (config, logger) {
   var buildFolderRoot = '../build-folders';
   var setupBucketOptions = {
     cloudStorage: cloudStorage,
-    cloudflare: config.get( 'cloudflare' )
+    cloudflare: config.get( 'cloudflare' ),
   }
 
   /*
