@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+
+var grunt = require( 'grunt' );
+var Firebase = require( 'firebase' )
+var webhookTasks = require( '../Gruntfile.js' );
+
+webhookTasks( grunt );
+
+deletor( grunt.config )( 'cname-create' )
+
+
+function deletor ( config ) {
+  // delete firebase/management/site
+  // delete firebase/billing/site
+  // delete firebase/bucket/site
+  // delete cloudflare/dns/cname
+  // delete cloud-storage/bucket
+
+  var firebaseRoot = new Firebase( 'https://' + config.get( 'firebase' ) + '.firebaseio.com' )
+
+  firebaseRoot.auth( config.get( 'firebaseSecret' ), function ( error ) {
+    if ( error ) return console.log( error )
+
+  } )
+
+  function deleteSite ( sitename ) {
+
+  }
+
+  return deleteSite;
+}

@@ -51,7 +51,6 @@ var data = {
 
 var mockClient = {
   put: function (first, second, third, fourth, jobExecuter) {
-    console.log( 'uses mock beanstalk client' )
     jobExecuter()
   }
 }

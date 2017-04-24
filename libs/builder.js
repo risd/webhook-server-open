@@ -18,7 +18,7 @@ var domain = require('domain');
 var Deploys = require( 'webhook-deploy-configuration' );
 var miss = require( 'mississippi' );
 var path = require( 'path' )
-var SetupBucketWithCloudStorage = require('./creator.js').setupBucketWithCloudStorage;
+var SetupBucketWithOptions = require('./creator.js').setupBucketWithOptions;
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -53,7 +53,7 @@ module.exports.start = function (config, logger) {
   this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/buckets');
 
   var buildFolderRoot = '../build-folders';
-  var setupBucket = SetupBucketWithCloudStorage( cloudStorage );
+  var setupBucket = SetupBucketWithOptions( { cloudStorage: cloudStorage, cloudflare: config.get( 'cloudflare' ) } );
 
   /*
   *  Reports the status to firebase, used to display messages in the CMS
@@ -686,71 +686,6 @@ module.exports.start = function (config, logger) {
             } )
           }
 
-          // Build the site, strict will cause death if any error is thrown
-          // runInDir('grunt', buildFolder , ['build', '--strict=true'], function(err) {
-          //   if(err) {
-          //     // Dont upload failed builds, simply send error to CMS
-          //     reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
-          //     console.log('done with errors');
-          //     processSiteCallback( err );
-          //   } else {
-
-          //     var uploadDeploys = function usingConfiguration ( deploys, uploadDeploysCallback ) {
-          //       console.log( 'upload-deploys:start' )
-          //       console.log( deploys )
-
-          //       // assumes: siteValues &  buildFolder + '/.build'
-          //       var doneDeploying = function () {
-          //         reportStatus(siteName, 'Built and uploaded.', 0);
-          //         console.log( 'upload-deploys:done' )
-          //         uploadDeploysCallback();
-          //       }
-
-          //       var deployTasks = deploys
-          //         .filter( function isDeployForBranch ( deploy ) { return branch === deploy.branch } )
-          //         .map( function makeUploadTask ( environment ) {
-          //           return function uploadTask ( uploadTaskComplete ) {
-                      
-          //             var uploadDone = function () {
-          //               console.log( 'upload-deploys:done:' + environment.bucket )
-          //               uploadTaskComplete()
-          //             }
-
-          //             console.log( 'deploy task for ' + JSON.stringify( environment ) )
-
-          //             setupBucket( environment.bucket, function ( error, bucketSetupResults ) {
-          //               if ( error ) uploadDone( error )
-          //               else {
-          //                 console.log( 'bucketSetupResults' )
-          //                 console.log( bucketSetupResults )
-
-          //                 uploadToBucket( environment.bucket, staticBuiltFolder, uploadDone )
-          //               }
-          //             } )
-          //           }
-          //         } )
-
-          //       console.log( 'running deploys: ' + deployTasks.length )
-          //       if ( deployTasks.length === 0 ) return doneDeploying();
-
-          //       async.parallel( deployTasks, doneDeploying );
-
-          //     }
-
-          //     // If there was a delay, push it back into beanstalk, then upload to the bucket
-          //     if(buildDiff > 0 && !noDelay) {
-          //       var diff = data.build_time - now;
-
-          //       data['noDelay'] = true;
-
-          //       client.put(1, buildDiff, (60 * 3), JSON.stringify({ identifier: identifier, payload: data }), function() {
-          //         uploadDeploys( deploys, processSiteCallback )
-          //       });
-          //     } else {
-          //       uploadDeploys( deploys, processSiteCallback )
-          //     }
-          //   }
-          // });
         } else {
           console.log('Site does not exist or no permissions');
           processSiteCallback( null );

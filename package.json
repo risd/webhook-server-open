@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "start": "grunt startServer",
+    "test": "tape test/**/*.js",
     "command-delegator": "grunt commandDelegator",
     "invite-worker": "grunt inviteWorker",
     "create-worker": "grunt createWorker",
@@ -19,6 +20,7 @@
     "archiver": "~0.10.0-alpha",
     "async": "~0.2.9",
     "cheerio": "^0.22.0",
+    "cloudflare": "^1.1.1",
     "colors": "~0.6.2",
     "csv-stream": "~0.1.3",
     "dotenv": "^2.0.0",
@@ -56,6 +58,7 @@
     "wrench": "~1.5.8"
   },
   "devDependencies": {
-    "foreman": "^2.0.0"
+    "foreman": "^2.0.0",
+    "tape": "^4.6.3"
   }
 }
