@@ -577,9 +577,9 @@ module.exports.start = function (config, logger) {
                 // remove .html extension
                 if ( path.slice( -5 ) === ( '.html' ) ) path = path.slice( 0, -5 )
                 // remove trailing /?$
-                if ( path.slice( '-2' ) === ( '?$' ) ) path = path.slice( -2 )
+                if ( path.slice( '-2' ) === ( '?$' ) ) path = path.slice( 0, -2 )
                 // remove trailing /
-                if ( path.slice( '-1' ) === ( '/' ) ) path = path.slice( -1 )
+                if ( path.slice( '-1' ) === ( '/' ) ) path = path.slice( 0, -1 )
                 
                 return path;
               }
