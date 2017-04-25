@@ -43,9 +43,10 @@ PrefixData( function ( error, results ) {
  
 /**
  * Copy files
- * Does not paginate webhook-uploads contents.
- * If any one bucket has more than 1000 items its webhook-uploads
- * these will not be considered.
+ * List all buckets, then their webhook-uploads
+ * List all files in the webhook-uploads of the uploadsBucket
+ * Every file that exists in a site bucket & not in the uploadsBucket
+ * gets copied to the uploadsBucket.
  * 
  * @param {Function} copyFilesDone Callback invoked with results of the copy
  */
@@ -60,6 +61,7 @@ function CopyFiles ( copyFilesDone ) {
     // build up copyTaskArguments
 
     // copyTaskArguments = { sourceBucket }
+    // do not include the uploads bucket as a source to copy from.
     var copyTaskArguments = buckets.items
       .filter( function ( bucket ) { return bucket.name !== copyToDestination.destinationBucket } )
       .map( function ( bucket ) { return { sourceBucket: bucket.name } } )
@@ -180,8 +182,6 @@ function CopyFiles ( copyFilesDone ) {
         allDestinationFiles = allDestinationFiles.concat( destinationFiles.items )
 
         if ( destinationFiles.nextPageToken ) return getDestinationFiles( { pageToken: destinationFiles.nextPageToken } )
-
-        console.log( [ copyToDestination.destinationBucket, allDestinationFiles.length ].join( ':' ) )
 
         // filter copy tasks based on files in the destination bucket
         var filteredCopyTasks = copyTaskArguments.filter( argumentsForFilesThatExistInDestination )
