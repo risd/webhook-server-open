@@ -258,10 +258,18 @@ module.exports.objects = {
   },
 
   // list webhook-uploads
-  listUploads: function(bucket, callback) {
+  listUploads: function(bucket, options, callback) {
+    if ( typeof options === 'function' ) callback = options;
+    if ( !options ) options = {};
+    
+    var qs = Object.assign( {
+      fields: 'kind,items(name,md5Hash),nextPageToken',
+      prefix: 'webhook-uploads/',
+    }, options )
+    
     jsonRequest({
       url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o',
-      qs: { fields: 'kind,items(name,md5Hash)', prefix: 'webhook-uploads/' }
+      qs: qs
     }, callback);
   },
 
@@ -277,6 +285,14 @@ module.exports.objects = {
   copy: function ( sourceBucket, sourceFile, destinationBucket, destinationFile, callback ) {
     jsonRequest({
       url: 'https://www.googleapis.com/storage/v1/b/' + sourceBucket + '/o/' + sourceFile + '/copyTo/b/' + destinationBucket + '/o/' + destinationFile,
+      method: 'POST',
+    }, callback)
+  },
+
+  // Rewrite an object
+  rewrite: function ( sourceBucket, sourceFile, destinationBucket, destinationFile, callback ) {
+    jsonRequest({
+      url: 'https://www.googleapis.com/storage/v1/b/' + sourceBucket + '/o/' + sourceFile + '/rewriteTo/b/' + destinationBucket + '/o/' + destinationFile,
       method: 'POST',
     }, callback)
   },
