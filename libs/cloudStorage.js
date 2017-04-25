@@ -144,7 +144,7 @@ module.exports.setKeyFile = function(file) {
 // This object contains all methods that have to do with manipulating
 // buckets
 var cors = [{
-  origin: [ "*.risd.systems" ],
+  origin: [ "*.risd.systems", "cdn.risd.systems", "risd.edu", "*.risd.edu", "localhost" ],
   responseHeader: [ "Content-Type" ],
   method: [ "GET", "HEAD", "OPTIONS" ],
   maxAgeSeconds: 3600
