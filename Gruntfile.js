@@ -58,6 +58,9 @@ module.exports = function(grunt) {
       },
       zone_id: process.env.CLOUDFLARE_ZONE,
     },
+    builder: {
+      forceWrite: process.env.BUILDER_FORCE_WRITE || false,
+    },
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {

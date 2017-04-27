@@ -44,7 +44,6 @@ module.exports.start = function (config, logger) {
   cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
 
   // This is a beanstalk based worker, so it uses JobQueue
-  console.log( 'jobqueue' )
   var jobQueue = JobQueue.init(config);
 
   var self = this;
@@ -186,11 +185,13 @@ module.exports.start = function (config, logger) {
         if(!fs.lstatSync(source).isDirectory())
         {
           var ignore = false;
-          // Check MD5 hash here, if its the same then dont even bother uploading.
-          if(md5List[file]) {
-            var newHash = crypto.createHash('md5').update(fs.readFileSync(source)).digest('base64');
-            if(newHash === md5List[file]) {
-              ignore = true; // File is the same, skip it
+          if ( config.get( 'builder' ).forceWrite === false ) {
+            // Check MD5 hash here, if its the same then dont even bother uploading.
+            if(md5List[file]) {
+              var newHash = crypto.createHash('md5').update(fs.readFileSync(source)).digest('base64');
+              if(newHash === md5List[file]) {
+                ignore = true; // File is the same, skip it
+              }
             }
           }
 
@@ -207,6 +208,7 @@ module.exports.start = function (config, logger) {
                 if (err) {
                   console.log('upload:func:', file);
                   console.log(err);
+                  body = { error: err }
                 }
                 step( null, body );
               });
@@ -216,11 +218,13 @@ module.exports.start = function (config, logger) {
             // upload a copy to the / file (/page/index.html goes to /page/) to deal
             // with cloud storage redirect b.s.
             if(file.indexOf('static/') !== 0 && file.indexOf('/index.html') !== -1) {
-              funcs.push( function(step) {
-                cloudStorage.objects.uploadCompressed(siteBucket, source, file.replace('/index.html', ''), cache, 'text/html', function(err, body) {
+              funcs.push( function( step ) {
+                var template = redirectTemplateForDestination( '/' + file.replace( 'index.html', '' ) )
+                cloudStorage.objects.uploadCompressed(siteBucket, template, file.replace('/index.html', ''), cache, 'text/html', function(err, body) {
                   if (err) {
                     console.log('upload:func-dircopy:', file);
                     console.log(err);
+                    body = { error: err }
                   }
                   step( null, body );
                 });
@@ -602,21 +606,6 @@ module.exports.start = function (config, logger) {
                   }
                 }
               }
-
-              function redirectTemplateForDestination( destination ) {
-                return [
-                  '<html>',
-                    '<head>',
-                      '<meta charset="utf-8" />',
-                    '</head>',
-                    '<body>',
-                      '<script>',
-                        'window.location="', destination , '";',
-                      '</script>',
-                    '</body>',
-                  '</html>',
-                ].join( '' )
-              }
               
             } )
           }
@@ -785,4 +774,19 @@ function runInDir(command, cwd, args, callback) {
     }
 
   });
+}
+
+function redirectTemplateForDestination ( destination ) {
+  return [
+    '<html>',
+      '<head>',
+        '<meta charset="utf-8" />',
+      '</head>',
+      '<body>',
+        '<script>',
+          'window.location="', destination , '";',
+        '</script>',
+      '</body>',
+    '</html>',
+  ].join( '' )
 }

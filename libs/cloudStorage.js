@@ -363,7 +363,7 @@ module.exports.objects = {
   * Upload file to bucket with gz compression
   *
   * @param bucket           Bucket to upload to
-  * @param local            Local file name
+  * @param local            Local file name, or contents of file
   * @param remote           Remote file name
   * @param cacheControl     Cache control header to put on object (optional)
   * @param overrideMimeType Mime type to use instead of auto detecting (optional)
@@ -382,7 +382,11 @@ module.exports.objects = {
       overrideMimeType = null;
     }
 
-    var fileContent = fs.readFileSync(local);
+    try {
+      var fileContent = fs.readFileSync(local);
+    } catch ( error ) {
+      fileContent = local;
+    }
 
     // subpublish
     var subpublish = 'alumni';
