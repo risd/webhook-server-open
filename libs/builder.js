@@ -156,6 +156,7 @@ module.exports.start = function (config, logger) {
     var md5List = {};
 
     var siteBucket = unescapeSite(siteName);
+    var uploadDeploysResults = { siteBucket: siteBucket, files: [] };
 
     // We list the objects in cloud storage to avoid uploading the same thing twice
     cloudStorage.objects.list(siteBucket, function(err, body) {
@@ -209,14 +210,16 @@ module.exports.start = function (config, logger) {
                   console.log('upload:func:', file);
                   console.log(err);
                   body = { error: err }
+                } else {
+                  uploadDeploysResults.files.push( file )
                 }
                 step( null, body );
               });
             });
 
             // For everything thats not a static file and is an index.html file
-            // upload a copy to the / file (/page/index.html goes to /page/) to deal
-            // with cloud storage redirect b.s.
+            // upload a redirect template that redirects to the trailing slash version
+            // of the page to deal with cloud storage redirect b.s.
             if(file.indexOf('static/') !== 0 && file.indexOf('/index.html') !== -1) {
               funcs.push( function( step ) {
                 var template = redirectTemplateForDestination( '/' + file.replace( 'index.html', '' ) )
@@ -255,8 +258,6 @@ module.exports.start = function (config, logger) {
 
       });
 
-
-
       // subpublish
       // alumni.risd.systems
       console.log( 'pre-subpublish:upload-funcs:', funcs.length )
@@ -276,7 +277,21 @@ module.exports.start = function (config, logger) {
       }
 
       console.log( 'post-subpublish:upload-funcs:', funcs.length )
+      // subpublish end
 
+      // Run the uploads in parallel
+      console.log( 'async funcs' )
+      async.parallelLimit(funcs, Math.min(funcs.length, 100), function(asyncError, asyncResults) {
+        console.log('upload:complete:');
+        console.log('upload:complete:error:', asyncError);
+        cloudStorage.buckets.updateIndex(siteBucket, 'index.html', '404.html', function(err, body) {
+          console.log('updated');
+          callback( null, uploadDeploysResults );
+        });
+        
+      });
+
+      // subpublish-functions:start
       function subpublishRequestsFrom ( filesToPublish ) {
         return filesToPublish
           .filter( isSubpublish )
@@ -324,8 +339,6 @@ module.exports.start = function (config, logger) {
           .map( fileToDeleteRequestOptions )
           .map( toDeleteRequests );
       }
-
-
 
       function isSubpublish ( file ) {
         return ( file === subpublish ) ||
@@ -396,21 +409,7 @@ module.exports.start = function (config, logger) {
         // return [ subpublish, 'risd.systems' ].join( '.' )
         return 'alumni.risd.edu'
       }
-
-      // subpublish -- end
-
-
-      // Run the uploads in parallel
-      console.log( 'async funcs' )
-      async.parallelLimit(funcs, Math.min(funcs.length, 100), function(asyncError, asyncResults) {
-        console.log('upload:complete:');
-        console.log('upload:complete:error:', asyncError);
-        cloudStorage.buckets.updateIndex(siteBucket, 'index.html', '404.html', function(err, body) {
-          console.log('updated');
-          callback( null );
-        });
-        
-      });
+      // subpublish-functions:end
 
     });
 
@@ -483,28 +482,51 @@ module.exports.start = function (config, logger) {
             staticBuiltFolder: buildFolder + '/.build',
             deploys: deploys,
             branch: branch,
+            // wwwOrNonRedirects args, comes from upload Deploys
+            deployedFiles: [],
           }
 
           miss.pipe(
             usingArguments( pipelineArgs ),
+            installDependencies(),
             buildSite(),
             addStaticRedirects(),
             queueDelayedJob(),
             uploadDeploys(),
+            wwwOrNonRedirects(),
             sink(),
-            function onComplete ( error ) {
-              if ( error ) {
-                if ( typeof error.reportStatus ) {
-                  reportStatus( error.reportStatus.site, error.reportStatus.message, error.reportStatus.status )
-                  console.log( error.reportStatus.message );
-                }
-              }
+            onPipelineComplete)
 
-              processSiteCallback( error )
-            })
-          
+          function onPipelineComplete ( error ) {
+            if ( error ) {
+              if ( typeof error.reportStatus ) {
+                reportStatus( error.reportStatus.site, error.reportStatus.message, error.reportStatus.status )
+                console.log( error.reportStatus.message );
+              }
+            }
+
+            processSiteCallback( error )
+          }
+
           function usingArguments ( args ) {
             return miss.from.obj( [ args, null ] )
+          }
+
+          function installDependencies () {
+            return miss.through.obj( function ( args, enc, next ) {
+              runInDir( 'npm', args.buildFolder, [ 'install' ], function ( error ) {
+                if ( error ) {
+                  console.log( error );
+                  error.reportStatus = {
+                    site: args.siteName,
+                    message: 'Failed to build, errors encountered in build process',
+                    status: 1,
+                  }
+                  return next( error )
+                }
+                else next( null, args )
+              } )
+            } )
           }
 
           function buildSite () {
@@ -630,7 +652,7 @@ module.exports.start = function (config, logger) {
               console.log( 'upload-deploys:start' )
               console.log( args.deploys )
 
-              var doneDeploying = function ( error ) {
+              var doneDeploying = function ( error, deployedFiles ) {
                 // reportStatus is called per bucket, so no need
                 // to call it out for the total task.
                 if ( error ) {
@@ -638,6 +660,7 @@ module.exports.start = function (config, logger) {
                   console.log( error )
                 }
                 else console.log( 'upload-deploys:done' )
+                args.deployedFiles = deployedFiles;
                 next( null, args );
               }
 
@@ -646,13 +669,13 @@ module.exports.start = function (config, logger) {
                 .map( function makeUploadTask ( environment ) {
                   return function uploadTask ( uploadTaskComplete ) {
                     
-                    var uploadDone = function ( error ) {
+                    var uploadDone = function ( error, uploadDeploysResults ) {
                       if ( error ) reportStatus(args.siteName, 'Built but failed to uploaded to ' + environment.bucket + '.', 1);  
                       else reportStatus(args.siteName, 'Built and uploaded to ' + environment.bucket + '.', 0);
 
                       console.log( 'upload-deploys:done:' + environment.bucket )
                       
-                      uploadTaskComplete()
+                      uploadTaskComplete( null, uploadDeploysResults )
                     }
 
                     console.log( 'deploy task for ' + JSON.stringify( environment ) )
@@ -670,6 +693,95 @@ module.exports.start = function (config, logger) {
               async.parallel( deployTasks, doneDeploying );
 
             } )
+          }
+
+          function wwwOrNonRedirects () {
+            return miss.through.obj( function ( args, enc, next ) {
+
+              console.log( 'www-or-non-redirects:start' )
+
+              var ensureRedirectBucketTasks = args.deployedFiles.map( setupRedirectBucketTasks )
+              var publishRedirectTasks = args.deployedFiles
+                .map( createPublishRedirectBucketTasks )
+                .reduce( function flattenTasks ( previous, current ) { return previous.concat( current ) }, [] )
+
+              async.parallelLimit( ensureRedirectBucketTasks, 10, onBucketSetup )
+
+              function onBucketSetup ( error ) {
+                async.parallelLimit( publishRedirectTasks, 100, onRedirectsPublished )
+              }
+
+              function onRedirectsPublished ( error ) {
+                console.log( 'www-or-non-redirects:end' )
+                next( null, args )
+              }
+
+            } )
+
+            function setupRedirectBucketTasks ( deployedFiles ) {
+              var oppositeBucket = oppositeBucketFrom( deployedFiles.siteBucket )
+              return function setupRedirectBucketTask ( setupStep ) {
+                setupBucket( Object.assign( setupBucketOptions, { siteBucket: oppositeBucket, ensureCname: false } ), function ( error, bucketSetupResults ) {
+                  if ( error ) {
+                    console.log( 'redirect-bucket-setup:', oppositeBucket );
+                    console.log( error );
+                    bucketSetupResults = { error: error };
+                  }
+                  return setupStep( null, bucketSetupResults )
+                } )
+              }
+            }
+
+            function createPublishRedirectBucketTasks ( deployedFiles ) {
+              var oppositeBucket = oppositeBucketFrom( deployedFiles.siteBucket )
+              var redirectBucketArgs = {
+                publishToBucket: oppositeBucket,
+                redirectToBucket: deployedFiles.siteBucket,
+              }
+
+              return deployedFiles.files.filter( isHtmlFile ).map( redirectBucketTasksForArgs( redirectBucketArgs ) )
+            }
+
+            function redirectBucketTasksForArgs ( args ) {
+              var publishToBucket = args.publishToBucket;
+              var redirectToBucket = args.redirectToBucket;
+              var cache = 'no-cache';
+              return function redirectBucketTaskForFile ( file ) {
+                var template = redirectTemplateForDestination( redirectUrlForFile( file ) )
+                return function redirectBucketTask ( redirectStep ) {
+                  cloudStorage.objects.uploadCompressed( publishToBucket, template, file, cache, 'text/html', function ( error, body ) {
+                    if ( error ) {
+                      console.log( 'redirect-bucket-upload:', file );
+                      console.log( error );
+                      body = { error: error }
+                    }
+                    redirectStep( null, body );
+                  } )
+                }
+              }
+
+              function redirectUrlForFile( file ) {
+                return [ redirectToBucket, urlForFile( file ) ].join( '/' )
+              }
+
+              function urlForFile ( file ) {
+                return file.replace( 'index.html', '' )
+              }
+            }
+
+            // slice off or add on a www.
+            function oppositeBucketFrom ( bucket ) {
+              var www = 'www.'
+              return bucket.indexOf( www ) === 0
+                ? bucket.slice( www.length )
+                : www + bucket
+            }
+
+            // isHtmlFile: true if file is not in static directory, and is index.html
+            function isHtmlFile ( file ) {
+              return file.indexOf('static/') !== 0 && file.indexOf('/index.html') !== -1
+            }
+
           }
 
           function sink () {
