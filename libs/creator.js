@@ -177,6 +177,7 @@ module.exports.createCnameRecord = createCnameRecord;
 /**
  * @param  {object}   options
  * @param  {string}   options.siteBucket
+ * @param  {boolean}  options.ensureCname
  * @param  {object}   options.cloudStorage
  * @param  {object}   options.cloudflare
  * @param  {object}   options.cloudflare.client
@@ -189,6 +190,7 @@ module.exports.createCnameRecord = createCnameRecord;
 function setupBucket ( options, callback ) {
   var bucketToSetup = {
     siteBucket:   options.siteBucket,
+    ensureCname:  options.ensureCname || true,
     bucketExists: false,
     createdBucket: false,
     cloudStorage: options.cloudStorage,
@@ -319,12 +321,13 @@ function ensureCname ( options ) {
 
   return miss.through.obj( function ( row, enc, next ) {
 
-    if ( canCreateCname( row.siteBucket ) ) {
+    if ( canCreateCname( row.siteBucket ) && row.ensureCname ) {
       console.log( 'site-setup:ensure-cname' )
 
       var createCnameRecordOptions = Object.assign( baseCreateCnameRecordOptions, { record: row.siteBucket } )
       createCnameRecord( createCnameRecordOptions, function ( error, cname ) {
         row.cname = cname;
+        console.log( 'site-setup:ensure-cname:done' )
         next( null, row );
       } )
     } else {
@@ -358,7 +361,7 @@ function createCnameRecord ( options, onComplete ) {
   var Cloudflare = require('cloudflare');
 
   var client = new Cloudflare( options.client )
-  var cnameRecord  = options.record
+  var cnameRecord  = stripWww( options.record )
   var cnameContent = options.content
   var zone_id = options.zone_id
 
@@ -425,6 +428,11 @@ function createCnameRecord ( options, onComplete ) {
 
     return getPageOfCnames( { page: 1 }, paginate )
 
+  }
+
+  function stripWww ( record ) {
+    var www = 'www.'
+    return record.indexOf( www ) === 0 ? record.slice( www.length ) : record;
   }
 
 }
