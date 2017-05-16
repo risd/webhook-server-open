@@ -633,7 +633,6 @@ module.exports.start = function (config, logger) {
           }
 
           function queueDelayedJob () {
-            // not sure this works as intended
             return miss.through.obj( function ( args, enc, next ) {
               if ( args.buildDiff > 0 && !args.noDelay ) {
                 // push job back into beanstalk, then upload
