@@ -468,19 +468,22 @@ module.exports.start = function (config, logger) {
           var buildtime = data.build_time ? Date.parse(data.build_time) : now;
           var buildDiff = Math.floor((buildtime - now)/1000);
 
+          var deploysToConsider = deploys.filter( function isDeployForBranch ( deploy ) { return branch === deploy.branch } )
+
           var pipelineArgs = {
             siteName: siteName,
             siteKey: siteValues.key,
-            // buildSite args
-            buildFolder: buildFolder,
             // queueDelayedJob args
             buildJobIdentifier: identifier,
             buildJobData: data,
             buildDiff: buildDiff,
             noDelay: noDelay,
+            // make deploy buckets
+            deploys: deploysToConsider,
+            // buildSite args
+            buildFolder: buildFolder,
             // uploadDeploys args
             staticBuiltFolder: buildFolder + '/.build',
-            deploys: deploys,
             branch: branch,
             // wwwOrNonRedirects args, comes from upload Deploys
             deployedFiles: [],
@@ -488,15 +491,18 @@ module.exports.start = function (config, logger) {
 
           miss.pipe(
             usingArguments( pipelineArgs ),
+            queueDelayedJob()
             installDependencies(),
-            buildSite(),
+            makeDeployBuckets(),
+            buildUploadSite(),
             addStaticRedirects(),
-            queueDelayedJob(),
             uploadDeploys(),
             wwwOrNonRedirects(),
             sink(),
             onPipelineComplete)
 
+          // Called at the end of processing the stream above. Or, if the stream
+          // emits an error, this is called and the stream is closed.
           function onPipelineComplete ( error ) {
             if ( error ) {
               if ( typeof error.reportStatus ) {
@@ -508,10 +514,37 @@ module.exports.start = function (config, logger) {
             processSiteCallback( error )
           }
 
-          function usingArguments ( args ) {
-            return miss.from.obj( [ args, null ] )
-          }
+          // Read stream that passes in initialze arguments
+          function usingArguments ( args ) { return miss.from.obj( [ args, null ] ) }
 
+          /**
+           * Setup. Takes an array of tasks to complete before running the site build.
+           * @param  {object} streams Array of through streams that operate on the same object being
+           *                          written to this stream.
+           * @return {object} stream  Transform stream that handles the work.
+           */
+          // function setup ( streams ) {
+          //   return miss.through.obj( function ( args, enc, next ) {
+              
+          //     // parallel
+          //     miss.pipe( usingArguments( args ), miss.parallel( 2, { ordered: false }, streams ), sink(), function onComplete ( error ) {
+          //       if ( error ) return next( error )
+
+          //       next( null, args )
+          //     } )
+          //   } )
+
+          // }
+
+          /**
+           * installDependencies. A transform stream that expects an object with:
+           * - buildFolder
+           * - siteName
+           * 
+           * Using these, it works `npm install` within the `buildFolder`
+           * 
+           * @return {object} stream Transform stream that handles the work.
+           */
           function installDependencies () {
             return miss.through.obj( function ( args, enc, next ) {
               runInDir( 'npm', args.buildFolder, [ 'install' ], function ( error ) {
@@ -529,20 +562,281 @@ module.exports.start = function (config, logger) {
             } )
           }
 
-          function buildSite () {
+          function makeDeployBuckets () {
             return miss.through.obj( function ( args, enc, next ) {
-              runInDir( 'grunt', args.buildFolder, [ 'build', '--strict=true' ], function ( error ) {
-                if ( error ) {
-                  error.reportStatus = {
-                    site: args.siteName,
-                    message: 'Failed to build, errors encountered in build process',
-                    status: 1,
-                  }
-                  return next( error )
-                }
-                else next( null, args )
+
+              var setupBucketTasks = args.deploys.map( makeDeployBucketTask )
+              async.parallel( setupBucketTasks, function ( error ) {
+                if ( error ) return next( error )
+                next( null, args)
               } )
+              
             } )
+
+            function makeDeployBucketTask ( deploy ) {
+              return function makeBucketTask ( makeBucketTaskComplete ) {
+                setupBucket( Object.assign( setupBucketOptions, { siteBucket: deploy.bucket } ), function ( error, bucketSetupResults ) {
+                  if ( error ) return makeBucketTaskComplete( error )
+                  makeBucketTaskComplete()
+                } )
+              }
+            }
+          }
+
+          /**
+           * buildUploadSite is a transform stream that expects an object `args` with
+           * keys { buildFolder }.
+           *
+           * Using the build folder, a build-order is determined, and then executed.
+           * As files are written by the build processes, they are passed into a
+           * sub-stream that will compare their MD5 hash to the file currently in
+           * the bucket at that location. If it is different, the built file is uploaded.
+           * 
+           * @return {object} stream Transform stream that handles the work.
+           */
+          function buildUploadSite () {
+            return miss.through.obj( function ( args, enc, next ) {
+
+              var cachedDataPath = path.join( args.buildFolder, '.build', 'data.json' )
+              var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
+              
+              miss.pipe(
+                usingArguments( { buildFolder: args.buildFolder } ),
+                cacheData( cachedDataPath ),  // adds { cachedData }
+                getBuildOrder(),              // adds { buildOrder }
+                feedBuilds(),                 // pushes { buildFolder, command, flags }
+                runBuilds(),                  // pushes { builtFile }
+                uploadIfDifferent( buckets )  // adds { uploaded }
+                function onComplete ( error ) {
+                  if ( error ) return next( error )
+                } )
+
+            } )
+
+            function runBuilds () {
+              return miss.through.obj( function ( args, enc, next ) {
+
+                runInDir( 'grunt', args.buildFolder, [ 'build', '--strict=true' ], function ( error ) {
+                  // errors should report at a more granular level than the current CMS index message board
+                  next( null, args )
+                } )
+              } )
+            }
+
+            // Transform stream expecting `args` object with shape.
+            // { buildFolder : String, buildOrder: [buildFiles], cachedData : String }
+            // for each build order item, push { buildFolder, command, flags }
+            function feedBuilds () {
+              return miss.through.obj( function ( args, enc, next ) {
+                
+                var buildFlagsForFile = buildFlags( args.cachedData )
+
+                args.buildOrder.map( makeBuildCommandArguments ).forEach( this.push )
+
+                next()
+
+              } )
+
+              function makeBuildCommandArguments ( buildFile ) {
+                return {
+                  buildFolder: args.buildFolder,
+                  command: buildCommandForFile ( buildFile ),
+                  flags: buildFlagsForFile( buildFile ),
+                }
+              }
+
+              function buildCommandForFile ( file ) {
+                return buildFile.indexOf( 'pages/' ) === 0 ? 'build-page' : 'build-template'
+              }
+
+              function buildFlags ( cachedData ) {
+                return function buildFlagsForFile ( file ) {
+                  return [ '--inFile=' + file, '--data=' + cachedData, '--emitter' ]
+                }
+              }
+            }
+
+            // Transform stream expecting `args` object with shape.
+            // { buildFolder: String }
+            // adds { cacheData: String } and pushes.
+            function cacheData ( cacheFilePath ) {
+              return miss.through.obj( function ( args, enc, next ) {
+                runInDir( 'grunt', args.buildFolder, [ 'download-data', '--toFile=' + cacheFilePath ], function ( error ) {
+                  if ( error ) return next( error )
+                  args.cachedData = cacheFilePath;
+                  next( null, args )
+                } )
+              } )
+            }
+
+            /**
+             * mapEventsToStreams accepts an eventToStreamMap, which defines events
+             * as keys in the object, whose values are the stream that should process
+             * the value of the event.
+             * 
+             * @param  {object} eventToStreamMap  The mapping from events to streams to handle event values.
+             * @return {object} stream            The stream that will handle the worker.
+             */
+            function mapEventsToStreams ( eventToStreamMap ) {
+              return miss.through.obj( function ( args, enc, next ) {
+
+              } )
+            }
+
+            /**
+             * uploadIfDifferent is a transform stream that expects bbjects with:
+             * 
+             * - bucket
+             * - file
+             *
+             * With this, the stream will
+             * - Get the file within the bucket for its metadata.
+             * - Create an MD5 hash using the file on the current file system
+             * - Compare its MD5 hash against the file coming through the stream
+             * - If they are different, upload the new file.
+             * 
+             * @return {object} stream  Transforms stream that handles the work.
+             */
+            function uploadIfDifferent () {
+              return miss.through.obj( function ( ) {
+
+              } )
+            }
+
+            /**
+             * getBuildOrder expects an object with key { buildFolder }, a string
+             * for the path in which to run the `build-order` command.
+             * The build order is pulled, and compared against the sorted ordrer.
+             * The final sorted ordered is added to the incoming 
+             * adds a key { buildOrder }
+             * 
+             * @return {object} stream  Transform stream that handles the work.
+             */
+            function getBuildOrder () {
+              var keyFromSubStreamToMergeAsBuildOrder = 'sortedBuildOrder';
+              return miss.through.obj( function ( args, enc, next ) {
+                  // writeBuildOrder()
+                  miss.pipe(
+                    usingArguments( { buildFolder: args.buildFolder } ),
+                    writeBuildOrder(), // adds ( buildOrder : String, defaultBuildOrder : String )
+                    sortBuildOrder( keyFromSubStreamToMergeAsBuildOrder ),  // adds ( sortedBuildOrder : [String] )
+                    sink( mergeStreamArgs ),
+                    function onComplete ( error ) {
+                      if ( error ) return next( error )
+                    } )
+
+                  function mergeStreamArgs ( streamArgs ) {
+                    next( null, Object.assign( args, { buildOrder: streamArgs[ keyFromSubStreamToMergeAsBuildOrder ] } ) )
+                  }
+              } )
+
+              /**
+               * writeBuildOrder is a transform stream that runs the `build-order`
+               * command in the `buildFolder`
+               * The stream expects an object `args` with a file path to run the command
+               * at the `buildFolder` key  & writes the keys `buildOrder` & `defaultBuildOrder`
+               * file path strings to the same `args` object before pushing it into the stream.
+               * 
+               * @return {object} stream  Transforms stream that handles the work.
+               */
+              function writeBuildOrder () {
+                return miss.through.obj( function ( args, enc, next ) {
+                  var filePathInBuildOrder = function ( fileName ) {
+                    return path.join( args.buildFolder, '.build-order', fileName )
+                  }
+                  runInDir( 'grunt', args.buildFolder, [ 'build-order' ], function ( error ) {
+                    if ( error ) return next( error )
+                    args.buildOrder = filePathInBuildOrder( 'ordered' )
+                    args.defaultBuildOrder = filePathInBuildOrder( 'default' )
+                    next( null, args )
+                  } )
+                } )
+              }
+
+              /**
+               * sortBuildOrder is a transform stream that expects an object
+               * `args` with keys { buildOrder, defaultBuildOrder }, strings to files
+               * that will contain file listings.
+               * `defaultBuildOrder` includes all the files to build. `buildOrder` is
+               * a partial list of files to prioritize.
+               * Using the two files, find the differences between them, and concatinate
+               * the `defaultBuildOrder` on the `buildOrder`.
+               * The sorted build order will be saved as an array at `sortedBuildOrder`
+               * 
+               * @return {object} stream  Transform stream that handles the work.
+               */
+              function sortBuildOrder ( saveToKey ) {
+                var filesForBuildOrder = [ 'buildOrder', 'defaultBuildOrder' ];
+                var unionKeysFromFiles = filesForBuildOrder.map( function ( file ) { return file + 'Array' } )
+                return miss.through.obj( function ( args, enc, next ) {
+                  miss.pipe(
+                    usingArguments( { buildOrder: args.buildOrder, defaultBuildOrder: args.defaultBuildOrder } ),
+                    filesToArrays(  filesForBuildOrder ),
+                    unionArrays(    unionKeysFromFiles, saveToKey ),
+                    sink( function ( streamArgs ) {
+                      next( null, streamArgs )
+                    } ),
+                    function onComplete ( error ) { if ( error ) next( error ) } )
+                } )
+
+                // Read the files at `fileKeys` in `args` and convert them to an array of
+                // files to build. Add new keys suffixed with `Array` that contain the array values
+                function filesToArrays( fileKeys ) {
+
+                  var linesToArray = function ( lines ) {
+                    if ( typeof lines !== 'string' ) return [];
+                    return lines.split( '\n' ).filter( function( line ) { return line.length > 0 } )
+                  }
+
+                  return miss.through.obj( function ( args, enc, next ) {
+
+                    var readTasks = fileKeys.map( createReadTaskFrom( args ) ).reduce( arrayToObject, {} )
+
+                    async.parallel( readTasks, function ( error, fileContents ) {
+
+                      fileKeys.forEach( function ( file ) {
+                        var arrayKey = file + 'Array';
+                        var arrayValue = linesToArray( fileContents[ file ] )
+                        args[ arrayKey ] = arrayValue;
+                      } )
+
+                      next( null, args );
+
+                    } )
+                  } )
+
+                  function createReadTaskFrom ( args ) {
+                    return function createReadTask( file ) {
+                      return {
+                        key: file,
+                        value: function readTask ( readTaskComplete ) {
+                          fs.readFile( args[ file ], function ( error, content ) {
+                            if ( error ) return readTaskComplete( null, '' )
+                            return readTaskComplete( null, content.toString() )
+                          } )
+                        }
+                      }
+                    }
+                  }
+
+                  function arrayToObject ( previous, current ) {
+                    previous[ current.key ] = current.value;
+                    return previous;
+                  }
+                }
+
+                // `mergeKeys` are the keys in the incoming object, `args, to merge into a
+                // single array. Save the merged array at `mergedKey` in `args`.
+                function unionArrays ( unionKeys, unionedKey ) {
+                  return miss.through.obj( function ( args, enc, next ) {
+                    var arraysToUnion = unionKeys.map( function ( unionKey ) { return args[ unionKey ] } );
+                    args[ unionedKey ] = _.union.apply( null, arraysToUnion )
+                    next( null, args )
+                  } )
+                }
+              }
+            }
+
           }
 
           function addStaticRedirects () {
@@ -583,7 +877,7 @@ module.exports.start = function (config, logger) {
               function createRedirectTask ( redirect ) {
                 var source = sourceFromPattern( redirect.pattern )
                 var redirectFiles = [
-                  [ args.staticBuiltFolder, source, 'index.html' ].join( '/' ),
+                  path.join( args.staticBuiltFolder, source, 'index.html' ),
                 ]
 
                 var writeRedirectTasks = redirectFiles.map( createWriteRedirectTask( redirect.destination ) )
@@ -679,10 +973,8 @@ module.exports.start = function (config, logger) {
 
                     console.log( 'deploy task for ' + JSON.stringify( environment ) )
 
-                    setupBucket( Object.assign( setupBucketOptions, { siteBucket: environment.bucket } ), function ( error, bucketSetupResults ) {
-                      if ( error ) return uploadDone( error )
-                      uploadToBucket( environment.bucket, args.staticBuiltFolder, uploadDone )
-                    } )
+                    
+                    uploadToBucket( environment.bucket, args.staticBuiltFolder, uploadDone )
                   }
                 } )
 
@@ -783,8 +1075,16 @@ module.exports.start = function (config, logger) {
 
           }
 
-          function sink () {
+          /**
+           * Sink stream. Used as the last step in a stream pipeline as a stream
+           * to write to, that doesn't push anything to be read.
+           * @param  {Function} fn?     Optional function to call on the current item.
+           * @return {object}   stream  Transform stream that handles incoming objects.
+           */
+          function sink ( fn ) {
+            if ( typeof fn !== 'function' ) fn = function noop () {}
             return miss.through.obj( function ( args, enc, next ) {
+              fn( args )
               next()
             } )
           }
