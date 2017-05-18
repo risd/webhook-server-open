@@ -60,6 +60,7 @@ module.exports = function(grunt) {
     },
     builder: {
       forceWrite: process.env.BUILDER_FORCE_WRITE || false,
+      maxParallel: concurrencyOption( process.env.maxParallel ),
     },
   });
 
@@ -103,4 +104,16 @@ module.exports = function(grunt) {
     var file = grunt.option('file');
     extractKey.start(file, grunt.config, grunt.log);
   });
+
+  grunt.registerTask('echoConfig', 'Logs out the current config object.', function () {
+    console.log( grunt.config() )
+  });
+
 };
+
+// concurrency option value defaults to half the available cpus
+function concurrencyOption ( concurrencyOptionValue ) {
+  if ( typeof concurrencyOptionValue === 'number' ) return Math.floor( concurrencyOptionValue )
+  if ( concurrencyOptionValue === 'max' ) return require('os').cpus().length;
+  return require('os').cpus().length / 2;
+}

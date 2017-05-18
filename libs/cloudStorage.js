@@ -316,6 +316,13 @@ module.exports.objects = {
     }, callback);
   },
 
+  // Get an objects metadata
+  getMeta: function ( bucket, file, callback ) {
+    jsonRequest({
+      url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o/' + file,
+    }, callback);
+  }
+
   /*
   * Upload file to bucket
   *
@@ -382,41 +389,40 @@ module.exports.objects = {
       overrideMimeType = null;
     }
 
-    try {
-      var fileContent = fs.readFileSync(local);
-    } catch ( error ) {
-      fileContent = local;
-    }
+    fs.readFile( function ( error, fileContent ) {
+      if ( error ) fileContent = local; // was not a file, but a string of the file
 
-    // subpublish
-    var subpublish = 'alumni';
-    if ( bucket === [ subpublish, 'risd.systems'].join('.') ) {
-      // replace subpublish from links
-      fileContent = subpublishLinks( fileContent )
-    }
+      // subpublish
+      var subpublish = 'alumni';
+      if ( bucket === [ subpublish, 'risd.systems'].join('.') ) {
+        // replace subpublish from links
+        fileContent = subpublishLinks( fileContent )
+      }
 
-    var now = Date.now();
-    zlib.gzip(fileContent, function(err, content) {
-      jsonRequest({
-        url: 'https://www.googleapis.com/upload/storage/v1/b/' + bucket + '/o',
-        qs: { uploadType: 'multipart' },
-        headers: {
-          'content-type' : 'multipart/form-data'
-        },
-        method: 'POST',
-        multipart: [{
-            'Content-Type' : 'application/json; charset=UTF-8',
-            body: JSON.stringify({
-              name: remote,
-              cacheControl: cacheControl ? cacheControl : "no-cache",
-              contentEncoding: 'gzip',
-            })                  
-        },{ 
-            'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
-            body: content
-        }]
-      }, callback);
-    });
+      var now = Date.now();
+      zlib.gzip(fileContent, function(err, content) {
+        jsonRequest({
+          url: 'https://www.googleapis.com/upload/storage/v1/b/' + bucket + '/o',
+          qs: { uploadType: 'multipart' },
+          headers: {
+            'content-type' : 'multipart/form-data'
+          },
+          method: 'POST',
+          multipart: [{
+              'Content-Type' : 'application/json; charset=UTF-8',
+              body: JSON.stringify({
+                name: remote,
+                cacheControl: cacheControl ? cacheControl : "no-cache",
+                contentEncoding: 'gzip',
+              })                  
+          },{ 
+              'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
+              body: content
+          }]
+        }, callback);
+      });
+
+    } )
 
     function subpublishLinks ( buffer ) {
       var cheerio = require( 'cheerio' );
