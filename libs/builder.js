@@ -483,9 +483,7 @@ module.exports.start = function (config, logger) {
             deploys: deploysToConsider,
             // buildSite args
             buildFolder: buildFolder,
-            // uploadDeploys args
-            staticBuiltFolder: buildFolder + '/.build',
-            branch: branch,
+            builtFolder: path.join( buildFolder, '.build' )
           }
 
           miss.pipe(
@@ -494,9 +492,10 @@ module.exports.start = function (config, logger) {
             installDependencies(),
             makeDeployBuckets(),
             buildUploadSite( { maxParallel: maxParallel } ),
-            addStaticRedirects(),
+            buildStaticUpload(),
+            addCmsRedirects(),
             wwwOrNonRedirects(),
-            // deleteUnaccountedForFiles(),
+            // deleteRemoteFilesNotInBuild(),
             sink(),
             onPipelineComplete)
 
@@ -514,7 +513,20 @@ module.exports.start = function (config, logger) {
           }
 
           // Read stream that passes in initialze arguments
-          function usingArguments ( args ) { return miss.from.obj( [ args, null ] ) }
+          function usingArguments ( args ) { return miss.from.obj( [ args, null ] ) }          
+
+          function queueDelayedJob () {
+            return miss.through.obj( function ( args, enc, next ) {
+              if ( args.buildDiff > 0 && !args.noDelay ) {
+                // push job back into beanstalk, then upload
+                args.buildJobData[ 'noDelay' ] = true;
+                return client.put(1, buildDiff, (60 * 3), JSON.stringify({ identifier: args.buildJobIdentifier, payload: args.buildJobData }), function() {
+                  next( null, args )
+                })
+              }
+              else next( null, args )
+            } )
+          }
 
           /**
            * installDependencies. A transform stream that expects an object with:
@@ -582,16 +594,22 @@ module.exports.start = function (config, logger) {
 
             return miss.through.obj( function ( args, enc, next ) {
 
-              var cachedDataPath = path.join( args.buildFolder, '.build', 'data.json' )
+              var cachedDataPath = path.join( args.builtFolder, 'data.json' )
               var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
+              var buildEmitterOptions = {
+                maxParallel: maxParallel,
+                streamToCommandArgs: function streamToCommandArgs ( streamArgs ) {
+                  return [ streamArgs.command, streamArgs.commandArgs, { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
+                }
+              }
               
               miss.pipe(
                 usingArguments( { buildFolder: args.buildFolder } ),
                 cacheData( cachedDataPath ),  // adds { cachedData }
                 getBuildOrder(),              // adds { buildOrder }
                 feedBuilds(),                 // pushes { buildFolder, command, flags }
-                runBuilds( { maxParallel: maxParallel } ),  // pushes { builtFile }
-                uploadIfDifferent( { buckets: buckets } ),  // adds { bucket }
+                runBuildEmitter( buildEmitterOptions ),  // pushes { builtFile, builtFilePath }
+                uploadIfDifferent( { buckets: buckets } ),
                 sink(),
                 function onComplete ( error ) {
                   if ( error ) return next( error )
@@ -793,270 +811,295 @@ module.exports.start = function (config, logger) {
                 }
               }
             }
+          }
 
-            /**
-             * runBuilds returns a parallel transform stream that runs build commands
-             * in the number of processes defined by config.get( 'builder' ).maxParallel.
-             *
-             * Expects objects that have shape { buildFolder, command, commandArgs }
-             * Pushes objects that have shape  { builtFolder, builtFile }
-             * 
-             * @param  {object} options
-             * @param  {number} options.maxParallel  The max number of streams to spawn at once.
-             * @return {object} stream               Parallel transform stream that handles the work.
-             */
-            function runBuilds ( options ) {
-              var maxParallel = options.maxParallel || 1;
+          function buildStaticUpload (){
+            return miss.through.obj( function ( args, enc, next ) {
 
-              return miss.parallel( maxParallel, function ( args, next ) {
-                var stream = this;
-                var pushEventBaseArgs = { builtFolder: path.join( args.buildFolder, '.build' ) }
+              var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
+              var buildStaticEmitterOptions = {
+                maxParallel: 1,
+                streamToCommandArgs: function streamToCommandArgs ( streamArgs ) {
+                  return [ 'grunt', [ 'build-static', '--emitter' ], { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
+                }
+              }
+              
+              miss.pipe(
+                usingArguments( { builtFolder: args.buildFolder } ),
+                runBuildEmitter( buildStaticEmitterOptions ),
+                uploadIfDifferent( { buckets: buckets } ),
+                sink(),
+                function onComplete ( error ) {
+                  if ( error ) return next( error )
+                  next( null, args)
+                } )
+            } )
+          }
 
-                var builder = winSpawn( args.command, args.commandArgs, { stdio: 'pipe', cwd: args.buildFolder } )
+          /**
+           * runBuildEmitter returns a parallel transform stream that runs build commands
+           * in the number of processes defined by the options.
+           *
+           * Expects objects that have shape { buildFolder, ... }
+           * Where { buildFolder, ... } are passed into streamToCommandArgs and expected 
+           * to produce an array of arguments for running a build command.
+           * Pushes objects that have shape  { builtFile, builtFilePath }
+           * 
+           * @param  {object} options
+           * @param  {number} options.maxParallel?         The max number of streams to spawn at once.
+           * @param  {number} options.streamToCommandArgs  Take the incoming arguments, return command arguments for running the build command
+           * @return {object} stream                       Parallel transform stream that handles the work.
+           */
+          function runBuildEmitter ( options ) {
 
-                builder.stdout.on( 'data', function readOutput ( buf ) {
-                  var str = buf.toString()
+            var maxParallel = options.maxParallel || 1;
+            var streamToCommandArgs = options.streamToCommandArgs;
 
-                  var event = 'build:document-written:./.build/';
-                  if ( str.indexOf( event ) === 0 ) {
-                    var builtFile = str.slice( event.length ).trim()
-                    stream.push( Object.assign( pushEventBaseArgs, { builtFile: builtFile } ) )
-                  }
+            return miss.parallel( maxParallel, function ( args, next ) {
+              var stream = this;
+              var builtFolder = args.builtFolder;
+
+              var cmdArgs = streamToCommandArgs( args )
+
+              var builder = winSpawn.apply( null, cmdArgs )
+
+              builder.stdout.on( 'data', function readOutput ( buf ) {
+                var str = buf.toString()
+
+                var event = 'build:document-written:./.build/';
+                if ( str.indexOf( event ) === 0 ) {
+                  var builtFile = str.slice( event.length ).trim()
+                  var builtFilePath = path.join( builtFolder, builtFile )
+                  stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } )
+                }
+
+              } )
+
+              builder.on( 'close', function () { next() } )
+
+            } )
+          }
+
+          /**
+           * uploadIfDifferent is a transform stream that expects objects with:
+           * { builtFile, builtFilePath }
+           *
+           * Pushes { bucket, builtFile, builtFilePath, builtFileMd5, remoteFileMd5 }
+           *
+           * With this, the stream will
+           * - Get the file within the buckets for its metadata.
+           * - Create an MD5 hash using the file on the current file system
+           * - Compare its MD5 hash against the file coming through the stream
+           * - If they are different, upload the new file.
+           * 
+           * @param  {object} options
+           * @param  {object} options.buckets[]  List of buckets to upload the file to
+           * @return {object} stream             Transforms stream that handles the work.
+           */
+          function uploadIfDifferent ( options ) {
+            var buckets = options.buckets || [];
+            return miss.through.obj( function ( args, enc, next ) {
+
+              var stream = this;
+
+              miss.pipe(
+                usingArguments( { builtFile: args.builtFile, builtFilePath: args.builtFilePath } ),
+                builtFileMd5(),        // adds builtFileMd5
+                feedBuckets( buckets ) // pushes { bucket, builtFile, builtFilePath, builtFileMd5 }
+                remoteFileMd5(),       // adds { remoteFileMd5 }
+                conditionalUpload(),   // adds { fileUploaded }
+                sink(),
+                function onComplete ( error ) {
+                  if ( error ) return next( error )
+                  next( null, args )
+                } )
+            } )
+
+            function builtFileMd5 () {
+              return miss.through.obj( function ( args, enc, next ) {
+                fs.readFile( args.builtFilePath, function ( error, builtFileContent ) {
+
+                  args.builtFileMd5 = crypto.createHash('md5').update(builtFileContent).digest('base64');
+
+                  next( null, args );
 
                 } )
-
-                builder.on( 'close', function () { next() } )
-
               } )
             }
 
-            /**
-             * uploadIfDifferent is a transform stream that expects objects with:
-             * { builtFolder, builtFile }
-             *
-             * Pushes { bucket, builtFolder, builtFile, builtFileMd5 }
-             *
-             * With this, the stream will
-             * - Get the file within the buckets for its metadata.
-             * - Create an MD5 hash using the file on the current file system
-             * - Compare its MD5 hash against the file coming through the stream
-             * - If they are different, upload the new file.
-             * 
-             * @param  {object} options
-             * @param  {object} options.buckets[]  List of buckets to upload the file to
-             * @return {object} stream             Transforms stream that handles the work.
-             */
-            function uploadIfDifferent ( options ) {
-              var buckets = options.buckets || [];
+            function feedBuckets ( buckets ) {
               return miss.through.obj( function ( args, enc, next ) {
-
                 var stream = this;
-
-                miss.pipe(
-                  usingArguments( { builtFolder: args.builtFolder, builtFile: args.builtFile } ),
-                  builtFileMd5(),        // adds builtFileMd5
-                  feedBuckets( buckets ) // pushes { bucket, builtFolder, builtFile, builtFileMd5 }
-                  // remoteFileMd5(),
-                  // compareUpload(),
-                  pushArgs(),            // sink stream pushes args to parent stream.
-                  )
-
-                function pushArgs () {
-                  return miss.through.obj( function ( pargs, penc, pnext ) {
-                    stream.push( pargs );
-                    pnext();
-                  } )
-                }
-                
-              } )
-
-              function builtFileMd5 () {
-                return miss.through.obj( function ( args, enc, next ) {
-                  fs.readFile( args.builtFile, function ( error, builtFileContent ) {
-
-                    args.builtFileMd5 = crypto.createHash('md5').update(builtFileContent).digest('base64');
-
-                    next( null, args );
-
-                  } )
-                } )
-              }
-
-              function feedBuckets ( buckets ) {
-                return miss.through.obj( function ( args, enc, next ) {
-                  var stream = this;
-                  buckets.map( function ( bucket ) {
+                buckets.map( function ( bucket ) {
                     return Object.assign( args, { bucket: bucket } )
                   } )
                   .forEach( function ( bucketArgs ) {
                     stream.push( bucketArgs )
                   } )
-                  next();
-                } )
-              }
+                next();
+              } )
             }
 
-            /**
-             * removeUnaccountedForFiles is a transform sink stream makes an object
-             * to keep track of all built files keyed by bucket. When all files
-             * have been captured, stream is flushed with a function that lists
-             * all files for a bucket, determines which are not in the array, and
-             * removes them.
-             * @return {object} stream  Transform stream that will handle the work.
-             */
-            function removeUnaccountedForFiles () {
-              var builtFiles = {};
-              return miss.through.obj( function ( args, enc, next ) {
+            function remoteFileMd5 () {
+              return miss.throuhg.obj( function ( args, enc, next ) {
+                cloudStorage.objects.getMeta( args.bucket, args.builtFile, function ( error, remoteFileMeta ) {
+                  // retry on error?
+                  args.remoteFileMd5 = remoteFileMeta.md5Hash;
+                  next( null, args )
+                } )
+              } ) 
+            }
 
+            function conditionalUpload () {
+              return miss.through.obj( function ( args, enc, next ) {
+                if ( args.builtFileMd5 === args.remoteFileMd5 ) return next( null, Object.assign( args, { fileUploaded: false } ) )
+
+                var cache = 'no-cache';
+                cloudStorage.uploadCompressed( args.bucket, args.builtFilePath, args.builtFile, cache, function ( error, uploadResponse ) {
+                  if ( error ) {
+                    console.log( 'conditional-upload:error' )
+                    console.log( error )
+                    args.fileUploaded = false;
+                  }
+                  else {
+                    args.fileUploaded = true;
+                  }
+                  next( null, args )
+                } )
               } )
             }
           }
 
-          function addStaticRedirects () {
+          function addCmsRedirects () {
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'add-redirects:start' )
 
-              self.root.child( args.siteName ).child( args.siteKey ).child( 'dev/settings/redirect' )
-                .once( 'value', withRedirects, withoutRedirects )
+              var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
 
-              function withRedirects ( snapshot ) {
-                var redirectsObject = snapshot.val();
-                var redirects = []
-
-                try {
-                  Object.keys( redirectsObject ).forEach( function ( key ) {
-                    redirects.push( redirectsObject[ key ] )
-                  } )
-                } catch ( error ) {
-                  console.log( 'add-redirects:end:none-found' )
-                  return next( null, args )
-                }
-
-                if ( redirects.length === 0 ) return next( null, args )
-
-                var redirectTasks = redirects.map( createRedirectTask )
-
-                async.parallel( redirectTasks, function () {
-                  console.log( 'add-redirects:done' )
+              miss.pipe(
+                usingArguments( {} ),
+                getRedirects( { siteName: args.siteName, siteKey: args.siteKey } ),         // pushes { redirects }
+                buildRedirects( { builtFolder: args.builtFolder } ), // pushes { builtFile, builtFilePath }
+                uploadIfDifferent( { buckets: buckets } ),
+                function onComplete ( error ) {
+                  if ( error ) return next( error )
                   next( null, args )
                 } )
-              }
+              
+            } )
 
-              function withoutRedirects () {
-                console.log( 'add-redirects:done:none-found' )
-                next( null, args )
-              }
+            function getRedirects ( options ) {
+              var siteName = options.siteName;
+              var siteKey = options.siteKey;
 
-              function createRedirectTask ( redirect ) {
-                var source = sourceFromPattern( redirect.pattern )
-                var redirectFiles = [
-                  path.join( args.staticBuiltFolder, source, 'index.html' ),
-                ]
+              return miss.through.obj( function ( args, enc, next ) {
 
-                var writeRedirectTasks = redirectFiles.map( createWriteRedirectTask( redirect.destination ) )
-
-                return function redirectTask ( taskComplete ) {
-                  async.parallel( writeRedirectTasks, function ( error ) {
-                    taskComplete();
-                  } )
-                }
-              }
-
-              function sourceFromPattern ( path ) {
-                // in order to create a file at the returned path & path/index.html
-                if ( typeof path !== 'string' ) return null;
-                // remove leading /
-                if ( path.indexOf( '/' ) === 0 ) path = path.slice( 1 )
-                // remove .html extension
-                if ( path.slice( -5 ) === ( '.html' ) ) path = path.slice( 0, -5 )
-                // remove trailing /?$
-                if ( path.slice( '-2' ) === ( '?$' ) ) path = path.slice( 0, -2 )
-                // remove trailing /
-                if ( path.slice( '-1' ) === ( '/' ) ) path = path.slice( 0, -1 )
+                var redirects = []
                 
-                return path;
-              }
+                self.root.child( siteName ).child( siteKey ).child( 'dev/settings/redirect' )
+                  .once( 'value', withRedirects, withoutRedirects )
 
-              function createWriteRedirectTask ( destination ) {
-                var template = redirectTemplateForDestination( destination )
-                return function forSourceFile ( sourceFile ) {
-                  return function writeFileTask ( writeTaskComplete ) {
-                    // only write a file if there isn't one that was just built there
-                    fs.readFile( sourceFile, function ( readError ) {
-                      if ( readError ) {
-                        mkdirp( path.dirname( sourceFile ), function () {
-                          fs.writeFile( sourceFile, template, function ( error ) {
-                            writeTaskComplete()
-                          } )
-                        } )
-                      }
-                      else writeTaskComplete()
+                function withRedirects ( snapshot ) {
+                  var redirectsObject = snapshot.val();
+
+                  try {
+                    Object.keys( redirectsObject ).forEach( function ( key ) {
+                      redirects.push( redirectsObject[ key ] )
+                    } )
+                  } catch ( error ) {
+                    console.log( 'add-redirects:end:none-found' )
+                  }
+
+                  next( null, { redirects: redirects } )
+                }
+
+                function withoutRedirects () {
+                  console.log( 'add-redirects:done:none-found' )
+                  next( null, { redirects: redirects } )
+                }
+
+              } )
+            }
+
+            function buildRedirects ( options ) {
+              var builtFolder = options.builtFolder;
+
+              return miss.through.obj( function ( args, enc, next) {
+
+                var stream = this;
+                var redirectTasks = args.redirects.map( createRedirectTask )
+
+                async.parallel( redirectTasks, function ( error, builtFilePaths ) {
+
+                  builtFilePaths = builtFilePaths.filter( filterNull ).reduce( function ( previous, current ) { return previous.concat( current.filter( filterNull ) ) }, [] )
+
+                  var uploadsArgs = builtFilePaths.map( function ( builtFilePath ) {
+                    return {
+                      builtFilePath: builtFilePath,
+                      builtFile: builtFilePath.slice( builtFolder.length )
+                    }
+                  } )
+
+                  uploadsArgs.forEach( function ( uploadArgs ) {
+                    stream.push( uploadArgs )
+                  } )
+
+                  console.log( 'add-redirects:done' )
+                  next()
+                } )
+
+                function filterNull ( builtFilePath ) { return builtFilePath !== null }             
+
+                function createRedirectTask ( redirect ) {
+                  var source = sourceFromPattern( redirect.pattern )
+                  var redirectFile = path.join( builtFolder, source, 'index.html' )
+
+                  var writeRedirectTasks = [ redirectfile ].map( createWriteRedirectTask( redirect.destination ) )
+
+                  return function redirectTask ( taskComplete ) {
+                    async.parallel( writeRedirectTasks, function ( error, builtFilePaths ) {
+                      taskComplete( error, builtFilePaths );
                     } )
                   }
                 }
-              }
-              
-            } )
-          }
 
-          function queueDelayedJob () {
-            return miss.through.obj( function ( args, enc, next ) {
-              if ( args.buildDiff > 0 && !args.noDelay ) {
-                // push job back into beanstalk, then upload
-                args.buildJobData[ 'noDelay' ] = true;
-                return client.put(1, buildDiff, (60 * 3), JSON.stringify({ identifier: args.buildJobIdentifier, payload: args.buildJobData }), function() {
-                  next( null, args )
-                })
-              }
-              else next( null, args )
-            } )
-          }
-
-          function uploadDeploys () {
-            return miss.through.obj( function ( args, enc, next ) {
-
-              console.log( 'upload-deploys:start' )
-              console.log( args.deploys )
-
-              var doneDeploying = function ( error, deployedFiles ) {
-                // reportStatus is called per bucket, so no need
-                // to call it out for the total task.
-                if ( error ) {
-                  console.log( 'upload-deploys:done:error' )
-                  console.log( error )
+                function sourceFromPattern ( path ) {
+                  // in order to create a file at the returned path & path/index.html
+                  if ( typeof path !== 'string' ) return null;
+                  // remove leading /
+                  if ( path.indexOf( '/' ) === 0 ) path = path.slice( 1 )
+                  // remove .html extension
+                  if ( path.slice( -5 ) === ( '.html' ) ) path = path.slice( 0, -5 )
+                  // remove trailing /?$
+                  if ( path.slice( '-2' ) === ( '?$' ) ) path = path.slice( 0, -2 )
+                  // remove trailing /
+                  if ( path.slice( '-1' ) === ( '/' ) ) path = path.slice( 0, -1 )
+                  
+                  return path;
                 }
-                else console.log( 'upload-deploys:done' )
-                args.deployedFiles = deployedFiles;
-                next( null, args );
-              }
 
-              var deployTasks = args.deploys
-                .filter( function isDeployForBranch ( deploy ) { return args.branch === deploy.branch } )
-                .map( function makeUploadTask ( environment ) {
-                  return function uploadTask ( uploadTaskComplete ) {
-                    
-                    var uploadDone = function ( error, uploadDeploysResults ) {
-                      if ( error ) reportStatus(args.siteName, 'Built but failed to uploaded to ' + environment.bucket + '.', 1);  
-                      else reportStatus(args.siteName, 'Built and uploaded to ' + environment.bucket + '.', 0);
-
-                      console.log( 'upload-deploys:done:' + environment.bucket )
-                      
-                      uploadTaskComplete( null, uploadDeploysResults )
+                function createWriteRedirectTask ( destination ) {
+                  var template = redirectTemplateForDestination( destination )
+                  return function forSourceFile ( sourceFile ) {
+                    return function writeFileTask ( writeTaskComplete ) {
+                      // only write a file if there isn't one that was just built there
+                      fs.readFile( sourceFile, function ( readError ) {
+                        if ( readError ) {
+                          mkdirp( path.dirname( sourceFile ), function () {
+                            fs.writeFile( sourceFile, template, function ( error ) {
+                              writeTaskComplete( null, sourceFile )
+                            } )
+                          } )
+                        }
+                        else writeTaskComplete()
+                      } )
                     }
-
-                    console.log( 'deploy task for ' + JSON.stringify( environment ) )
-
-                    
-                    uploadToBucket( environment.bucket, args.staticBuiltFolder, uploadDone )
                   }
-                } )
+                }
 
-              console.log( 'running deploys: ' + deployTasks.length )
-              if ( deployTasks.length === 0 ) return doneDeploying( null );
+              } )
+            }
 
-              async.parallel( deployTasks, doneDeploying );
-
-            } )
           }
 
           // TODO: Update to replace `deployedFiles` source to come from
@@ -1148,6 +1191,20 @@ module.exports.start = function (config, logger) {
               return file.indexOf('static/') !== 0 && file.indexOf('/index.html') !== -1
             }
 
+          }
+
+          /**
+           * deleteRemoteFilesNotInBuild is a transform sink stream makes an object
+           * to keep track of all built files keyed by bucket. When all files
+           * have been captured, stream is flushed with a function that lists
+           * all files for a bucket, determines which are not in the array, and
+           * removes them.
+           * @return {object} stream  Transform stream that will handle the work.
+           */
+          function deleteRemoteFilesNotInBuild () {
+            return miss.through.obj( function ( args, enc, next ) {
+
+            } )
           }
 
           /**

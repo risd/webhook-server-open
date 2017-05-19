@@ -26,6 +26,7 @@
     "dotenv": "^2.0.0",
     "elasticsearchclient": "~0.5.3",
     "express": "3.x",
+    "findit": "^2.0.0",
     "firebase": "~1.0.5",
     "fivebeans": "~1.1.1",
     "gapitoken": "~0.1.0",

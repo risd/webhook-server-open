@@ -321,7 +321,7 @@ module.exports.objects = {
     jsonRequest({
       url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o/' + file,
     }, callback);
-  }
+  },
 
   /*
   * Upload file to bucket
