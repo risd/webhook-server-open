@@ -172,6 +172,12 @@
                 "id": {
                  ".validate": true
                 },
+                "contentType": {
+                 ".validate": true
+                },
+                "itemKey": {
+                 ".validate": true
+                },
                 "$other": {
                  ".validate": false
                 }

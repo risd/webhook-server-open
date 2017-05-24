@@ -250,10 +250,18 @@ module.exports.buckets = {
 module.exports.objects = { 
 
   // List all objects in a bucket (name, md5hash)
-  list: function(bucket, callback) {
+  list: function(bucket, options, callback) {
+    if ( typeof options === 'function' ) callback = options;
+    if ( !options ) options = {};
+
+    var qs = Object.assign( {
+      fields: 'kind,items(name,md5Hash),nextPageToken',
+      delimiter: 'webhook-uploads/',
+    }, options )
+
     jsonRequest({
       url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o',
-      qs: { fields: 'kind,items(name,md5Hash)', delimiter: 'webhook-uploads/' }
+      qs: qs,
     }, callback);
   },
 
@@ -319,7 +327,7 @@ module.exports.objects = {
   // Get an objects metadata
   getMeta: function ( bucket, file, callback ) {
     jsonRequest({
-      url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o/' + file,
+      url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o/' + encodeURIComponent(file),
     }, callback);
   },
 
@@ -389,7 +397,7 @@ module.exports.objects = {
       overrideMimeType = null;
     }
 
-    fs.readFile( function ( error, fileContent ) {
+    fs.readFile( local, function ( error, fileContent ) {
       if ( error ) fileContent = local; // was not a file, but a string of the file
 
       // subpublish

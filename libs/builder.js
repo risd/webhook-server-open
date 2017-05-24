@@ -18,6 +18,8 @@ var domain = require('domain');
 var Deploys = require( 'webhook-deploy-configuration' );
 var miss = require( 'mississippi' );
 var path = require( 'path' )
+var glob = require( 'glob' )
+var zlib = require('zlib');
 var setupBucket = require('./creator.js').setupBucket;
 
 var escapeUserId = function(userid) {
@@ -492,16 +494,16 @@ module.exports.start = function (config, logger) {
             installDependencies(),
             makeDeployBuckets(),
             buildUploadSite( { maxParallel: maxParallel } ),
-            buildStaticUpload(),
             addCmsRedirects(),
             wwwOrNonRedirects(),
-            // deleteRemoteFilesNotInBuild(),
+            deleteRemoteFilesNotInBuild(),
             sink(),
             onPipelineComplete)
 
           // Called at the end of processing the stream above. Or, if the stream
           // emits an error, this is called and the stream is closed.
           function onPipelineComplete ( error ) {
+            console.log( 'built-pipeline-complete' )
             if ( error ) {
               if ( typeof error.reportStatus ) {
                 reportStatus( error.reportStatus.site, error.reportStatus.message, error.reportStatus.status )
@@ -556,9 +558,11 @@ module.exports.start = function (config, logger) {
 
           function makeDeployBuckets () {
             return miss.through.obj( function ( args, enc, next ) {
-
+              console.log( 'make-deploy-buckets:start' )
               var setupBucketTasks = args.deploys.map( makeDeployBucketTask )
               async.parallel( setupBucketTasks, function ( error ) {
+                console.log( 'make-deploy-buckets:end' )
+                console.log( error )
                 if ( error ) return next( error )
                 next( null, args)
               } )
@@ -593,8 +597,7 @@ module.exports.start = function (config, logger) {
             var maxParallel = options.maxParallel || 1;
 
             return miss.through.obj( function ( args, enc, next ) {
-
-              var cachedDataPath = path.join( args.builtFolder, 'data.json' )
+              console.log( 'build-upload-site:start' )
               var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
               var buildEmitterOptions = {
                 maxParallel: maxParallel,
@@ -605,13 +608,15 @@ module.exports.start = function (config, logger) {
               
               miss.pipe(
                 usingArguments( { buildFolder: args.buildFolder } ),
-                cacheData( cachedDataPath ),  // adds { cachedData }
+                cacheData(),                  // adds { cachedData }
                 getBuildOrder(),              // adds { buildOrder }
                 feedBuilds(),                 // pushes { buildFolder, command, flags }
                 runBuildEmitter( buildEmitterOptions ),  // pushes { builtFile, builtFilePath }
                 uploadIfDifferent( { buckets: buckets } ),
                 sink(),
                 function onComplete ( error ) {
+                  console.log( 'build-upload-site:end' )
+                  console.log( error )
                   if ( error ) return next( error )
                   next( null, args)
                 } )
@@ -621,9 +626,13 @@ module.exports.start = function (config, logger) {
             // Transform stream expecting `args` object with shape.
             // { buildFolder: String }
             // adds { cacheData: String } and pushes.
-            function cacheData ( cacheFilePath ) {
+            function cacheData () {
               return miss.through.obj( function ( args, enc, next ) {
+                console.log( 'build-upload-site:cache-data:start' )
+                var cacheFilePath = path.join( '.build', 'data.json' )
                 runInDir( 'grunt', args.buildFolder, [ 'download-data', '--toFile=' + cacheFilePath ], function ( error ) {
+                  console.log( 'build-upload-site:cache-data:end' )
+                  console.log( error )
                   if ( error ) return next( error )
                   args.cachedData = cacheFilePath;
                   next( null, args )
@@ -643,13 +652,15 @@ module.exports.start = function (config, logger) {
             function getBuildOrder () {
               var keyFromSubStreamToMergeAsBuildOrder = 'sortedBuildOrder';
               return miss.through.obj( function ( args, enc, next ) {
-                  // writeBuildOrder()
+                  console.log( 'build-upload-site:get-build-order:start' )
                   miss.pipe(
                     usingArguments( { buildFolder: args.buildFolder } ),
                     writeBuildOrder(), // adds ( buildOrder : String, defaultBuildOrder : String )
                     sortBuildOrder( keyFromSubStreamToMergeAsBuildOrder ),  // adds ( sortedBuildOrder : [String] )
                     sink( mergeStreamArgs ),
                     function onComplete ( error ) {
+                      console.log( 'build-upload-site:get-build-order:end' )
+                      console.log( error )
                       if ( error ) return next( error )
                     } )
 
@@ -770,7 +781,7 @@ module.exports.start = function (config, logger) {
             // for each build order item, push { buildFolder, command, commandArgs }
             function feedBuilds () {
               return miss.through.obj( function ( args, enc, next ) {
-                
+                console.log( 'build-upload-site:feed-builds:start' )
                 var buildFlagsForFile = buildFlags( args.cachedData )
 
                 var stream = this;
@@ -778,8 +789,11 @@ module.exports.start = function (config, logger) {
                   .map( makeBuildCommandArguments )
                   .concat( [ copyStaticCommandArgs() ] )
                   .forEach( function ( buildCommandArgs ) {
+
                     stream.push( buildCommandArgs )
                   } )
+
+                console.log( 'build-upload-site:feed-builds:end' )
 
                 next()
 
@@ -813,28 +827,32 @@ module.exports.start = function (config, logger) {
             }
           }
 
-          function buildStaticUpload (){
-            return miss.through.obj( function ( args, enc, next ) {
+          // function buildStaticUpload (){
+          //   return miss.through.obj( function ( args, enc, next ) {
 
-              var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
-              var buildStaticEmitterOptions = {
-                maxParallel: 1,
-                streamToCommandArgs: function streamToCommandArgs ( streamArgs ) {
-                  return [ 'grunt', [ 'build-static', '--emitter' ], { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
-                }
-              }
+          //     console.log( 'build-static-upload:start' )
               
-              miss.pipe(
-                usingArguments( { builtFolder: args.buildFolder } ),
-                runBuildEmitter( buildStaticEmitterOptions ),
-                uploadIfDifferent( { buckets: buckets } ),
-                sink(),
-                function onComplete ( error ) {
-                  if ( error ) return next( error )
-                  next( null, args)
-                } )
-            } )
-          }
+          //     var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
+          //     var buildStaticEmitterOptions = {
+          //       maxParallel: 1,
+          //       streamToCommandArgs: function streamToCommandArgs ( streamArgs ) {
+          //         return [ 'grunt', [ 'build-static', '--emitter' ], { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
+          //       }
+          //     }
+              
+          //     miss.pipe(
+          //       usingArguments( { buildFolder: args.buildFolder } ),
+          //       runBuildEmitter( buildStaticEmitterOptions ),
+          //       uploadIfDifferent( { buckets: buckets } ),
+          //       sink(),
+          //       function onComplete ( error ) {
+          //         console.log( 'build-static-upload:end' )
+          //         console.log( error )
+          //         if ( error ) return next( error )
+          //         next( null, args)
+          //       } )
+          //   } )
+          // }
 
           /**
            * runBuildEmitter returns a parallel transform stream that runs build commands
@@ -846,6 +864,7 @@ module.exports.start = function (config, logger) {
            * Pushes objects that have shape  { builtFile, builtFilePath }
            * 
            * @param  {object} options
+           * @param  {number} options.builtFolder          The directory where files are 
            * @param  {number} options.maxParallel?         The max number of streams to spawn at once.
            * @param  {number} options.streamToCommandArgs  Take the incoming arguments, return command arguments for running the build command
            * @return {object} stream                       Parallel transform stream that handles the work.
@@ -857,25 +876,52 @@ module.exports.start = function (config, logger) {
 
             return miss.parallel( maxParallel, function ( args, next ) {
               var stream = this;
-              var builtFolder = args.builtFolder;
 
+              console.log( 'maxParallel:' + maxParallel )
               var cmdArgs = streamToCommandArgs( args )
+              var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
 
+              var errored = false;
               var builder = winSpawn.apply( null, cmdArgs )
 
               builder.stdout.on( 'data', function readOutput ( buf ) {
                 var str = buf.toString()
 
-                var event = 'build:document-written:./.build/';
-                if ( str.indexOf( event ) === 0 ) {
-                  var builtFile = str.slice( event.length ).trim()
+                var buildEvent = 'build:document-written:./.build/';
+
+                if ( str.indexOf( buildEvent ) === 0 ) {
+                  var builtFile = str.trim().slice( buildEvent.length )
                   var builtFilePath = path.join( builtFolder, builtFile )
                   stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } )
+
+                  // non trailing slash redirect
+                  if ( builtFile.endsWith( '/index.html' ) ) {
+                    stream.push( {
+                      builtFile: builtFile.replace( '/index.html', '' ),
+                      builtFilePath: redirectTemplateForDestination( '/' + builtFile.replace( 'index.html', '' ) ),
+                    } )
+                  }
+                }
+
+                var endEvent = ':end:';
+                if ( str.indexOf( endEvent ) !== -1 ) {
+                  builder.kill()
                 }
 
               } )
 
-              builder.on( 'close', function () { next() } )
+              builder.on( 'error', function ( error ) {
+                console.log( 'builder-error' )
+                console.log( error )
+                errored = true;
+                next()
+              } )
+
+              builder.on( 'exit', function () {
+                if ( errored === true ) return;
+                console.log( 'done:' + JSON.stringify( cmdArgs[1] ) )
+                next()
+              } )
 
             } )
           }
@@ -884,30 +930,35 @@ module.exports.start = function (config, logger) {
            * uploadIfDifferent is a transform stream that expects objects with:
            * { builtFile, builtFilePath }
            *
-           * Pushes { bucket, builtFile, builtFilePath, builtFileMd5, remoteFileMd5 }
+           * Pushes { bucket, builtFile, builtFilePath, builtFileMd5, remoteFileMd5, fileUploaded }
            *
            * With this, the stream will
            * - Get the file within the buckets for its metadata.
            * - Create an MD5 hash using the file on the current file system
            * - Compare its MD5 hash against the file coming through the stream
            * - If they are different, upload the new file.
+           *
+           * `builtFilePath` can be the path to the content, or the content itself.
+           * In the case of templates that are never written to the file system.
            * 
            * @param  {object} options
            * @param  {object} options.buckets[]  List of buckets to upload the file to
            * @return {object} stream             Transforms stream that handles the work.
            */
           function uploadIfDifferent ( options ) {
-            var buckets = options.buckets || [];
+            if ( !options ) options = {};
+            var buckets = options.buckets;
+
             return miss.through.obj( function ( args, enc, next ) {
 
               var stream = this;
 
               miss.pipe(
                 usingArguments( { builtFile: args.builtFile, builtFilePath: args.builtFilePath } ),
-                builtFileMd5(),        // adds builtFileMd5
-                feedBuckets( buckets ) // pushes { bucket, builtFile, builtFilePath, builtFileMd5 }
-                remoteFileMd5(),       // adds { remoteFileMd5 }
-                conditionalUpload(),   // adds { fileUploaded }
+                builtFileMd5(),         // adds builtFileMd5
+                feedBuckets( buckets ), // pushes { bucket, builtFile, builtFilePath, builtFileMd5 }
+                remoteFileMd5(),        // adds { remoteFileMd5 }
+                conditionalUpload(),    // adds { fileUploaded }
                 sink(),
                 function onComplete ( error ) {
                   if ( error ) return next( error )
@@ -917,12 +968,18 @@ module.exports.start = function (config, logger) {
 
             function builtFileMd5 () {
               return miss.through.obj( function ( args, enc, next ) {
-                fs.readFile( args.builtFilePath, function ( error, builtFileContent ) {
+                var encoding = 'utf8';
+                fs.readFile( args.builtFilePath, encoding, function ( error, builtFileContent ) {
+                  if ( error ) builtFileContent = args.builtFilePath;
+                  if ( typeof builtFileContent === 'object' ) builtFileContent = builtFileContent.toString()
 
-                  args.builtFileMd5 = crypto.createHash('md5').update(builtFileContent).digest('base64');
+                  zlib.gzip( builtFileContent, function ( error, compressedBuiltFileContent ) {
+                    
+                    args.builtFileMd5 = crypto.createHash('md5').update(compressedBuiltFileContent, encoding).digest('base64');
 
-                  next( null, args );
-
+                    next( null, args );
+                    
+                  } )
                 } )
               } )
             }
@@ -930,21 +987,30 @@ module.exports.start = function (config, logger) {
             function feedBuckets ( buckets ) {
               return miss.through.obj( function ( args, enc, next ) {
                 var stream = this;
-                buckets.map( function ( bucket ) {
-                    return Object.assign( args, { bucket: bucket } )
-                  } )
-                  .forEach( function ( bucketArgs ) {
-                    stream.push( bucketArgs )
-                  } )
+
+                // One file per bucket
+                if ( args.bucket ) {
+                  stream.push( args )
+                }
+                // Same file for multiple buckets?
+                if ( buckets ) {
+                  buckets.map( function ( bucket ) {
+                      return Object.assign( args, { bucket: bucket } )
+                    } )
+                    .forEach( function ( bucketArgs ) {
+                      stream.push( bucketArgs )
+                    } )  
+                }
+
                 next();
               } )
             }
 
             function remoteFileMd5 () {
-              return miss.throuhg.obj( function ( args, enc, next ) {
+              return miss.through.obj( function ( args, enc, next ) {
                 cloudStorage.objects.getMeta( args.bucket, args.builtFile, function ( error, remoteFileMeta ) {
-                  // retry on error?
-                  args.remoteFileMd5 = remoteFileMeta.md5Hash;
+                  if ( error ) args.remoteFileMd5 = false;
+                  else args.remoteFileMd5 = remoteFileMeta.md5Hash;
                   next( null, args )
                 } )
               } ) 
@@ -955,13 +1021,16 @@ module.exports.start = function (config, logger) {
                 if ( args.builtFileMd5 === args.remoteFileMd5 ) return next( null, Object.assign( args, { fileUploaded: false } ) )
 
                 var cache = 'no-cache';
-                cloudStorage.uploadCompressed( args.bucket, args.builtFilePath, args.builtFile, cache, function ( error, uploadResponse ) {
+                console.log( 'conditional-upload:' + JSON.stringify( args ) )
+                cloudStorage.objects.uploadCompressed( args.bucket, args.builtFilePath, args.builtFile, cache, function ( error, uploadResponse ) {
                   if ( error ) {
                     console.log( 'conditional-upload:error' )
                     console.log( error )
                     args.fileUploaded = false;
                   }
                   else {
+                    console.log( 'conditional-upload:response:' + path.join( args.bucket, args.builtFile ) )
+                    console.log( uploadResponse )
                     args.fileUploaded = true;
                   }
                   next( null, args )
@@ -970,6 +1039,17 @@ module.exports.start = function (config, logger) {
             }
           }
 
+          /**
+           * addCmsRedirects downloads the URL Redirects portion of a site's settings
+           * & writes templates to the source path of each redirect, with the contents
+           * of an HTML redirect template to the destination of the redirect.
+           *
+           * A redirect template is only written if a file does not already exist
+           * at the same file path.
+           * The redirect template will always be an `index.html`.
+           *
+           * @return {object} stream  Transform stream that will handle the work.
+           */
           function addCmsRedirects () {
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'add-redirects:start' )
@@ -982,6 +1062,8 @@ module.exports.start = function (config, logger) {
                 buildRedirects( { builtFolder: args.builtFolder } ), // pushes { builtFile, builtFilePath }
                 uploadIfDifferent( { buckets: buckets } ),
                 function onComplete ( error ) {
+                  console.log( 'add-redirects:end' )
+                  console.log( error )
                   if ( error ) return next( error )
                   next( null, args )
                 } )
@@ -1031,14 +1113,24 @@ module.exports.start = function (config, logger) {
 
                 async.parallel( redirectTasks, function ( error, builtFilePaths ) {
 
-                  builtFilePaths = builtFilePaths.filter( filterNull ).reduce( function ( previous, current ) { return previous.concat( current.filter( filterNull ) ) }, [] )
+                  builtFilePaths = builtFilePaths.filter( filterNull ).reduce( function ( previous, current ) { return previous.concat( current.filter( filterNull ) ) }, [] ).filter( filterNull )
 
                   var uploadsArgs = builtFilePaths.map( function ( builtFilePath ) {
+                    console.log( 'builtFilePath' )
+                    console.log( builtFilePath )
                     return {
                       builtFilePath: builtFilePath,
                       builtFile: builtFilePath.slice( builtFolder.length )
                     }
                   } )
+
+                  // non trailing slash redirects
+                  uploadsArgs = uploadsArgs.concat( uploadsArgs.map( function nonTrailingSash ( opts ) {
+                    return {
+                      builtFilePath: redirectTemplateForDestination( '/' + opts.builtFile.replace( 'index.html', '' ) ),
+                      builtFile: opts.builtFile.replace( '/index.html', '' ),
+                    }
+                  } ) )
 
                   uploadsArgs.forEach( function ( uploadArgs ) {
                     stream.push( uploadArgs )
@@ -1048,13 +1140,13 @@ module.exports.start = function (config, logger) {
                   next()
                 } )
 
-                function filterNull ( builtFilePath ) { return builtFilePath !== null }             
+                function filterNull ( builtFilePath ) { return builtFilePath !== null && builtFilePath !== undefined }
 
                 function createRedirectTask ( redirect ) {
                   var source = sourceFromPattern( redirect.pattern )
                   var redirectFile = path.join( builtFolder, source, 'index.html' )
 
-                  var writeRedirectTasks = [ redirectfile ].map( createWriteRedirectTask( redirect.destination ) )
+                  var writeRedirectTasks = [ redirectFile ].map( createWriteRedirectTask( redirect.destination ) )
 
                   return function redirectTask ( taskComplete ) {
                     async.parallel( writeRedirectTasks, function ( error, builtFilePaths ) {
@@ -1087,6 +1179,7 @@ module.exports.start = function (config, logger) {
                         if ( readError ) {
                           mkdirp( path.dirname( sourceFile ), function () {
                             fs.writeFile( sourceFile, template, function ( error ) {
+                              // only callback with written file to be uploaded if its new
                               writeTaskComplete( null, sourceFile )
                             } )
                           } )
@@ -1102,80 +1195,153 @@ module.exports.start = function (config, logger) {
 
           }
 
-          // TODO: Update to replace `deployedFiles` source to come from
-          // reading the build folder, instead of the uploadToBucket callback
+          /**
+           * wwwOrNonRedirects transform stream that creates www bucket for every
+           * non-www bucket, and non-www bucket for every www bucket deploy.
+           * These opposite buckets are then populated with redirect templates
+           * for every file in the builtFolder, to the original bucket where
+           * the file exists.
+           * @return {object} stream The transform stream that handles the work.
+           */
           function wwwOrNonRedirects () {
             return miss.through.obj( function ( args, enc, next ) {
 
               console.log( 'www-or-non-redirects:start' )
 
-              var ensureRedirectBucketTasks = args.deployedFiles.map( setupRedirectBucketTasks )
-              var publishRedirectTasks = args.deployedFiles
-                .map( createPublishRedirectBucketTasks )
-                .reduce( function flattenTasks ( previous, current ) { return previous.concat( current ) }, [] )
+              var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
+              var oppositeBuckets = buckets.map( oppositeBucketFrom )
 
-              async.parallelLimit( ensureRedirectBucketTasks, 10, onBucketSetup )
+              var feedRedirectsOptions = _.zipWith( buckets, oppositeBuckets, function ( bucket, oppositeBucket ) {
+                return {
+                  bucket: bucket,
+                  oppositeBucket: oppositeBucket,
+                }
+              } )
 
-              function onBucketSetup ( error ) {
-                async.parallelLimit( publishRedirectTasks, 100, onRedirectsPublished )
-              }
-
-              function onRedirectsPublished ( error ) {
-                console.log( 'www-or-non-redirects:end' )
-                next( null, args )
-              }
+              miss.pipe(
+                usingArguments( { builtFolder: args.builtFolder } ),
+                makeBuckets( { buckets: oppositeBuckets } ),       // pushes previous value
+                feedBuiltFolderFiles( { pattern: '**/*.html' } ),  // pushes { builtFile, builtFilePath } per file
+                feedRedirects( feedRedirectsOptions ),             // adds { bucket, builtFilePath } per bucket
+                uploadIfDifferent(),
+                sink(),
+                function onComplete ( error ) {
+                  if ( error ) return next( error )
+                  console.log( 'www-or-non-redirects:end' )
+                  next( null, args )
+                } )
 
             } )
 
-            function setupRedirectBucketTasks ( deployedFiles ) {
-              var oppositeBucket = oppositeBucketFrom( deployedFiles.siteBucket )
-              return function setupRedirectBucketTask ( setupStep ) {
-                setupBucket( Object.assign( setupBucketOptions, { siteBucket: oppositeBucket, ensureCname: false } ), function ( error, bucketSetupResults ) {
-                  if ( error ) {
-                    console.log( 'redirect-bucket-setup:', oppositeBucket );
-                    console.log( error );
-                    bucketSetupResults = { error: error };
-                  }
-                  return setupStep( null, bucketSetupResults )
+            function makeBuckets ( options ) {
+              var buckets = options.buckets;
+              return miss.through.obj( function ( args, enc, next ) {
+                var bucketTasks = buckets.map( makeBucketTasks )
+                async.parallel( bucketTasks, function ( error, buckets ) {
+                  next( null, args )
                 } )
-              }
-            }
+              } )
 
-            function createPublishRedirectBucketTasks ( deployedFiles ) {
-              var oppositeBucket = oppositeBucketFrom( deployedFiles.siteBucket )
-              var redirectBucketArgs = {
-                publishToBucket: oppositeBucket,
-                redirectToBucket: deployedFiles.siteBucket,
-              }
-
-              return deployedFiles.files.filter( isHtmlFile ).map( redirectBucketTasksForArgs( redirectBucketArgs ) )
-            }
-
-            function redirectBucketTasksForArgs ( args ) {
-              var publishToBucket = args.publishToBucket;
-              var redirectToBucket = args.redirectToBucket;
-              var cache = 'no-cache';
-              return function redirectBucketTaskForFile ( file ) {
-                var template = redirectTemplateForDestination( redirectUrlForFile( file ) )
-                return function redirectBucketTask ( redirectStep ) {
-                  cloudStorage.objects.uploadCompressed( publishToBucket, template, file, cache, 'text/html', function ( error, body ) {
+              function makeBucketTasks ( bucket ) {
+                return function setupRedirectBucketTask ( setupStep ) {
+                  setupBucket( Object.assign( setupBucketOptions, { siteBucket: bucket, ensureCname: false } ), function ( error, bucketSetupResults ) {
                     if ( error ) {
-                      console.log( 'redirect-bucket-upload:', file );
+                      console.log( 'redirect-bucket-setup:', oppositeBucket );
                       console.log( error );
-                      body = { error: error }
+                      bucketSetupResults = { error: error };
                     }
-                    redirectStep( null, body );
+                    return setupStep( null, bucketSetupResults )
                   } )
                 }
               }
+            }
 
-              function redirectUrlForFile( file ) {
-                return [ redirectToBucket, urlForFile( file ) ].join( '/' )
-              }
+            /**
+             * feedBuiltFolderFiles transform stream that does a glob search in the
+             * built folder defined the objecet read in, using the pattern option that 
+             * the transform stream is initialized with.
+             *
+             * Expects to read an object with { builtFolder }
+             * Writes objects { builtFile, builtFilePath }
+             * Where builtFile is relative to the builtFolder & builtFilePath is the absolute path.
+             * 
+             * For every matched glob, the file path is written to the transform stream.
+             * 
+             * @param  {object} options
+             * @param  {string} options.pattern      The pattern to use in the glob search
+             * @param  {string} options.globOptions? The glob options to use
+             * @return {object} stream   The transform stream that will handle the work.
+             */
+            function feedBuiltFolderFiles ( options ) {
+              return miss.through.obj( function ( args, enc, next ) {
+                var stream = this;
+                
+                var pattern = path.join( args.builtFolder, options.pattern )
+                var globOptions = options.globOptions || {};
+                
+                var globEmitter = glob.Glob( pattern, globOptions )
+                globEmitter.on( 'match', push )
+                globEmitter.on( 'end', callNext )
 
-              function urlForFile ( file ) {
-                return file.replace( 'index.html', '' )
-              }
+                function push ( builtFilePath ) {
+                  var builtFile = builtFilePath.slice( args.builtFolder.length )
+                  stream.push( { builtFile: builtFile, builtFilePath: builtFilePath  } )
+                }
+                function callNext () { next() }
+
+              } )
+            }
+
+            /**
+             * feedRedirects transform stream that 
+             * 
+             * Reads objects with { builtFile, builtFilePath }
+             * Writes objects with { builtFile, buildFilePath, bucket }
+             * Where buildFilePath is replaced with the redirect template that will be uploaded.
+             *
+             * Pairs expected is an array of `bucket` and `oppositeBucket` values.
+             * `bucket` is what gets used to define the bucket to redirec to.
+             * `oppositeBucket` is what gets used to define where the template gets uploaded.
+             *
+             * Every `builtFile` gets a file pushed for its `/index.html` version, as well
+             * as its non trailing slash version.
+             * 
+             * @param  {object} pairs[]
+             * @param  {object} pairs[].bucket
+             * @param  {object} pairs[].oppositeBuket
+             * @return {object} stream  The transform stream that will handle the work.
+             */
+            function feedRedirects ( pairs ) {
+              return miss.through.obj( function ( args, enc, next ) {
+                var stream = this;
+                pairs.forEach( function ( pair ) {
+
+                  var uploadOptionsBase = {
+                    builtFilePath: redirectTemplateForDestination( redirectUrlForFile( args.builtFile ) ),
+                    bucket: pair.oppositeBucket,
+                  }
+
+                  var uploadOptionTrailingSlash = Object.assign( uploadOptionsBase, {
+                    builtFile: args.builtFile,
+                  } )
+                  var uploadOptionNonTrailingSlash = Object.assign( uploadOptionsBase, {
+                    builtFile: args.builtFile.replace( '/index.html', '' ),
+                  } )
+
+                  stream.push( uploadOptionTrailingSlash )
+                  stream.push( uploadOptionNonTrailingSlash )
+
+                  function redirectUrlForFile( file ) {
+                    return [ pair.bucket, urlForFile( file ) ].join( '/' )
+                  }
+
+                  function urlForFile ( file ) {
+                    return file.replace( 'index.html', '' )
+                  }
+
+                } )
+                next()
+              } )
             }
 
             // slice off or add on a www.
@@ -1186,25 +1352,108 @@ module.exports.start = function (config, logger) {
                 : www + bucket
             }
 
-            // isHtmlFile: true if file is not in static directory, and is index.html
-            function isHtmlFile ( file ) {
-              return file.indexOf('static/') !== 0 && file.indexOf('/index.html') !== -1
-            }
-
           }
 
           /**
-           * deleteRemoteFilesNotInBuild is a transform sink stream makes an object
-           * to keep track of all built files keyed by bucket. When all files
-           * have been captured, stream is flushed with a function that lists
-           * all files for a bucket, determines which are not in the array, and
-           * removes them.
+           * deleteRemoteFilesNotInBuild is a transform stream. First it reads all
+           * objects from the bucket. Then compares them to local files.
+           * 
+           * If it exists as a local file, it nothing is done.
+           * If it does not exist as a local file, it is deleted.
+           *
+           * Local file comparisons include:
+           * - Same name
+           * - Same name - '/index.html'
+           * 
            * @return {object} stream  Transform stream that will handle the work.
            */
           function deleteRemoteFilesNotInBuild () {
             return miss.through.obj( function ( args, enc, next ) {
+              
+              var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
 
+              miss.pipe(
+                usingArguments( { builtFolder: args.builtFolder } ),
+                feedCloudFiles( { buckets: buckets } ),  // adds { bucket, remoteBuiltFile }
+                feedNotLocalFiles(),                     // pushes previous if conditions are met
+                deleteFromBucket(),                      // adds { remoteDeleted }
+                sink(),
+                function onComplete ( error ) {
+                  if ( error ) return next( error )
+                  next( null, args )
+                } )
             } )
+
+            // list and feed all files in the buckets
+            function feedCloudFiles ( options ) {
+              var buckets = options.buckets;
+              return miss.through.obj( function ( args, enc, next ) {
+                var stream = this;
+                
+                var listTasks = buckets.map( pushListTask )
+
+                async.parallel( listTasks, function onDone () { next() } )
+
+                function pushListTask ( bucket ) {
+                  return function ( taskComplete ) {
+
+                    pushList()
+
+                    function pushList ( pageToken ) {
+                      var listOpts = {}
+                      if ( pageToken ) listOpts.pageToken = pageToken;
+                      cloudStorage.objects.list( bucket, listOpts, function ( error, listResult ) {
+                        if ( error ) return taskComplete( error )
+                        if ( !listResult.items ) return taskComplete()
+
+                        listResult.items.forEach( function ( remoteFile ) {
+                          stream.push( Object.assign( args, {
+                            remoteBuiltFile: remoteFile.name,
+                            bucket: bucket,
+                          } ) )
+                        } )
+
+                        if ( listResult.nextPageToken ) return pushList( listResult.nextPageToken )
+
+                        taskComplete()
+                      } )
+                    }
+                  }
+                }
+              } )
+            }
+
+            // compare remote files to local files. if the local file does not exist, push it for deletion.
+            function feedNotLocalFiles () {
+              return miss.through.obj( function ( args, enc, next ) {
+                var localFile = localForRemote( args.remoteBuiltFile )
+                var localFilePath = path.join( args.builtFolder, localFile )
+                fs.open( localFilePath, 'r', function ( error, fd ) {
+                  // file does not exist, lets push the arguments to delete it from the bucket
+                  if ( error ) return next( null, args )
+
+                  // file exists locally, lets keep it in the bucket
+                  fs.close( fd, function () { next() } )
+                } )
+              } )
+
+              function localForRemote ( file ) {
+                // if no extension, this is a redirect template. lets see if we
+                // have the base file that it is redirecting to.
+                if ( path.extname( file ) === '' ) file = file + '/index.html';
+                return file;
+              }
+            }
+
+            // deletes the { bucket, remoteBuiltFile }
+            function deleteFromBucket () {
+              return miss.through.obj( function ( args, enc, next ) {
+                cloudStorage.objects.del( args.bucket, args.remoteBuiltFile, function ( error ) {
+                  args.remoteDeleted = true;
+                  next( null, args );
+                } )
+              } )
+            }
           }
 
           /**

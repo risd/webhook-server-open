@@ -60,7 +60,7 @@ module.exports = function(grunt) {
     },
     builder: {
       forceWrite: process.env.BUILDER_FORCE_WRITE || false,
-      maxParallel: concurrencyOption( process.env.maxParallel ),
+      maxParallel: concurrencyOption( process.env.BUILDER_MAX_PARALLEL ),
     },
   });
 
