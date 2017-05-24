@@ -827,33 +827,6 @@ module.exports.start = function (config, logger) {
             }
           }
 
-          // function buildStaticUpload (){
-          //   return miss.through.obj( function ( args, enc, next ) {
-
-          //     console.log( 'build-static-upload:start' )
-              
-          //     var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
-          //     var buildStaticEmitterOptions = {
-          //       maxParallel: 1,
-          //       streamToCommandArgs: function streamToCommandArgs ( streamArgs ) {
-          //         return [ 'grunt', [ 'build-static', '--emitter' ], { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
-          //       }
-          //     }
-              
-          //     miss.pipe(
-          //       usingArguments( { buildFolder: args.buildFolder } ),
-          //       runBuildEmitter( buildStaticEmitterOptions ),
-          //       uploadIfDifferent( { buckets: buckets } ),
-          //       sink(),
-          //       function onComplete ( error ) {
-          //         console.log( 'build-static-upload:end' )
-          //         console.log( error )
-          //         if ( error ) return next( error )
-          //         next( null, args)
-          //       } )
-          //   } )
-          // }
-
           /**
            * runBuildEmitter returns a parallel transform stream that runs build commands
            * in the number of processes defined by the options.
@@ -978,7 +951,7 @@ module.exports.start = function (config, logger) {
                     args.builtFileMd5 = crypto.createHash('md5').update(compressedBuiltFileContent, encoding).digest('base64');
 
                     next( null, args );
-                    
+
                   } )
                 } )
               } )
