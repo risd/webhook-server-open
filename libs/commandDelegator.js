@@ -60,6 +60,7 @@ module.exports.start = function (config, logger) {
     { commands: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
     { commands: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
     { commands: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
+    { commands: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
   ];
 
   self.root.auth(config.get('firebaseSecret'), function(err) {
@@ -159,6 +160,7 @@ module.exports.start = function (config, logger) {
 						return;
 					}
 
+          // preview builds piggy back on regular build signals
           if ( payload.contentType && payload.itemKey ) {
             var previewIdentifier = [ payload.sitename, payload.contentType, payload.itemKey ].join( '_' )
             var previewBuildCommandArgs = {
@@ -193,6 +195,27 @@ module.exports.start = function (config, logger) {
 
 	    	} )
 
+      } else if ( item.tube ==='previewBuild' ) {
+
+        deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
+          if ( error ) {
+            console.log( error )
+            return;
+          }
+
+          // preview builds piggy back on regular build signals
+          if ( payload.contentType && payload.itemKey ) {
+            var previewIdentifier = [ payload.sitename, payload.contentType, payload.itemKey ].join( '_' )
+            var previewBuildCommandArgs = {
+              identifier: previewIdentifier,
+              memcaheLockId: [ 'previewBuild', identifier, 'queued' ].join( '_' ),
+              payload: Object.assign( { deploys: configuration.deploys }, payload ),
+              tube: 'previewBuild',
+            }
+            queueCommandForArgs( previewBuildCommandArgs )
+          }
+        } )
+
       } else {
       	queueCommandArgs.forEach( queueCommandForArgs )
       }
@@ -201,7 +224,6 @@ module.exports.start = function (config, logger) {
       	var identifier = args.identifier;
       	var memcaheLockId = args.memcaheLockId;
       	var payload = args.payload;
-        var tube = args.tube ? arg.tube : item.tube;
 
       	console.log('memcaheLockId');
 	      console.log(memcaheLockId);
@@ -216,7 +238,7 @@ module.exports.start = function (config, logger) {
 
 	      handlingCommand = handlingCommand + 1;
 
-	      queueCommand(client, { tube: tube }, identifier, memcaheLockId, payload, onQueueComplete);
+	      queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
 
 	      function onQueueComplete (error) {
 	        if (error) {

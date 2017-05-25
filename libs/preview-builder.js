@@ -8,7 +8,9 @@ var cloudStorage = require( './cloudStorage.js' )
 var crypto = require( 'crypto' )
 var JobQueue = require( './jobQueue.js' )
 var miss = require( 'mississippi' )
-var utils = require('./utils.js');
+var Deploys = require( 'webhook-deploy-configuration' )
+var utils = require( './utils.js' )
+var path = require( 'path' )
 
 // Util streams
 var usingArguments = utils.usingArguments;
@@ -29,7 +31,7 @@ module.exports.start = function ( config, logger ) {
 
   var self = this;
 
-  var buildFolderRoot = '../build-folders';
+  var buildFolderRoot = path.join( '..', '/build-folders' )
 
   console.log('Waiting for commands'.red);
 
@@ -39,9 +41,13 @@ module.exports.start = function ( config, logger ) {
   return previewBuildJob;
 
   function previewBuildJob ( payload, identifier, data, client, jobCallback ) {
+    console.log( 'triggered:preview-build-job' )
+    
     var userid = data.userid;
     var site = data.sitename;
     var deploys = data.deploys;
+    var contentType = data.contentType;
+    var itemKey = data.itemKey;
 
     /*
     
@@ -57,12 +63,12 @@ module.exports.start = function ( config, logger ) {
 
     */
     
-    
     var previewBuildArgs = {
       siteName: site,
       deploys: deploys,
       contentType: contentType,
       itemKey: itemKey,
+      buildFolderRoot: buildFolderRoot,
     }
 
     var buildOptions = {
@@ -83,7 +89,7 @@ module.exports.start = function ( config, logger ) {
 
     return miss.pipe(
       usingArguments( previewBuildArgs ),
-      feedBuilds( buildOptions ),
+      feedBranchBuilds( buildOptions ),
       runBuildEmitter( runBuildEmitterOptions ),
       feedBuckets( feedBucketOptions ),
       uploadIfDifferent(),
@@ -93,9 +99,130 @@ module.exports.start = function ( config, logger ) {
         jobCallback()
       } )
 
-    function feedBuilds ( options ) {}
-    function runBuildEmitter ( options ) {}
-    function feedBuckets ( options ) {}
+    function feedBranchBuilds ( options ) {
+      var branches = options.branches;
+      
+      return miss.through.obj( function ( args, enc, next ) {
+        var stream = this;
+
+        console.log( 'feed-branch-builds:start' )
+
+        branches.forEach( function ( branch ) {
+
+          var branchFileName = Deploys.utilities.fileForSiteBranch( args.siteName, branch )
+          var branchFileFolder = branchFileName.slice( 0, ( branchFileName.length - '.zip'.length ) )
+          var buildEmitterArgs = {
+            buildFolder: path.join( args.buildFolderRoot, branchFileFolder ),
+            contentType: args.contentType,
+            itemKey: args.itemKey,
+            branch: branch,
+          }
+
+          stream.push( buildEmitterArgs )
+
+        } )
+
+        console.log( 'feed-branch-builds:end' )
+
+        next()
+
+      } )
+    }
+
+    function runBuildEmitter ( options ) {
+      var maxParallel = options.maxParallel;
+
+      // grunt build-template --inFile=templates/{content-type}/individual.html --itemKey={itemKey}
+      
+      return miss.parallel( maxParallel, function ( args, next ) {
+
+        var stream = this;
+
+        console.log( 'run-build-emitter:start' )
+
+        var cmdArgs = streamToCommandArgs( args )
+        var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
+
+        var errored = false;
+        var builder = winSpawn.apply( null, cmdArgs )
+
+        builder.stdout.on( 'data', function readOutput ( buf ) {
+          var strs = buf.toString().split( '\n' )
+
+          var buildEvent = 'build:document-written:./.build/';
+
+          strs.filter( function filterWriteEvent ( str ) { return str.indexOf( buildEvent ) === 0 } )
+            .forEach( function ( str ) {
+              var builtFile = str.trim().slice( buildEvent.length )
+              var builtFilePath = path.join( builtFolder, builtFile )
+              stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, branch: args.branch } )
+            } )
+
+          var endEvent = ':end:';
+
+          strs.filter( function filterEndEvent ( str ) { return str.indexOf( endEvent ) !== -1 } )
+            .forEach( function ( str ) {
+              builder.kill()
+            } )
+
+        } )
+
+        builder.on( 'error', function ( error ) {
+          console.log( 'builder-error' )
+          console.log( error )
+          errored = true;
+          next()
+        } )
+
+        builder.on( 'exit', function () {
+          if ( errored === true ) return;
+          console.log( 'run-build-emitter:end' )
+          next()
+        } )        
+
+      } )
+
+      function streamToCommandArgs ( streamArgs ) {
+        var individualTemplate = path.join( 'templates', streamArgs.contentType, 'individual.html' )
+        return [ 'grunt',
+          [ 'build-template', '--inFile=' + individualTemplate, '--itemKey=' + streamArgs.itemKey, '--emitter' ],
+          {
+            stdio: 'pipe',
+            cwd: streamArgs.buildFolder
+          }
+        ]
+      }
+
+    }
+
+    function feedBuckets ( options ) {
+      var bucketsForBranch = options.bucketsForBranch;
+      return miss.through.obj( function ( args, enc, next ) {
+        
+        console.log( 'feed-buckets:start' )
+
+        var buckets = bucketsForBranch( args.branch )
+
+        var stream = this;
+
+        buckets.forEach( function ( bucket ) {
+          
+          var uploadArgs = {
+            bucket: bucket,
+            builtFile: args.builtFile,
+            builtFilePath: args.builtFilePath,
+          }
+
+          stream.push( uploadArgs )
+
+        } )
+
+        console.log( 'feed-buckets:end' )
+
+        next()
+
+      } )
+    }
 
   }
 }

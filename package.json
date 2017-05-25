@@ -11,6 +11,7 @@
     "create-worker": "grunt createWorker",
     "build-worker": "grunt buildWorker",
     "site-index-worker": "grunt siteIndexWorker",
+    "preview-build-worker": "grunt previewBuildWorker",
     "backup-cron": "grunt backupCron",
     "extract-key": "grunt extractKey",
     "dev": "nf start --procfile=Procfile.dev"

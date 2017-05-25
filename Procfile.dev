@@ -1,7 +1,7 @@
 beanstalk: beanstalkd
 memcached: memcached
-webhook_server: npm start
 command_delegator: npm run command-delegator
+webhook_server: npm start
 create_worker: npm run create-worker
 invite_worker: npm run invite-worker
 build_worker: npm run build-worker

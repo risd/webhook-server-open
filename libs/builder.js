@@ -869,10 +869,6 @@ module.exports.start = function (config, logger) {
                       var builtFilePath = path.join( builtFolder, builtFile )
                       stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } )
 
-                      // console.log( 'builder:event' )
-                      // console.log( 'builder:' + builtFile )
-                      // console.log( 'builder:' + builtFilePath )
-
                       // non trailing slash redirect
                       if ( builtFile.endsWith( '/index.html' ) ) {
                         stream.push( {
