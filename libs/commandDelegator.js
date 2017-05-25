@@ -159,6 +159,17 @@ module.exports.start = function (config, logger) {
 						return;
 					}
 
+          if ( payload.contentType && payload.itemKey ) {
+            var previewIdentifier = [ payload.sitename, payload.contentType, payload.itemKey ].join( '_' )
+            var previewBuildCommandArgs = {
+              identifier: previewIdentifier,
+              memcaheLockId: [ 'previewBuild', identifier, 'queued' ].join( '_' ),
+              payload: Object.assign( { deploys: configuration.deploys }, payload ),
+              tube: 'previewBuild',
+            }
+            queueCommandForArgs( previewBuildCommandArgs )
+          }
+
 					if ( payload.branch ) {
 						var branches = [ payload.branch ]
 					} else {
@@ -190,6 +201,7 @@ module.exports.start = function (config, logger) {
       	var identifier = args.identifier;
       	var memcaheLockId = args.memcaheLockId;
       	var payload = args.payload;
+        var tube = args.tube ? arg.tube : item.tube;
 
       	console.log('memcaheLockId');
 	      console.log(memcaheLockId);
@@ -204,7 +216,7 @@ module.exports.start = function (config, logger) {
 
 	      handlingCommand = handlingCommand + 1;
 
-	      queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
+	      queueCommand(client, { tube: tube }, identifier, memcaheLockId, payload, onQueueComplete);
 
 	      function onQueueComplete (error) {
 	        if (error) {

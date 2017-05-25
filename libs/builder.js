@@ -19,8 +19,14 @@ var Deploys = require( 'webhook-deploy-configuration' );
 var miss = require( 'mississippi' );
 var path = require( 'path' )
 var glob = require( 'glob' )
-var zlib = require('zlib');
 var setupBucket = require('./creator.js').setupBucket;
+var utils = require('./utils.js');
+
+// Util streams
+var usingArguments = utils.usingArguments;
+var sink = utils.sink;
+var uploadIfDifferent = utils.uploadIfDifferent;
+var redirectTemplateForDestination = utils.redirectTemplateForDestination;
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -59,13 +65,14 @@ module.exports.start = function (config, logger) {
     cloudflare: config.get( 'cloudflare' ),
   }
 
-  /*
-  *  Reports the status to firebase, used to display messages in the CMS
-  *
-  *  @param site    The name of the site
-  *  @param message The Message to send
-  *  @param status  The status code to send (same as command line status codes)
-  */
+
+  /**
+   *  Reports the status to firebase, used to display messages in the CMS
+   *
+   *  @param site    The name of the site
+   *  @param message The Message to send
+   *  @param status  The status code to send (same as command line status codes)
+   */
   var reportStatus = function(site, message, status) {
     var messagesRef = self.root.root().child('/management/sites/' + site + '/messages/');
     messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: 'BUILD' }, function() {
@@ -81,20 +88,20 @@ module.exports.start = function (config, logger) {
     });
   };
 
-  /*
-  * Downloads the site archive from cloud storage
-  * Tries to download {sitename}_{branch}.zip, if that is not
-  * available, it falls back to downloading {sitename}
-  * This is useful for the time between branch deploys on a site.
-  * Regardless of what file is pulled down, it is saved with
-  * {sitename}_{branch}.zip, since this is also used for the 
-  * command delegator queue lock id.
-  *
-  * @param buildFolders The folder to write the archive to
-  * @param siteName     For the templates that we want
-  * @param branch      
-  * @param callback     Callback to call when downloaded
-  */
+  /**
+   * Downloads the site archive from cloud storage
+   * Tries to download {sitename}_{branch}.zip, if that is not
+   * available, it falls back to downloading {sitename}
+   * This is useful for the time between branch deploys on a site.
+   * Regardless of what file is pulled down, it is saved with
+   * {sitename}_{branch}.zip, since this is also used for the 
+   * command delegator queue lock id.
+   *
+   * @param buildFolders The folder to write the archive to
+   * @param siteName     For the templates that we want
+   * @param branch      
+   * @param callback     Callback to call when downloaded
+   */
   var downloadSiteZip = function(buildFolders, sitename, branch, callback) {
   	var branchFileName = Deploys.utilities.fileForSiteBranch( sitename, branch )
     cloudStorage.objects.get(config.get('sitesBucket'), branchFileName, function(err, data) {
@@ -136,14 +143,14 @@ module.exports.start = function (config, logger) {
 
   });
 
-  /*
-  * Uploads site to the sites bucket, tries to not bother uploading things
-  * that havent changed.
-  *
-  * @param siteName   Name of the site
-  * @param folder     Folder to upload from
-  * @param callback   Callback to call when done
-  */
+  /**
+   * Uploads site to the sites bucket, tries to not bother uploading things
+   * that havent changed.
+   *
+   * @param siteName   Name of the site
+   * @param folder     Folder to upload from
+   * @param callback   Callback to call when done
+   */
   function uploadToBucket(siteName, folder, callback) {
 
     if(!fs.existsSync(folder)) {
@@ -514,9 +521,6 @@ module.exports.start = function (config, logger) {
             processSiteCallback( error )
           }
 
-          // Read stream that passes in initialze arguments
-          function usingArguments ( args ) { return miss.from.obj( [ args, null ] ) }          
-
           function queueDelayedJob () {
             return miss.through.obj( function ( args, enc, next ) {
               if ( args.buildDiff > 0 && !args.noDelay ) {
@@ -824,190 +828,81 @@ module.exports.start = function (config, logger) {
                   return [ '--inFile=' + file, '--data=' + cachedData, '--emitter' ]
                 }
               }
-            }
-          }
+            }            
 
-          /**
-           * runBuildEmitter returns a parallel transform stream that runs build commands
-           * in the number of processes defined by the options.
-           *
-           * Expects objects that have shape { buildFolder, ... }
-           * Where { buildFolder, ... } are passed into streamToCommandArgs and expected 
-           * to produce an array of arguments for running a build command.
-           * Pushes objects that have shape  { builtFile, builtFilePath }
-           * 
-           * @param  {object} options
-           * @param  {number} options.builtFolder          The directory where files are 
-           * @param  {number} options.maxParallel?         The max number of streams to spawn at once.
-           * @param  {number} options.streamToCommandArgs  Take the incoming arguments, return command arguments for running the build command
-           * @return {object} stream                       Parallel transform stream that handles the work.
-           */
-          function runBuildEmitter ( options ) {
+            /**
+             * runBuildEmitter returns a parallel transform stream that runs build commands
+             * in the number of processes defined by the options.
+             *
+             * Expects objects that have shape { buildFolder, ... }
+             * Where { buildFolder, ... } are passed into streamToCommandArgs and expected 
+             * to produce an array of arguments for running a build command.
+             * Pushes objects that have shape  { builtFile, builtFilePath }
+             * 
+             * @param  {object} options
+             * @param  {number} options.streamToCommandArgs  Take the incoming arguments, return command arguments for running the build command
+             * @return {object} stream                       Parallel transform stream that handles the work.
+             * @param  {number} options.maxParallel?         The max number of streams to spawn at once.
+             */
+            function runBuildEmitter ( options ) {
 
-            var maxParallel = options.maxParallel || 1;
-            var streamToCommandArgs = options.streamToCommandArgs;
+              var maxParallel = options.maxParallel || 1;
+              var streamToCommandArgs = options.streamToCommandArgs;
 
-            return miss.parallel( maxParallel, function ( args, next ) {
-              var stream = this;
-
-              console.log( 'maxParallel:' + maxParallel )
-              var cmdArgs = streamToCommandArgs( args )
-              var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
-
-              var errored = false;
-              var builder = winSpawn.apply( null, cmdArgs )
-
-              builder.stdout.on( 'data', function readOutput ( buf ) {
-                var str = buf.toString()
-
-                var buildEvent = 'build:document-written:./.build/';
-
-                if ( str.indexOf( buildEvent ) === 0 ) {
-                  var builtFile = str.trim().slice( buildEvent.length )
-                  var builtFilePath = path.join( builtFolder, builtFile )
-                  stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } )
-
-                  // non trailing slash redirect
-                  if ( builtFile.endsWith( '/index.html' ) ) {
-                    stream.push( {
-                      builtFile: builtFile.replace( '/index.html', '' ),
-                      builtFilePath: redirectTemplateForDestination( '/' + builtFile.replace( 'index.html', '' ) ),
-                    } )
-                  }
-                }
-
-                var endEvent = ':end:';
-                if ( str.indexOf( endEvent ) !== -1 ) {
-                  builder.kill()
-                }
-
-              } )
-
-              builder.on( 'error', function ( error ) {
-                console.log( 'builder-error' )
-                console.log( error )
-                errored = true;
-                next()
-              } )
-
-              builder.on( 'exit', function () {
-                if ( errored === true ) return;
-                console.log( 'done:' + JSON.stringify( cmdArgs[1] ) )
-                next()
-              } )
-
-            } )
-          }
-
-          /**
-           * uploadIfDifferent is a transform stream that expects objects with:
-           * { builtFile, builtFilePath }
-           *
-           * Pushes { bucket, builtFile, builtFilePath, builtFileMd5, remoteFileMd5, fileUploaded }
-           *
-           * With this, the stream will
-           * - Get the file within the buckets for its metadata.
-           * - Create an MD5 hash using the file on the current file system
-           * - Compare its MD5 hash against the file coming through the stream
-           * - If they are different, upload the new file.
-           *
-           * `builtFilePath` can be the path to the content, or the content itself.
-           * In the case of templates that are never written to the file system.
-           * 
-           * @param  {object} options
-           * @param  {object} options.buckets[]  List of buckets to upload the file to
-           * @return {object} stream             Transforms stream that handles the work.
-           */
-          function uploadIfDifferent ( options ) {
-            if ( !options ) options = {};
-            var buckets = options.buckets;
-
-            return miss.through.obj( function ( args, enc, next ) {
-
-              var stream = this;
-
-              miss.pipe(
-                usingArguments( { builtFile: args.builtFile, builtFilePath: args.builtFilePath } ),
-                builtFileMd5(),         // adds builtFileMd5
-                feedBuckets( buckets ), // pushes { bucket, builtFile, builtFilePath, builtFileMd5 }
-                remoteFileMd5(),        // adds { remoteFileMd5 }
-                conditionalUpload(),    // adds { fileUploaded }
-                sink(),
-                function onComplete ( error ) {
-                  if ( error ) return next( error )
-                  next( null, args )
-                } )
-            } )
-
-            function builtFileMd5 () {
-              return miss.through.obj( function ( args, enc, next ) {
-                var encoding = 'utf8';
-                fs.readFile( args.builtFilePath, encoding, function ( error, builtFileContent ) {
-                  if ( error ) builtFileContent = args.builtFilePath;
-                  if ( typeof builtFileContent === 'object' ) builtFileContent = builtFileContent.toString()
-
-                  zlib.gzip( builtFileContent, function ( error, compressedBuiltFileContent ) {
-                    
-                    args.builtFileMd5 = crypto.createHash('md5').update(compressedBuiltFileContent, encoding).digest('base64');
-
-                    next( null, args );
-
-                  } )
-                } )
-              } )
-            }
-
-            function feedBuckets ( buckets ) {
-              return miss.through.obj( function ( args, enc, next ) {
+              return miss.parallel( maxParallel, function ( args, next ) {
                 var stream = this;
 
-                // One file per bucket
-                if ( args.bucket ) {
-                  stream.push( args )
-                }
-                // Same file for multiple buckets?
-                if ( buckets ) {
-                  buckets.map( function ( bucket ) {
-                      return Object.assign( args, { bucket: bucket } )
+                var cmdArgs = streamToCommandArgs( args )
+                var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
+
+                var errored = false;
+                var builder = winSpawn.apply( null, cmdArgs )
+
+                builder.stdout.on( 'data', function readOutput ( buf ) {
+                  var strs = buf.toString().split( '\n' )
+
+                  var buildEvent = 'build:document-written:./.build/';
+
+                  strs.filter( function filterWriteEvent ( str ) { return str.indexOf( buildEvent ) === 0 } )
+                    .forEach( function ( str ) {
+                      var builtFile = str.trim().slice( buildEvent.length )
+                      var builtFilePath = path.join( builtFolder, builtFile )
+                      stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } )
+
+                      // console.log( 'builder:event' )
+                      // console.log( 'builder:' + builtFile )
+                      // console.log( 'builder:' + builtFilePath )
+
+                      // non trailing slash redirect
+                      if ( builtFile.endsWith( '/index.html' ) ) {
+                        stream.push( {
+                          builtFile: builtFile.replace( '/index.html', '' ),
+                          builtFilePath: redirectTemplateForDestination( '/' + builtFile.replace( 'index.html', '' ) ),
+                        } )
+                      }
                     } )
-                    .forEach( function ( bucketArgs ) {
-                      stream.push( bucketArgs )
-                    } )  
-                }
 
-                next();
-              } )
-            }
+                  var endEvent = ':end:';
 
-            function remoteFileMd5 () {
-              return miss.through.obj( function ( args, enc, next ) {
-                cloudStorage.objects.getMeta( args.bucket, args.builtFile, function ( error, remoteFileMeta ) {
-                  if ( error ) args.remoteFileMd5 = false;
-                  else args.remoteFileMd5 = remoteFileMeta.md5Hash;
-                  next( null, args )
+                  strs.filter( function filterEndEvent ( str ) { return str.indexOf( endEvent ) !== -1 } )
+                    .forEach( function ( str ) {
+                      builder.kill()
+                    } )
+
                 } )
-              } ) 
-            }
 
-            function conditionalUpload () {
-              return miss.through.obj( function ( args, enc, next ) {
-                if ( args.builtFileMd5 === args.remoteFileMd5 ) return next( null, Object.assign( args, { fileUploaded: false } ) )
-
-                var cache = 'no-cache';
-                console.log( 'conditional-upload:' + JSON.stringify( args ) )
-                cloudStorage.objects.uploadCompressed( args.bucket, args.builtFilePath, args.builtFile, cache, function ( error, uploadResponse ) {
-                  if ( error ) {
-                    console.log( 'conditional-upload:error' )
-                    console.log( error )
-                    args.fileUploaded = false;
-                  }
-                  else {
-                    console.log( 'conditional-upload:response:' + path.join( args.bucket, args.builtFile ) )
-                    console.log( uploadResponse )
-                    args.fileUploaded = true;
-                  }
-                  next( null, args )
+                builder.on( 'error', function ( error ) {
+                  console.log( 'builder-error' )
+                  console.log( error )
+                  errored = true;
+                  next()
                 } )
+
+                builder.on( 'exit', function () {
+                  if ( errored === true ) return;
+                  next()
+                } )
+
               } )
             }
           }
@@ -1429,20 +1324,6 @@ module.exports.start = function (config, logger) {
             }
           }
 
-          /**
-           * Sink stream. Used as the last step in a stream pipeline as a stream
-           * to write to, that doesn't push anything to be read.
-           * @param  {Function} fn?     Optional function to call on the current item.
-           * @return {object}   stream  Transform stream that handles incoming objects.
-           */
-          function sink ( fn ) {
-            if ( typeof fn !== 'function' ) fn = function noop () {}
-            return miss.through.obj( function ( args, enc, next ) {
-              fn( args )
-              next()
-            } )
-          }
-
         } else {
           console.log('Site does not exist or no permissions');
           processSiteCallback( null );
@@ -1539,19 +1420,4 @@ function runInDir(command, cwd, args, callback) {
     }
 
   });
-}
-
-function redirectTemplateForDestination ( destination ) {
-  return [
-    '<html>',
-      '<head>',
-        '<meta charset="utf-8" />',
-      '</head>',
-      '<body>',
-        '<script>',
-          'window.location="', destination , '";',
-        '</script>',
-      '</body>',
-    '</html>',
-  ].join( '' )
 }

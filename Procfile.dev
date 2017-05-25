@@ -6,3 +6,4 @@ create_worker: npm run create-worker
 invite_worker: npm run invite-worker
 build_worker: npm run build-worker
 site_index: npm run site-index-worker
+preview_build_worker: npm run preview-build-worker

@@ -23,6 +23,7 @@ var server = require('./libs/server.js');
 var delegator = require('./libs/commandDelegator.js');
 var backup = require('./libs/backup.js');
 var extractKey = require('./libs/extractKey.js');
+var previewBuilder = require('./libs/preview-builder.js');
 
 require('dotenv').config({ silent: true });
 
@@ -74,7 +75,12 @@ module.exports = function(grunt) {
     builder.start(grunt.config, grunt.log);
   });
 
-  grunt.registerTask('siteIndexWorker', 'Worker that handles building sites', function() {
+  grunt.registerTask('previewBuildWorker', 'Worker that builds an individual template for the given contentType & itemKey.', function () {
+    var done = this.async();
+    previewBuilder.start( grunt.config, grunt.log );
+  });
+
+  grunt.registerTask('siteIndexWorker', 'Worker that handles synchronizing a site Firebase data with its Elastic Search index.', function() {
     var done = this.async();
     siteIndexer.start(grunt.config, grunt.log);
   });
