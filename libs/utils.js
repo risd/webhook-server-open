@@ -4,6 +4,7 @@ var fs = require( 'fs' )
 var crypto = require( 'crypto' )
 var zlib = require( 'zlib' )
 var cloudStorage = require('./cloudStorage.js')
+var mime = require( 'mime' )
 
 module.exports = {
   usingArguments: usingArguments,
@@ -88,7 +89,12 @@ function uploadIfDifferent ( options ) {
 
         zlib.gzip( builtFileContent, function ( error, compressedBuiltFileContent ) {
           
-          args.builtFileMd5 = crypto.createHash('md5').update(compressedBuiltFileContent, encoding).digest('base64');
+          args.overrideMimeType = path.extname( args.builtFilePath ) === ''
+            ? 'text/html'
+            : mime.lookup( args.builtFilePath )
+          args.builtFileMd5 = crypto.createHash('md5').update(compressedBuiltFileContent.toString( encoding ), encoding).digest('base64');
+          args.builtFilePath = compressedBuiltFileContent.toString( encoding );
+          args.compressed = true;
 
           next( null, args );
 
@@ -133,9 +139,9 @@ function uploadIfDifferent ( options ) {
     return miss.through.obj( function ( args, enc, next ) {
       if ( args.builtFileMd5 === args.remoteFileMd5 ) return next( null, Object.assign( args, { fileUploaded: false } ) )
 
-      var cache = 'no-cache';
-      
-      cloudStorage.objects.uploadCompressed( args.bucket, args.builtFilePath, args.builtFile, cache, function ( error, uploadResponse ) {
+      var uploadOptions = streamArgsToUploadOptions( args );
+
+      cloudStorage.objects.uploadCompressed( uploadOptions, function ( error, uploadResponse ) {
         if ( error ) {
           console.log( 'conditional-upload:error' )
           console.log( error )
@@ -147,6 +153,17 @@ function uploadIfDifferent ( options ) {
         next( null, args )
       } )
     } )
+  }
+
+  function streamArgsToUploadOptions ( args ) {
+    return {
+      bucket: args.bucket,
+      local: args.builtFilePath,
+      remote: args.builtFile,
+      cacheControl: 'no-cache',
+      overrideMimeType: args.overrideMimeType,
+      compressed: args.compressed,
+    }
   }
 }
 

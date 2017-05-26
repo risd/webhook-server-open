@@ -8,6 +8,7 @@ var cloudStorage = require( './cloudStorage.js' )
 var crypto = require( 'crypto' )
 var JobQueue = require( './jobQueue.js' )
 var miss = require( 'mississippi' )
+var throughConcurrent = require( 'through2-concurrent' )
 var Deploys = require( 'webhook-deploy-configuration' )
 var utils = require( './utils.js' )
 var path = require( 'path' )
@@ -42,7 +43,7 @@ module.exports.start = function ( config, logger ) {
 
   function previewBuildJob ( payload, identifier, data, client, jobCallback ) {
     console.log( 'triggered:preview-build-job' )
-    
+
     var userid = data.userid;
     var site = data.sitename;
     var deploys = data.deploys;
@@ -50,6 +51,7 @@ module.exports.start = function ( config, logger ) {
     var itemKey = data.itemKey;
 
     /*
+    Outline of the process & args at each stage of the stream
     
     Using args
     { site: '', deploys: [], contentType: '', itemKey }
@@ -134,7 +136,7 @@ module.exports.start = function ( config, logger ) {
 
       // grunt build-template --inFile=templates/{content-type}/individual.html --itemKey={itemKey}
       
-      return miss.parallel( maxParallel, function ( args, next ) {
+      return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
 
         var stream = this;
 

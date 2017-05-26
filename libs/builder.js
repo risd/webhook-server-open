@@ -17,6 +17,7 @@ var touch = require('touch');
 var domain = require('domain');
 var Deploys = require( 'webhook-deploy-configuration' );
 var miss = require( 'mississippi' );
+var throughConcurrent = require( 'through2-concurrent' )
 var path = require( 'path' )
 var glob = require( 'glob' )
 var setupBucket = require('./creator.js').setupBucket;
@@ -143,287 +144,6 @@ module.exports.start = function (config, logger) {
 
   });
 
-  /**
-   * Uploads site to the sites bucket, tries to not bother uploading things
-   * that havent changed.
-   *
-   * @param siteName   Name of the site
-   * @param folder     Folder to upload from
-   * @param callback   Callback to call when done
-   */
-  function uploadToBucket(siteName, folder, callback) {
-
-    if(!fs.existsSync(folder)) {
-      var error = new Error( 'No directory at ' + folder );
-      return callback( error );
-    }
-
-    var files = wrench.readdirSyncRecursive(folder);
-    var funcs = [];
-
-    var deleteList = {};
-    var md5List = {};
-
-    var siteBucket = unescapeSite(siteName);
-    var uploadDeploysResults = { siteBucket: siteBucket, files: [] };
-
-    // We list the objects in cloud storage to avoid uploading the same thing twice
-    cloudStorage.objects.list(siteBucket, function(err, body) {
-
-      if(err) {
-        callback( err );
-      }
-
-      // Get a list of all objects already existing in cloud storage,
-      // add its MD5 to a list. Also add it to a potential delete list
-      // We will remove objects we upload from teh delete list as we upload them
-      // If we dont add them, they've been removed so we need to delete them.
-      if(body.items) {
-        body.items.forEach(function(item) {
-          if(item.name.indexOf('webhook-uploads/') !== 0) {
-           deleteList[item.name] = true;
-           md5List[item.name] = item.md5Hash;
-          }
-        });
-      }
-
-      // For each file to upload, check to see if the MD5 is the same as the one
-      // currently in cloud storage, if so, dont bother uploading it again
-      files.forEach(function(file) {
-        var source = folder + '/' + file;
-
-        if(!fs.lstatSync(source).isDirectory())
-        {
-          var ignore = false;
-          if ( config.get( 'builder' ).forceWrite === false ) {
-            // Check MD5 hash here, if its the same then dont even bother uploading.
-            if(md5List[file]) {
-              var newHash = crypto.createHash('md5').update(fs.readFileSync(source)).digest('base64');
-              if(newHash === md5List[file]) {
-                ignore = true; // File is the same, skip it
-              }
-            }
-          }
-
-          if(!ignore) {       
-
-            var cache = 'no-cache';
-            if(file.indexOf('static/') === 0) {
-             // cache = 'public,max-age=3600';
-            }
-
-            // upload function (will upload with gz compression)
-            funcs.push( function(step) {
-              cloudStorage.objects.uploadCompressed(siteBucket, source, file, cache, function(err, body) {
-                if (err) {
-                  console.log('upload:func:', file);
-                  console.log(err);
-                  body = { error: err }
-                } else {
-                  uploadDeploysResults.files.push( file )
-                }
-                step( null, body );
-              });
-            });
-
-            // For everything thats not a static file and is an index.html file
-            // upload a redirect template that redirects to the trailing slash version
-            // of the page to deal with cloud storage redirect b.s.
-            if(file.indexOf('static/') !== 0 && file.indexOf('/index.html') !== -1) {
-              funcs.push( function( step ) {
-                var template = redirectTemplateForDestination( '/' + file.replace( 'index.html', '' ) )
-                cloudStorage.objects.uploadCompressed(siteBucket, template, file.replace('/index.html', ''), cache, 'text/html', function(err, body) {
-                  if (err) {
-                    console.log('upload:func-dircopy:', file);
-                    console.log(err);
-                    body = { error: err }
-                  }
-                  step( null, body );
-                });
-              });
-            }
-          }
-        }
-
-        // If we had it on the delete list, remove it from the delete list as we've uploaded it
-        if(deleteList[file])
-        {
-          delete deleteList[file];
-        }
-      });
-
-      // Delete the items left in the delete list. They must be items not in the current build
-      _.forOwn(deleteList, function(num, key) {
-
-        funcs.push( function(step) {
-          cloudStorage.objects.del(siteBucket, key, function(err, body) {
-            if (err) {
-              console.log( 'upload:delete:', key);
-              console.log( err );
-            }
-            step( null, body );
-          });
-        });
-
-      });
-
-      // subpublish
-      // alumni.risd.systems
-      console.log( 'pre-subpublish:upload-funcs:', funcs.length )
-      var subpublish = 'alumni';
-      if ( siteBucket === 'edu.risd.systems' ) {
-        console.log( 'subpublish:alumni.risd.systems' );
-
-        funcs = funcs.concat(
-          // subpublish files to upload functions
-          subpublishRequestsFrom( files ),
-          // directory dupes
-          sublishDirectoryRequestsFrom( files ),
-          // delete files
-          sublishDeleteRequestsFrom( deleteList )
-        )
-
-      }
-
-      console.log( 'post-subpublish:upload-funcs:', funcs.length )
-      // subpublish end
-
-      // Run the uploads in parallel
-      console.log( 'async funcs' )
-      async.parallelLimit(funcs, Math.min(funcs.length, 100), function(asyncError, asyncResults) {
-        console.log('upload:complete:');
-        console.log('upload:complete:error:', asyncError);
-        cloudStorage.buckets.updateIndex(siteBucket, 'index.html', '404.html', function(err, body) {
-          console.log('updated');
-          callback( null, uploadDeploysResults );
-        });
-        
-      });
-
-      // subpublish-functions:start
-      function subpublishRequestsFrom ( filesToPublish ) {
-        return filesToPublish
-          .filter( isSubpublish )
-          .map( toUploadOptions )
-          .map( subpublishFileOption )
-          .filter( function isNotDirectory ( options ) {
-            return !fs.lstatSync( options.source ).isDirectory()
-          } )
-          .filter( function isFileNew ( options ) {
-            if ( ! md5List[ options.file ] ) return true; // not in list
-            // see if the file hash exists in the list
-            return ( crypto
-              .createHash( 'md5' )
-              .update( fs.readFileSync( options.source ) )
-              .digest( 'base64' )
-              === md5List[file] )
-          } )
-          .map( toUploadRequests );
-      }
-
-      function sublishDirectoryRequestsFrom ( filesToPublish ) {
-        console.log ( 'sublishDirectoryRequestsFrom' )
-        return filesToPublish
-          .filter( isSubpublish )
-          .filter( function isIndex ( file ) {
-            return ( file.indexOf( '/index.html' ) !== -1 ) &&
-              ( file !== ( [ subpublish, 'index.html' ].join( '/' ) ) )
-          } )
-          .map( toUploadOptions )
-          .map( subpublishFileOption )
-          .map( function sliceIndex ( options ) {
-            console.log( 'sliceIndex:file:', options.file )
-            return Object.assign( options, {
-              file: options.file.slice( 0, - ( '/index.html'.length ) ),
-            } )
-          } )
-          .map( toUploadRequests )
-      }
-
-      function sublishDeleteRequestsFrom ( filesToDelete ) {
-        console.log ( 'sublishDeleteRequestsFrom' )
-        return Object.keys( deleteList )
-          .filter( isSubpublish )
-          .map( sliceSubpublish )
-          .map( fileToDeleteRequestOptions )
-          .map( toDeleteRequests );
-      }
-
-      function isSubpublish ( file ) {
-        return ( file === subpublish ) ||
-         ( file.indexOf( ( subpublish + '/' ) ) === 0 )
-      }
-
-      function sliceSubpublish ( file ) {
-        // if ( file === subpublish ) console.log ( 'index.html' )
-        if ( file === subpublish ) return ( 'index.html' )
-
-        // console.log( 'slicePublish:', file.slice( ( subpublish + '/' ).length ) );
-
-        return file.slice( ( subpublish + '/' ).length )
-      }
-
-      function toUploadOptions ( file ) {
-        return { file: file, source: [ folder, file ].join('/') }
-      }
-
-      function subpublishFileOption (options) {
-        var subpublishFile = sliceSubpublish( options.file )
-        return Object.assign( options, {
-          file: ( subpublishFile.length > 0 ) ? subpublishFile : ''
-        } )
-      } 
-
-      function toUploadRequests ( options ) {
-        // console.log( 'subpublish:upload-req:', options.file )
-        return function uploadRequest ( step ) {
-          cloudStorage.objects.uploadCompressed(
-            subpublishDomain(),
-            options.source,
-            options.file,
-            'no-cache', // cache value
-            function uploadResponse(err, body) {
-              console.log( 'subpublish:upload-res:', options.file )
-              if ( err ) {
-                console.log( err )
-              }
-              step( null, body )
-            } )
-        }
-      }
-
-      function fileToDeleteRequestOptions ( file ) {
-        return {
-          key: file
-        }
-      }
-
-      function toDeleteRequests ( options ) {
-        console.log( 'subpublish:delete-req:', options.key )
-        return function deleteRequest  ( step ) {
-          cloudStorage.objects.del(
-            subpublishDomain(),
-            options.key,
-            function deleteResponse ( error, body ) {
-              console.log( 'subpublish:delete-res:', options.key )
-              if ( err ) {
-                console.log( error )
-              }
-              step( null, body )
-            } )
-        }
-      }
-
-      function subpublishDomain () {
-        // return [ subpublish, 'risd.systems' ].join( '.' )
-        return 'alumni.risd.edu'
-      }
-      // subpublish-functions:end
-
-    });
-
-  }
-
   function buildJob (payload, identifier, data, client, jobCallback) {
     console.log('Triggered command!');
     console.log('payload')
@@ -457,13 +177,11 @@ module.exports.start = function (config, logger) {
       var buildFolderRoot = '../build-folders';
       var buildFolder = buildFolderRoot + '/' + Deploys.utilities.nameForSiteBranch( site, branch );
 
-      // Process the site, this is abstracted into a function so we can wrap it
-      // in a Domain to catch exceptions
       /**
-       * @param  {object}    opts
-       * @param  {string}    opts.buildFolderRoot
-       * @param  {string}    opts.branch
-       * @param  {Function}  finishedProcessing callback
+       * Do the site build.
+       * 
+       * @param  {string}    buildFolder
+       * @param  {Function}  processSiteCallback callback
        * @return {undefined}
        */
       function processSite(buildFolder, processSiteCallback) { 
@@ -502,7 +220,8 @@ module.exports.start = function (config, logger) {
             makeDeployBuckets(),
             buildUploadSite( { maxParallel: maxParallel } ),
             addCmsRedirects(),
-            wwwOrNonRedirects(),
+            subpublishAlumni(),
+            // wwwOrNonRedirects(),
             deleteRemoteFilesNotInBuild(),
             sink(),
             onPipelineComplete)
@@ -605,13 +324,11 @@ module.exports.start = function (config, logger) {
               var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
               var buildEmitterOptions = {
                 maxParallel: maxParallel,
-                streamToCommandArgs: function streamToCommandArgs ( streamArgs ) {
-                  return [ streamArgs.command, streamArgs.commandArgs, { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
-                }
               }
               
               miss.pipe(
                 usingArguments( { buildFolder: args.buildFolder } ),
+                removeBuild(),
                 cacheData(),                  // adds { cachedData }
                 getBuildOrder(),              // adds { buildOrder }
                 feedBuilds(),                 // pushes { buildFolder, command, flags }
@@ -626,6 +343,14 @@ module.exports.start = function (config, logger) {
                 } )
 
             } )
+
+            function removeBuild () {
+              return miss.through.obj( function ( args, enc, next ) {
+                runInDir( 'grunt', args.buildFolder, [ 'clean' ], function ( error ) {
+                  next( null, args)
+                } )
+              } )
+            }
 
             // Transform stream expecting `args` object with shape.
             // { buildFolder: String }
@@ -847,13 +572,14 @@ module.exports.start = function (config, logger) {
             function runBuildEmitter ( options ) {
 
               var maxParallel = options.maxParallel || 1;
-              var streamToCommandArgs = options.streamToCommandArgs;
 
-              return miss.parallel( maxParallel, function ( args, next ) {
+              return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
                 var stream = this;
 
                 var cmdArgs = streamToCommandArgs( args )
                 var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
+
+                console.log( 'run-build-emitter:start:' + cmdArgs[1][1] )
 
                 var errored = false;
                 var builder = winSpawn.apply( null, cmdArgs )
@@ -865,6 +591,7 @@ module.exports.start = function (config, logger) {
 
                   strs.filter( function filterWriteEvent ( str ) { return str.indexOf( buildEvent ) === 0 } )
                     .forEach( function ( str ) {
+                      console.log( 'build-event:' + JSON.stringify( cmdArgs[1] ) )
                       var builtFile = str.trim().slice( buildEvent.length )
                       var builtFilePath = path.join( builtFolder, builtFile )
                       stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } )
@@ -896,10 +623,15 @@ module.exports.start = function (config, logger) {
 
                 builder.on( 'exit', function () {
                   if ( errored === true ) return;
+                  console.log( 'run-build-emitter:end:' +  cmdArgs[1][1] )
                   next()
                 } )
 
               } )
+
+              function streamToCommandArgs ( streamArgs ) {
+                return [ streamArgs.command, streamArgs.commandArgs, { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
+              }
             }
           }
 
@@ -1059,6 +791,48 @@ module.exports.start = function (config, logger) {
 
           }
 
+          // push /alumni to alumni.risd.edu
+          function subpublishAlumni () {
+            return miss.through.obj( function ( args, enc, next ) {
+
+              if ( args.siteName !== 'edu,1risd,1systems' && branch !== 'develop' ) return next( null, args )
+
+              console.log( 'subpublish:start' )
+
+              miss.pipe(
+                usingArguments( { bucket: 'alumni.risd.edu', directory: 'alumni', builtFolder: args.builtFolder } ),
+                feedSubpublish(),
+                uploadIfDifferent(),
+                sink( console.log ),
+                function onComplete ( error ) {
+                  console.log( 'subpublish:end' )
+                  if ( error ) return next( error )
+                  next( null, args )
+                } )
+
+            } )
+
+            function feedSubpublish () {
+              return miss.through.obj( function ( args, enc, next ) {
+                var stream = this;
+
+                var subpublishDirectory = path.join( args.builtFolder, args.directory )
+                var pattern = path.join( subpublishDirectory, '**', '*.html' )
+
+                var globEmitter = glob.Glob( pattern )
+                globEmitter.on( 'match', push )
+                globEmitter.on( 'end', callNext )
+
+                function push ( builtFilePath ) {
+                  var builtFile = builtFilePath.slice( ( subpublishDirectory + '/' ).length )
+                  stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, bucket: args.bucket } )
+                }
+                function callNext () { next() }
+
+              } )
+            }
+          }
+
           /**
            * wwwOrNonRedirects transform stream that creates www bucket for every
            * non-www bucket, and non-www bucket for every www bucket deploy.
@@ -1090,8 +864,9 @@ module.exports.start = function (config, logger) {
                 uploadIfDifferent(),
                 sink(),
                 function onComplete ( error ) {
-                  if ( error ) return next( error )
                   console.log( 'www-or-non-redirects:end' )
+                  console.log( error )
+                  if ( error ) return next( error )
                   next( null, args )
                 } )
 
@@ -1148,7 +923,7 @@ module.exports.start = function (config, logger) {
                 globEmitter.on( 'end', callNext )
 
                 function push ( builtFilePath ) {
-                  var builtFile = builtFilePath.slice( args.builtFolder.length )
+                  var builtFile = builtFilePath.slice( ( args.builtFolder + '/' ).length )
                   stream.push( { builtFile: builtFile, builtFilePath: builtFilePath  } )
                 }
                 function callNext () { next() }
@@ -1188,12 +963,16 @@ module.exports.start = function (config, logger) {
                   var uploadOptionTrailingSlash = Object.assign( uploadOptionsBase, {
                     builtFile: args.builtFile,
                   } )
-                  var uploadOptionNonTrailingSlash = Object.assign( uploadOptionsBase, {
-                    builtFile: args.builtFile.replace( '/index.html', '' ),
-                  } )
 
                   stream.push( uploadOptionTrailingSlash )
-                  stream.push( uploadOptionNonTrailingSlash )
+
+                  if ( args.builtFile !== 'index.html' ) {
+                    var uploadOptionNonTrailingSlash = Object.assign( uploadOptionsBase, {
+                      builtFile: args.builtFile.replace( '/index.html', '' ),
+                    } )
+                    
+                    stream.push( uploadOptionNonTrailingSlash )
+                  }
 
                   function redirectUrlForFile( file ) {
                     return [ pair.bucket, urlForFile( file ) ].join( '/' )
@@ -1234,6 +1013,8 @@ module.exports.start = function (config, logger) {
           function deleteRemoteFilesNotInBuild () {
             return miss.through.obj( function ( args, enc, next ) {
               
+              console.log( 'delete-remote-files-not-in-build:start' )
+
               var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
 
               miss.pipe(
@@ -1243,6 +1024,7 @@ module.exports.start = function (config, logger) {
                 deleteFromBucket(),                      // adds { remoteDeleted }
                 sink(),
                 function onComplete ( error ) {
+                  console.log( 'delete-remote-files-not-in-build:end' )
                   if ( error ) return next( error )
                   next( null, args )
                 } )

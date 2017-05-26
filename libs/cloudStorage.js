@@ -10,6 +10,7 @@ var GAPI = require('gapitoken');
 var mime = require('mime');
 var fs   = require('fs');
 var zlib = require('zlib');
+var miss = require('mississippi');
 
 var oauthToken = '';
 var projectName = process.env.GOOGLE_PROJECT_ID || '';
@@ -377,78 +378,61 @@ module.exports.objects = {
   /*
   * Upload file to bucket with gz compression
   *
-  * @param bucket           Bucket to upload to
-  * @param local            Local file name, or contents of file
-  * @param remote           Remote file name
-  * @param cacheControl     Cache control header to put on object (optional)
-  * @param overrideMimeType Mime type to use instead of auto detecting (optional)
+  * @param options
+  * @param options.bucket            Bucket to upload to
+  * @param options.local             Local file name, or contents of file
+  * @param options.remote            Remote file name
+  * @param options.cacheControl      Cache control header to put on object (optional)
+  * @param options.overrideMimeType  Mime type to use instead of auto detecting (optional)
   * @param callback         Callback with object
   *
   */
-  uploadCompressed: function(bucket, local, remote, cacheControl, overrideMimeType, callback) {
-    if(typeof cacheControl === 'function') {
-      callback = cacheControl;
-      cacheControl = null;
-      overrideMimeType = null;
+  uploadCompressed: function( options, callback ) {
+
+    var bucket = options.bucket;
+    var local = options.local;
+    var remote = options.remote;
+    var cacheControl = options.cacheControl;
+    var overrideMimeType = options.overrideMimeType;
+    var compressed = options.compressed;
+
+    if ( compressed ) return doUpload( local, callback )
+    else {
+      withCompressedContent( local, function ( error, compressedContent ) {
+        doUpload( compressedContent, callback )
+      } )
     }
 
-    if(typeof overrideMimeType === 'function') {
-      callback = overrideMimeType;
-      overrideMimeType = null;
+    function withCompressedContent( local, next ) {
+      fs.readFile( local, function ( error, fileContent ) {
+        if ( error ) fileContent = local; // was not a file, but a string of the file
+
+        zlib.gzip( fileContent, function( error, compressedContent ) {
+          next( null, compressedContent )
+        } );
+      } )
     }
 
-    fs.readFile( local, function ( error, fileContent ) {
-      if ( error ) fileContent = local; // was not a file, but a string of the file
-
-      // subpublish
-      var subpublish = 'alumni';
-      if ( bucket === [ subpublish, 'risd.systems'].join('.') ) {
-        // replace subpublish from links
-        fileContent = subpublishLinks( fileContent )
-      }
-
-      var now = Date.now();
-      zlib.gzip(fileContent, function(err, content) {
-        jsonRequest({
-          url: 'https://www.googleapis.com/upload/storage/v1/b/' + bucket + '/o',
-          qs: { uploadType: 'multipart' },
-          headers: {
-            'content-type' : 'multipart/form-data'
-          },
-          method: 'POST',
-          multipart: [{
-              'Content-Type' : 'application/json; charset=UTF-8',
-              body: JSON.stringify({
-                name: remote,
-                cacheControl: cacheControl ? cacheControl : "no-cache",
-                contentEncoding: 'gzip',
-              })                  
-          },{ 
-              'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
-              body: content
-          }]
-        }, callback);
-      });
-
-    } )
-
-    function subpublishLinks ( buffer ) {
-      var cheerio = require( 'cheerio' );
-      var $ = cheerio.load( buffer.toString() );
-
-      $( 'a[href*="/' + subpublish +  '/"]' )
-        .map( function ( index, element ) {
-          var originalLink = $( element ).attr( 'href' );
-          var subpublishLink = originalLink
-            .split( '/' + subpublish + '/' )
-            .join('/')
-
-          $( element ).attr( 'href', subpublishLink )
-
-          return element;
-        } )
-
-      return new Buffer( $.html() );
+    function doUpload ( compressedContent, next ) {
+      jsonRequest({
+        url: 'https://www.googleapis.com/upload/storage/v1/b/' + bucket + '/o',
+        qs: { uploadType: 'multipart' },
+        headers: {
+          'content-type' : 'multipart/form-data'
+        },
+        method: 'POST',
+        multipart: [{
+            'Content-Type' : 'application/json; charset=UTF-8',
+            body: JSON.stringify({
+              name: remote,
+              cacheControl: cacheControl ? cacheControl : "no-cache",
+              contentEncoding: 'gzip',
+            })                  
+        },{ 
+            'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
+            body: compressedContent,
+        }]
+      }, next)
     }
 
   },
