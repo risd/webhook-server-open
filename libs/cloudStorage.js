@@ -396,7 +396,7 @@ module.exports.objects = {
     var overrideMimeType = options.overrideMimeType;
     var compressed = options.compressed;
 
-    if ( compressed ) return doUpload( local, callback )
+    if ( compressed ) return doUpload( compressed, callback )
     else {
       withCompressedContent( local, function ( error, compressedContent ) {
         doUpload( compressedContent, callback )

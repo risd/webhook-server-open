@@ -594,9 +594,9 @@ module.exports.start = function (config, logger) {
 
                   strs.filter( function filterWriteEvent ( str ) { return str.indexOf( buildEvent ) === 0 } )
                     .forEach( function ( str ) {
-                      console.log( 'build-event:' + JSON.stringify( cmdArgs[1] ) )
                       var builtFile = str.trim().slice( buildEvent.length )
                       var builtFilePath = path.join( builtFolder, builtFile )
+                      console.log( 'build-event:' + builtFile )
                       stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } )
 
                       // non trailing slash redirect

@@ -85,16 +85,14 @@ function uploadIfDifferent ( options ) {
       var encoding = 'utf8';
       fs.readFile( args.builtFilePath, encoding, function ( error, builtFileContent ) {
         if ( error ) builtFileContent = args.builtFilePath;
-        if ( typeof builtFileContent === 'object' ) builtFileContent = builtFileContent.toString()
 
         zlib.gzip( builtFileContent, function ( error, compressedBuiltFileContent ) {
           
           args.overrideMimeType = path.extname( args.builtFilePath ) === ''
             ? 'text/html'
             : mime.lookup( args.builtFilePath )
-          args.builtFileMd5 = crypto.createHash('md5').update(compressedBuiltFileContent.toString( encoding ), encoding).digest('base64');
-          args.builtFilePath = compressedBuiltFileContent.toString( encoding );
-          args.compressed = true;
+          args.builtFileMd5 = crypto.createHash('md5').update(compressedBuiltFileContent, encoding).digest('base64');
+          // args.compressed = compressedBuiltFileContent.toString( encoding );
 
           next( null, args );
 
