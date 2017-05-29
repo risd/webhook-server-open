@@ -232,9 +232,12 @@ module.exports.start = function (config, logger) {
             console.log( 'built-pipeline-complete' )
             if ( error ) {
               if ( typeof error.reportStatus ) {
-                reportStatus( error.reportStatus.site, error.reportStatus.message, error.reportStatus.status )
+                reportStatus( siteName, error.reportStatus.message, error.reportStatus.status )
                 console.log( error.reportStatus.message );
               }
+            } else {
+              var buckets = deploysToConsider.map( function ( deploy) { return deploy.bucket } )
+              reportStatus( siteName, 'Built and uploaded to ' + buckets.join(', ') + '.', 0 )
             }
 
             processSiteCallback( error )
