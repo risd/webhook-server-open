@@ -715,11 +715,9 @@ module.exports.start = function (config, logger) {
                   builtFilePaths = builtFilePaths.filter( filterNull ).reduce( function ( previous, current ) { return previous.concat( current.filter( filterNull ) ) }, [] ).filter( filterNull )
 
                   var uploadsArgs = builtFilePaths.map( function ( builtFilePath ) {
-                    console.log( 'builtFilePath' )
-                    console.log( builtFilePath )
                     return {
                       builtFilePath: builtFilePath,
-                      builtFile: builtFilePath.slice( builtFolder.length )
+                      builtFile: builtFilePath.slice( ( builtFolder + '/' ).length )
                     }
                   } )
 
@@ -773,7 +771,7 @@ module.exports.start = function (config, logger) {
                   var template = redirectTemplateForDestination( destination )
                   return function forSourceFile ( sourceFile ) {
                     return function writeFileTask ( writeTaskComplete ) {
-                      // only write a file if there isn't one that was just built there
+                      // create redirect only if there isn't already a file
                       fs.readFile( sourceFile, function ( readError ) {
                         if ( readError ) {
                           mkdirp( path.dirname( sourceFile ), function () {
@@ -798,7 +796,7 @@ module.exports.start = function (config, logger) {
           function subpublishAlumni () {
             return miss.through.obj( function ( args, enc, next ) {
 
-              if ( args.siteName !== 'edu,1risd,1systems' && branch !== 'develop' ) return next( null, args )
+              if ( ! ( args.siteName === 'edu,1risd,1systems' && branch === 'develop' ) ) return next( null, args )
 
               console.log( 'subpublish:start' )
 
