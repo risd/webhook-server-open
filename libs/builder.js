@@ -597,7 +597,13 @@ module.exports.start = function (config, logger) {
                       var builtFile = str.trim().slice( buildEvent.length )
                       var builtFilePath = path.join( builtFolder, builtFile )
                       console.log( 'build-event:' + builtFile )
-                      stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } )
+
+                      if ( builtFile.endsWith( '.html' ) && ( ! builtFile.endsWith( 'index.html' ) ) && ( ! builtFile.endsWith( '404.html' ) ) ) {
+                        // html pages that aren't already an index.html file, or the root 404.html file
+                        builtFile = htmlAsIndexFile( builtFile )
+                      }
+
+                      stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } ) 
 
                       // non trailing slash redirect
                       if ( builtFile.endsWith( '/index.html' ) ) {
@@ -631,6 +637,12 @@ module.exports.start = function (config, logger) {
                 } )
 
               } )
+
+              function htmlAsIndexFile ( file ) {
+                // file = path/to/doc.html
+                // return file = path/to/doc/index.html
+                return file.slice( 0, ( '.html'.length * -1 ) ) + '/index.html'
+              }
 
               function streamToCommandArgs ( streamArgs ) {
                 return [ streamArgs.command, streamArgs.commandArgs, { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
