@@ -1088,8 +1088,18 @@ module.exports.start = function (config, logger) {
                 var localFile = localForRemote( args.remoteBuiltFile )
                 var localFilePath = path.join( args.builtFolder, localFile )
                 fs.open( localFilePath, 'r', function ( error, fd ) {
-                  // file does not exist, lets push the arguments to delete it from the bucket
-                  if ( error ) return next( null, args )
+                  // file does not exist, lets see if it exists as named html file
+                  // rather than a named directory with an index.html
+                  if ( error ) {
+                    return fs.open( localNonIndex( localFilePath ), 'r', function ( error, fd ) {
+                      // file does not exist, lets push its args and delete it
+                      if ( error ) return next( null, args )
+
+                      // file exists locally, lets keep it in the bucket
+                      fs.close( fd, function () { next() } )
+                    } )
+                    
+                  }
 
                   // file exists locally, lets keep it in the bucket
                   fs.close( fd, function () { next() } )
@@ -1102,11 +1112,17 @@ module.exports.start = function (config, logger) {
                 if ( path.extname( file ) === '' ) file = file + '/index.html';
                 return file;
               }
+
+              function localNonIndex ( file ) {
+                return file.slice( 0, ( -1 * '/index.html' ) ) + '.html';
+              }
             }
 
             // deletes the { bucket, remoteBuiltFile }
             function deleteFromBucket () {
               return miss.through.obj( function ( args, enc, next ) {
+                console.log( 'deleteFromBucket' )
+                console.log( path.join( args.bucket, args.remoteBuiltFile ) )
                 cloudStorage.objects.del( args.bucket, args.remoteBuiltFile, function ( error ) {
                   args.remoteDeleted = true;
                   next( null, args );
