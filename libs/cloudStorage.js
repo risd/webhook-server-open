@@ -10,6 +10,7 @@ var GAPI = require('gapitoken');
 var mime = require('mime');
 var fs   = require('fs');
 var zlib = require('zlib');
+var miss = require('mississippi');
 
 var oauthToken = '';
 var projectName = process.env.GOOGLE_PROJECT_ID || '';
@@ -250,10 +251,18 @@ module.exports.buckets = {
 module.exports.objects = { 
 
   // List all objects in a bucket (name, md5hash)
-  list: function(bucket, callback) {
+  list: function(bucket, options, callback) {
+    if ( typeof options === 'function' ) callback = options;
+    if ( !options ) options = {};
+
+    var qs = Object.assign( {
+      fields: 'kind,items(name,md5Hash),nextPageToken',
+      delimiter: 'webhook-uploads/',
+    }, options )
+
     jsonRequest({
       url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o',
-      qs: { fields: 'kind,items(name,md5Hash)', delimiter: 'webhook-uploads/' }
+      qs: qs,
     }, callback);
   },
 
@@ -316,6 +325,13 @@ module.exports.objects = {
     }, callback);
   },
 
+  // Get an objects metadata
+  getMeta: function ( bucket, file, callback ) {
+    jsonRequest({
+      url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o/' + encodeURIComponent(file),
+    }, callback);
+  },
+
   /*
   * Upload file to bucket
   *
@@ -362,41 +378,42 @@ module.exports.objects = {
   /*
   * Upload file to bucket with gz compression
   *
-  * @param bucket           Bucket to upload to
-  * @param local            Local file name, or contents of file
-  * @param remote           Remote file name
-  * @param cacheControl     Cache control header to put on object (optional)
-  * @param overrideMimeType Mime type to use instead of auto detecting (optional)
+  * @param options
+  * @param options.bucket            Bucket to upload to
+  * @param options.local             Local file name, or contents of file
+  * @param options.remote            Remote file name
+  * @param options.cacheControl      Cache control header to put on object (optional)
+  * @param options.overrideMimeType  Mime type to use instead of auto detecting (optional)
   * @param callback         Callback with object
   *
   */
-  uploadCompressed: function(bucket, local, remote, cacheControl, overrideMimeType, callback) {
-    if(typeof cacheControl === 'function') {
-      callback = cacheControl;
-      cacheControl = null;
-      overrideMimeType = null;
+  uploadCompressed: function( options, callback ) {
+
+    var bucket = options.bucket;
+    var local = options.local;
+    var remote = options.remote;
+    var cacheControl = options.cacheControl;
+    var overrideMimeType = options.overrideMimeType;
+    var compressed = options.compressed;
+
+    if ( compressed ) return doUpload( compressed, callback )
+    else {
+      withCompressedContent( local, function ( error, compressedContent ) {
+        doUpload( compressedContent, callback )
+      } )
     }
 
-    if(typeof overrideMimeType === 'function') {
-      callback = overrideMimeType;
-      overrideMimeType = null;
+    function withCompressedContent( local, next ) {
+      fs.readFile( local, function ( error, fileContent ) {
+        if ( error ) fileContent = local; // was not a file, but a string of the file
+
+        zlib.gzip( fileContent, function( error, compressedContent ) {
+          next( null, compressedContent )
+        } );
+      } )
     }
 
-    try {
-      var fileContent = fs.readFileSync(local);
-    } catch ( error ) {
-      fileContent = local;
-    }
-
-    // subpublish
-    var subpublish = 'alumni';
-    if ( bucket === [ subpublish, 'risd.systems'].join('.') ) {
-      // replace subpublish from links
-      fileContent = subpublishLinks( fileContent )
-    }
-
-    var now = Date.now();
-    zlib.gzip(fileContent, function(err, content) {
+    function doUpload ( compressedContent, next ) {
       jsonRequest({
         url: 'https://www.googleapis.com/upload/storage/v1/b/' + bucket + '/o',
         qs: { uploadType: 'multipart' },
@@ -413,28 +430,9 @@ module.exports.objects = {
             })                  
         },{ 
             'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
-            body: content
+            body: compressedContent,
         }]
-      }, callback);
-    });
-
-    function subpublishLinks ( buffer ) {
-      var cheerio = require( 'cheerio' );
-      var $ = cheerio.load( buffer.toString() );
-
-      $( 'a[href*="/' + subpublish +  '/"]' )
-        .map( function ( index, element ) {
-          var originalLink = $( element ).attr( 'href' );
-          var subpublishLink = originalLink
-            .split( '/' + subpublish + '/' )
-            .join('/')
-
-          $( element ).attr( 'href', subpublishLink )
-
-          return element;
-        } )
-
-      return new Buffer( $.html() );
+      }, next)
     }
 
   },

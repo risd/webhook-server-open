@@ -60,6 +60,7 @@ module.exports.start = function (config, logger) {
     { commands: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
     { commands: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
     { commands: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
+    { commands: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
   ];
 
   self.root.auth(config.get('firebaseSecret'), function(err) {
@@ -159,6 +160,18 @@ module.exports.start = function (config, logger) {
 						return;
 					}
 
+          // preview builds piggy back on regular build signals
+          if ( payload.contentType && payload.itemKey ) {
+            var previewIdentifier = [ payload.sitename, payload.contentType, payload.itemKey ].join( '_' )
+            var previewBuildCommandArgs = {
+              identifier: previewIdentifier,
+              memcaheLockId: [ 'previewBuild', identifier, 'queued' ].join( '_' ),
+              payload: Object.assign( { deploys: configuration.deploys }, payload ),
+              tube: 'previewBuild',
+            }
+            queueCommandForArgs( previewBuildCommandArgs )
+          }
+
 					if ( payload.branch ) {
 						var branches = [ payload.branch ]
 					} else {
@@ -181,6 +194,27 @@ module.exports.start = function (config, logger) {
 					queueCommandArgs.forEach( queueCommandForArgs )					
 
 	    	} )
+
+      } else if ( item.tube ==='previewBuild' ) {
+
+        deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
+          if ( error ) {
+            console.log( error )
+            return;
+          }
+
+          // preview builds piggy back on regular build signals
+          if ( payload.contentType && payload.itemKey ) {
+            var previewIdentifier = [ payload.sitename, payload.contentType, payload.itemKey ].join( '_' )
+            var previewBuildCommandArgs = {
+              identifier: previewIdentifier,
+              memcaheLockId: [ 'previewBuild', identifier, 'queued' ].join( '_' ),
+              payload: Object.assign( { deploys: configuration.deploys }, payload ),
+              tube: 'previewBuild',
+            }
+            queueCommandForArgs( previewBuildCommandArgs )
+          }
+        } )
 
       } else {
       	queueCommandArgs.forEach( queueCommandForArgs )

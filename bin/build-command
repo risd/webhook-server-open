@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+require('dotenv').config()
+
 var grunt = require( 'grunt' );
 var webhookTasks = require( '../Gruntfile.js' );
 var builder = require( '../libs/builder.js' );
@@ -13,34 +15,6 @@ grunt.config.merge( {
 
 var build = builder.start( grunt.config, grunt.log )
 
-var payload = {
-  "identifier":"risd-undergraduate-welcome,1risd,1systems_develop",
-  "payload": {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-undergraduate-welcome,1risd,1systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-    "deploys": [
-      { branch: 'master', bucket: 'congratulations.risd.edu' },
-      { branch: 'develop', bucket: 'risd-undergraduate-welcome.risd.systems' }
-    ]
-  },
-}
-
-var identifier = 'unique-cli-test,1risd,1systems_develop'
-var data = {
-  "build_time":"2017-04-10T10:10:00-04:00",
-  "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-  "sitename":"risd-undergraduate-welcome,1risd,1systems",
-  "userid":"rrodrigu@risd.edu",
-  "branch":"master",
-  "deploys": [
-    { branch: 'master', bucket: 'congratulations.risd.edu' },
-    { branch: 'develop', bucket: 'risd-undergraduate-welcome.risd.systems' }
-  ]
-}
-
 var mockClient = {
   put: function (first, second, third, fourth, jobExecuter) {
     jobExecuter()
@@ -53,4 +27,119 @@ var jobCallback = function ( error ) {
   process.exit( error ? 1 : 0 )
 }
 
-build( payload, identifier, data, mockClient, jobCallback  )
+// var cmd = risdIdentityMaster()
+// var cmd = uniqueCliTestMaster()
+var cmd = undergradDevelop();
+// var cmd = undergradMaster();
+// var cmd = eduTest();
+
+build( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
+
+function eduTest () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"edu,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"feature/prioritized-build",
+    "deploys": [
+      { branch: 'feature/prioritized-build', bucket: 'edu-build-test.risd.systems' },
+      // { branch: 'develop', bucket: 'edu.risd.systems' }
+    ]
+  }
+  var identifier = "edu,1risd,1systems_feature-prioritized-build"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function undergradMaster () {
+
+  var identifier = "risd-undergraduate-welcome,1risd,1systems_develop"
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-undergraduate-welcome,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+    "deploys": [
+      { branch: 'master', bucket: 'congratulations.risd.edu' },
+      { branch: 'develop', bucket: 'risd-undergraduate-welcome.risd.systems' }
+    ]
+  }
+  var payload = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return payload;
+}
+
+function undergradDevelop () {
+
+  var identifier = "risd-undergraduate-welcome,1risd,1systems_develop"
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-undergraduate-welcome,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+    "deploys": [
+      { branch: 'master', bucket: 'congratulations.risd.edu' },
+      { branch: 'develop', bucket: 'risd-undergraduate-welcome.risd.systems' }
+    ]
+  }
+  var payload = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return payload;
+}
+
+function uniqueCliTestMaster () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"unique-cli-test,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+    "deploys": [
+      { branch: 'master', bucket: 'unique-cli-test.risd.systems' }
+    ]
+  }
+  var identifier = "unique-cli-test,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function risdIdentityMaster () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-identity-research,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+    "deploys": [
+      { branch: 'master', bucket: 'risd-identity-research.risd.systems' }
+    ]
+  }
+  var identifier = "risd-identity-research,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
