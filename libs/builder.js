@@ -1065,7 +1065,7 @@ module.exports.start = function (config, logger) {
                         if ( error ) return taskComplete( error )
                         if ( !listResult.items ) return taskComplete()
 
-                        listResult.items.forEach( function ( remoteFile ) {
+                        listResult.items.filter( nonStatic ).forEach( function ( remoteFile ) {
                           stream.push( Object.assign( args, {
                             remoteBuiltFile: remoteFile.name,
                             bucket: bucket,
@@ -1080,6 +1080,10 @@ module.exports.start = function (config, logger) {
                   }
                 }
               } )
+
+              function nonStatic ( remoteFile ) {
+                return ( ! remoteFile.name.startsWith( 'static/' ) )
+              }
             }
 
             // compare remote files to local files. if the local file does not exist, push it for deletion.
