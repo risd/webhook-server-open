@@ -1089,7 +1089,7 @@ module.exports.start = function (config, logger) {
                         if ( !listResult.items ) return taskComplete()
 
                         listResult.items.filter( nonStatic ).forEach( function ( remoteFile ) {
-                          stream.push( Object.assign( args, {
+                          stream.push( Object.assign( {}, args, {
                             remoteBuiltFile: remoteFile.name,
                             bucket: bucket,
                           } ) )

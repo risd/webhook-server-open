@@ -68,7 +68,7 @@ function uploadIfDifferent ( options ) {
     }
 
     if ( args.bucket ) uploadArgs.bucket = args.bucket;
-
+    
     miss.pipe(
       usingArguments( uploadArgs ),
       builtFileMd5(),         // adds builtFileMd5
@@ -140,7 +140,7 @@ function uploadIfDifferent ( options ) {
       if ( args.builtFileMd5 === args.remoteFileMd5 ) return next( null, Object.assign( args, { fileUploaded: false } ) )
 
       var uploadOptions = streamArgsToUploadOptions( args );
-
+      
       cloudStorage.objects.uploadCompressed( uploadOptions, function ( error, uploadResponse ) {
         if ( error ) {
           console.log( 'conditional-upload:error' )
