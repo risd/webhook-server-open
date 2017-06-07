@@ -60,7 +60,6 @@ function uploadIfDifferent ( options ) {
   var maxParallel = options.maxParallel || 1;
 
   return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
-
     var stream = this;
 
     var uploadArgs = {
@@ -115,7 +114,7 @@ function uploadIfDifferent ( options ) {
       // Same file for multiple buckets?
       if ( buckets ) {
         buckets.map( function ( bucket ) {
-            return Object.assign( args, { bucket: bucket } )
+            return Object.assign( {}, args, { bucket: bucket } )
           } )
           .forEach( function ( bucketArgs ) {
             stream.push( bucketArgs )
