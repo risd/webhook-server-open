@@ -358,6 +358,9 @@ function sink () {
  * @param  {Function} onComplete ( Error|null, Boolean|CnameRecord )
  */
 function createCnameRecord ( options, onComplete ) {
+  console.log( 'create-cname-record:start' )
+  console.log( options )
+
   var Cloudflare = require('cloudflare');
 
   var client = new Cloudflare( options.client )
@@ -378,10 +381,10 @@ function createCnameRecord ( options, onComplete ) {
 
     client.addDNS( dnsCnameRecord )
       .then( function ( cname ) {
-        return onComplete( null, cname )
+        return withRecord( null, cname )
       } )
       .catch( function ( error ) {
-        onComplete( error, recordCreated )
+        withRecord( error, recordCreated )
       } )
 
   }
@@ -421,7 +424,7 @@ function createCnameRecord ( options, onComplete ) {
     function paginate ( error, pagination ) {
       if ( error ) return withCnames( error )
 
-      if ( pagination.page < pagination.totalPages ) return getPageOfCnames( { page: pagination.page++ }, paginate )
+      if ( pagination.page < pagination.totalPages ) return getPageOfCnames( { page: pagination.page + 1 }, paginate )
 
       else return withCnames( null, cnameSources )
     }

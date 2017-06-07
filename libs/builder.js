@@ -219,10 +219,10 @@ module.exports.start = function (config, logger) {
             installDependencies(),
             makeDeployBuckets(),
             buildUploadSite( { maxParallel: maxParallel } ),
-            addCmsRedirects(),
-            subpublishAlumni(),
+            addCmsRedirects( { maxParallel: maxParallel } ),
+            subpublishAlumni( { maxParallel: maxParallel } ),
             // wwwOrNonRedirects(),
-            deleteRemoteFilesNotInBuild(),
+            deleteRemoteFilesNotInBuild( { maxParallel: maxParallel } ),
             sink(),
             onPipelineComplete)
 
@@ -328,6 +328,11 @@ module.exports.start = function (config, logger) {
               var buildEmitterOptions = {
                 maxParallel: maxParallel,
               }
+
+              var uploadOptions = {
+                buckets: buckets,
+                maxParallel: maxParallel,
+              }
               
               miss.pipe(
                 usingArguments( { buildFolder: args.buildFolder } ),
@@ -336,7 +341,7 @@ module.exports.start = function (config, logger) {
                 getBuildOrder(),              // adds { buildOrder }
                 feedBuilds(),                 // pushes { buildFolder, command, flags }
                 runBuildEmitter( buildEmitterOptions ),  // pushes { builtFile, builtFilePath }
-                uploadIfDifferent( { buckets: buckets } ),
+                uploadIfDifferent( uploadOptions ),
                 sink(),
                 function onComplete ( error ) {
                   console.log( 'build-upload-site:end' )
@@ -569,8 +574,8 @@ module.exports.start = function (config, logger) {
              * 
              * @param  {object} options
              * @param  {number} options.streamToCommandArgs  Take the incoming arguments, return command arguments for running the build command
-             * @return {object} stream                       Parallel transform stream that handles the work.
              * @param  {number} options.maxParallel?         The max number of streams to spawn at once.
+             * @return {object} stream                       Parallel transform stream that handles the work.
              */
             function runBuildEmitter ( options ) {
 
@@ -659,19 +664,29 @@ module.exports.start = function (config, logger) {
            * at the same file path.
            * The redirect template will always be an `index.html`.
            *
+           * @param  {object} options
+           * @param  {number} options.maxParallel?  Max number of build workers to spawn.
            * @return {object} stream  Transform stream that will handle the work.
            */
-          function addCmsRedirects () {
+          function addCmsRedirects ( options ) {
+            if ( !options ) options = {};
+            var maxParallel = options.maxParallel || 1;
+
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'add-redirects:start' )
 
               var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
 
+              var uploadOptions = {
+                buckets: buckets,
+                maxParallel: maxParallel,
+              }
+
               miss.pipe(
                 usingArguments( {} ),
                 getRedirects( { siteName: args.siteName, siteKey: args.siteKey } ),         // pushes { redirects }
                 buildRedirects( { builtFolder: args.builtFolder } ), // pushes { builtFile, builtFilePath }
-                uploadIfDifferent( { buckets: buckets } ),
+                uploadIfDifferent( uploadOptions ),
                 function onComplete ( error ) {
                   console.log( 'add-redirects:end' )
                   console.log( error )
@@ -805,7 +820,10 @@ module.exports.start = function (config, logger) {
           }
 
           // push /alumni to alumni.risd.edu
-          function subpublishAlumni () {
+          function subpublishAlumni ( options ) {
+            if ( !options ) options = {};
+            var maxParallel = options.maxParallel || 1;
+
             return miss.through.obj( function ( args, enc, next ) {
 
               if ( ! ( args.siteName === 'edu,1risd,1systems' && branch === 'develop' ) ) return next( null, args )
@@ -815,7 +833,7 @@ module.exports.start = function (config, logger) {
               miss.pipe(
                 usingArguments( { bucket: 'alumni.risd.edu', directory: 'alumni', builtFolder: args.builtFolder } ),
                 feedSubpublish(),
-                uploadIfDifferent(),
+                uploadIfDifferent( { maxParallel: maxParallel } ),
                 sink( console.log ),
                 function onComplete ( error ) {
                   console.log( 'subpublish:end' )
@@ -1021,9 +1039,14 @@ module.exports.start = function (config, logger) {
            * - Same name
            * - Same name - '/index.html'
            * 
+           * @param  {object} options
+           * @param  {number} options.maxParallel?  Max number of build workers to spawn.
            * @return {object} stream  Transform stream that will handle the work.
            */
-          function deleteRemoteFilesNotInBuild () {
+          function deleteRemoteFilesNotInBuild ( options ) {
+            if ( !options ) options = {};
+            var maxParallel = options.maxParallel || 1;
+
             return miss.through.obj( function ( args, enc, next ) {
               
               console.log( 'delete-remote-files-not-in-build:start' )
@@ -1032,9 +1055,9 @@ module.exports.start = function (config, logger) {
 
               miss.pipe(
                 usingArguments( { builtFolder: args.builtFolder } ),
-                feedCloudFiles( { buckets: buckets } ),  // adds { bucket, remoteBuiltFile }
-                feedNotLocalFiles(),                     // pushes previous if conditions are met
-                deleteFromBucket(),                      // adds { remoteDeleted }
+                feedCloudFiles( { buckets: buckets } ),            // adds { bucket, remoteBuiltFile }
+                feedNotLocalFiles(),                               // pushes previous if conditions are met
+                deleteFromBucket( { maxParallel: maxParallel } ),  // adds { remoteDeleted }
                 sink(),
                 function onComplete ( error ) {
                   console.log( 'delete-remote-files-not-in-build:end' )
@@ -1123,8 +1146,11 @@ module.exports.start = function (config, logger) {
             }
 
             // deletes the { bucket, remoteBuiltFile }
-            function deleteFromBucket () {
-              return miss.through.obj( function ( args, enc, next ) {
+            function deleteFromBucket ( options ) {
+              if ( !options ) options = {};
+              var maxParallel = options.maxParallel || 1;
+
+              return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
                 console.log( 'deleteFromBucket' )
                 console.log( path.join( args.bucket, args.remoteBuiltFile ) )
                 cloudStorage.objects.del( args.bucket, args.remoteBuiltFile, function ( error ) {

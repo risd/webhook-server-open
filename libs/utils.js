@@ -1,4 +1,5 @@
 var miss = require( 'mississippi' )
+var throughConcurrent = require( 'through2-concurrent' )
 var path = require( 'path' )
 var fs = require( 'fs' )
 var crypto = require( 'crypto' )
@@ -49,14 +50,16 @@ function sink ( fn ) {
  * Expects: cloudStorage, fs, crypto, zlib
  * 
  * @param  {object} options
- * @param  {object} options.buckets[]  List of buckets to upload the file to
- * @return {object} stream             Transforms stream that handles the work.
+ * @param  {object} options.buckets[]    List of buckets to upload the file to
+ * @param  {object} options.maxParallel  The max number of streams to spawn at once.
+ * @return {object} stream               Transforms stream that handles the work.
  */
 function uploadIfDifferent ( options ) {
   if ( !options ) options = {};
   var buckets = options.buckets;
+  var maxParallel = options.maxParallel || 1;
 
-  return miss.through.obj( function ( args, enc, next ) {
+  return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
 
     var stream = this;
 
