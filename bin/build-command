@@ -27,27 +27,51 @@ var jobCallback = function ( error ) {
   process.exit( error ? 1 : 0 )
 }
 
+// var cmd = eduTestMaster()
 // var cmd = risdIdentityMaster()
 // var cmd = uniqueCliTestMaster()
-var cmd = undergradDevelop();
+// var cmd = undergradDevelop();
 // var cmd = undergradMaster();
-// var cmd = eduTest();
+var cmd = edu();
 
 build( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
 
-function eduTest () {
+function edu () {
   var data = {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"edu,1risd,1systems",
     "userid":"rrodrigu@risd.edu",
-    "branch":"feature/prioritized-build",
+    "branch":"develop",
     "deploys": [
-      { branch: 'feature/prioritized-build', bucket: 'edu-build-test.risd.systems' },
-      // { branch: 'develop', bucket: 'edu.risd.systems' }
+      // { branch: 'feature/prioritized-build', bucket: 'edu-build-test.risd.systems' },
+      { branch: 'develop', bucket: 'edu.risd.systems' }
     ]
   }
-  var identifier = "edu,1risd,1systems_feature-prioritized-build"
+  var identifier = "edu,1risd,1systems_feature-develop"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function eduTestMaster () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"edutest,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+    "deploys": [
+      { branch: 'master', bucket: 'testwww.risd.edu' },
+      { branch: 'master', bucket: 'www.risd.edu' },
+      { branch: 'master', bucket: 'edutest.risd.systems' },
+    ]
+  }
+  var identifier = "edutest,1risd,1systems_master"
 
   var cmd = {
     "identifier": identifier,
@@ -142,4 +166,3 @@ function risdIdentityMaster () {
 
   return cmd;
 }
-
