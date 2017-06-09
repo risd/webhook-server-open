@@ -1136,12 +1136,12 @@ module.exports.start = function (config, logger) {
               function localForRemote ( file ) {
                 // if no extension, this is a redirect template. lets see if we
                 // have the base file that it is redirecting to.
-                if ( path.extname( file ) === '' ) file = file + '/index.html';
+                if ( path.extname( file ) === '' ) return file + '/index.html';
                 return file;
               }
 
               function localNonIndex ( file ) {
-                return file.slice( 0, ( -1 * '/index.html' ) ) + '.html';
+                return file.slice( 0, ( -1 * '/index.html'.length ) ) + '.html';
               }
             }
 
@@ -1151,8 +1151,6 @@ module.exports.start = function (config, logger) {
               var maxParallel = options.maxParallel || 1;
 
               return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
-                console.log( 'deleteFromBucket' )
-                console.log( path.join( args.bucket, args.remoteBuiltFile ) )
                 cloudStorage.objects.del( args.bucket, args.remoteBuiltFile, function ( error ) {
                   args.remoteDeleted = true;
                   next( null, args );
