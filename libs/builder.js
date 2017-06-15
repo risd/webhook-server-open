@@ -220,7 +220,6 @@ module.exports.start = function (config, logger) {
             makeDeployBuckets(),
             buildUploadSite( { maxParallel: maxParallel } ),
             addCmsRedirects( { maxParallel: maxParallel } ),
-            subpublishAlumni( { maxParallel: maxParallel } ),
             // wwwOrNonRedirects(),
             deleteRemoteFilesNotInBuild( { maxParallel: maxParallel } ),
             sink(),
@@ -829,51 +828,6 @@ module.exports.start = function (config, logger) {
               } )
             }
 
-          }
-
-          // push /alumni to alumni.risd.edu
-          function subpublishAlumni ( options ) {
-            if ( !options ) options = {};
-            var maxParallel = options.maxParallel || 1;
-
-            return miss.through.obj( function ( args, enc, next ) {
-
-              if ( ! ( args.siteName === 'edu,1risd,1systems' && branch === 'develop' ) ) return next( null, args )
-
-              console.log( 'subpublish:start' )
-
-              miss.pipe(
-                usingArguments( { bucket: 'alumni.risd.edu', directory: 'alumni', builtFolder: args.builtFolder } ),
-                feedSubpublish(),
-                uploadIfDifferent( { maxParallel: maxParallel } ),
-                sink( console.log ),
-                function onComplete ( error ) {
-                  console.log( 'subpublish:end' )
-                  if ( error ) return next( error )
-                  next( null, args )
-                } )
-
-            } )
-
-            function feedSubpublish () {
-              return miss.through.obj( function ( args, enc, next ) {
-                var stream = this;
-
-                var subpublishDirectory = path.join( args.builtFolder, args.directory )
-                var pattern = path.join( subpublishDirectory, '**', '*.html' )
-
-                var globEmitter = glob.Glob( pattern )
-                globEmitter.on( 'match', push )
-                globEmitter.on( 'end', callNext )
-
-                function push ( builtFilePath ) {
-                  var builtFile = builtFilePath.slice( ( subpublishDirectory + '/' ).length )
-                  stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, bucket: args.bucket } )
-                }
-                function callNext () { next() }
-
-              } )
-            }
           }
 
           /**
