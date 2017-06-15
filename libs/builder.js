@@ -327,6 +327,11 @@ module.exports.start = function (config, logger) {
               var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
               var buildEmitterOptions = {
                 maxParallel: maxParallel,
+                errorReportStatus: {
+                  site: args.siteName,
+                  message: 'Failed to build, errors encountered in build process',
+                  status: 1,
+                },
               }
 
               var uploadOptions = {
@@ -571,15 +576,21 @@ module.exports.start = function (config, logger) {
              * Where { buildFolder, ... } are passed into streamToCommandArgs and expected 
              * to produce an array of arguments for running a build command.
              * Pushes objects that have shape  { builtFile, builtFilePath }
+             *
+             * If any of the build emitters produces an error, the stream is closed and the
+             * error is propogated up, including the `errorReportStatus` as the
+             * `error.reportStatus` value for reporting back to the CMS that the current build
+             * did not complete.
              * 
              * @param  {object} options
-             * @param  {number} options.streamToCommandArgs  Take the incoming arguments, return command arguments for running the build command
              * @param  {number} options.maxParallel?         The max number of streams to spawn at once.
+             * @param  {object} options.errorReportStatus?   Object to use as the `error.reportStatus` to report the error to the CMS of an incomplete build.
              * @return {object} stream                       Parallel transform stream that handles the work.
              */
             function runBuildEmitter ( options ) {
-
+              if ( !options ) options = {};
               var maxParallel = options.maxParallel || 1;
+              var errorReportStatus = options.errorReportStatus || {};
 
               return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
                 var stream = this;
@@ -632,7 +643,8 @@ module.exports.start = function (config, logger) {
                   console.log( 'builder-error' )
                   console.log( error )
                   errored = true;
-                  next()
+                  error.reportStatus = Object.assign( {}, errorReportStatus );
+                  next( error )
                 } )
 
                 builder.on( 'exit', function () {
@@ -1086,7 +1098,7 @@ module.exports.start = function (config, logger) {
                       if ( pageToken ) listOpts.pageToken = pageToken;
                       cloudStorage.objects.list( bucket, listOpts, function ( error, listResult ) {
                         if ( error ) return taskComplete( error )
-                        if ( !listResult.items ) return taskComplete()
+                        if ( !listResult.items ) return taskComplete( error )
 
                         listResult.items.filter( nonStatic ).forEach( function ( remoteFile ) {
                           stream.push( Object.assign( {}, args, {
