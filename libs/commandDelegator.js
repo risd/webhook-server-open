@@ -113,7 +113,7 @@ module.exports.start = function (config, logger) {
 
     var LOCKED = 'locked'
 
-    memcached.add(lockId, LOCKED, 60 * 60, function(err) {
+    memcached.add(lockId, LOCKED, 60 * 30, function(err) {
       if(err) {
         console.log('memcached:add:err')
         callback(err)
@@ -124,7 +124,7 @@ module.exports.start = function (config, logger) {
         console.log('client-put:start')
         console.log(JSON.stringify(identifier))
         console.log(JSON.stringify(payload))
-        client.put(1, 0, (60 * 3),
+        client.put(1, 0, (60 * 30),
           JSON.stringify({ identifier: identifier, payload: payload }),
           function(err) { console.log('client-put:end'); callback(err); });
       }
@@ -144,8 +144,6 @@ module.exports.start = function (config, logger) {
 
       // We remove the data immediately to avoid duplicates
       commandData.ref().remove();
-
-      var queueCommandArgs = [ { identifier: identifier, memcaheLockId: memcaheLockId, payload: payload } ]
       
       if ( item.tube === 'build' ) {
       	console.log( 'building' )
@@ -160,18 +158,6 @@ module.exports.start = function (config, logger) {
 						return;
 					}
 
-          // preview builds piggy back on regular build signals
-          if ( payload.contentType && payload.itemKey ) {
-            var previewIdentifier = [ payload.sitename, payload.contentType, payload.itemKey ].join( '_' )
-            var previewBuildCommandArgs = {
-              identifier: previewIdentifier,
-              memcaheLockId: [ 'previewBuild', identifier, 'queued' ].join( '_' ),
-              payload: Object.assign( { deploys: configuration.deploys }, payload ),
-              tube: 'previewBuild',
-            }
-            queueCommandForArgs( previewBuildCommandArgs )
-          }
-
 					if ( payload.branch ) {
 						var branches = [ payload.branch ]
 					} else {
@@ -180,7 +166,7 @@ module.exports.start = function (config, logger) {
 
 					branches = _.uniq( branches );
 
-					queueCommandArgs = branches.map( function ( branch ) {
+					var buildCommandsArgs = branches.map( function ( branch ) {
 						var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, branch )
 						payload.branch = branch;
             payload.deploys = configuration.deploys;
@@ -191,7 +177,7 @@ module.exports.start = function (config, logger) {
 						}
 					} )
 
-					queueCommandArgs.forEach( queueCommandForArgs )					
+					buildCommandsArgs.forEach( queueCommandForArgs )					
 
 	    	} )
 
@@ -210,14 +196,14 @@ module.exports.start = function (config, logger) {
               identifier: previewIdentifier,
               memcaheLockId: [ 'previewBuild', identifier, 'queued' ].join( '_' ),
               payload: Object.assign( { deploys: configuration.deploys }, payload ),
-              tube: 'previewBuild',
             }
             queueCommandForArgs( previewBuildCommandArgs )
           }
         } )
 
       } else {
-      	queueCommandArgs.forEach( queueCommandForArgs )
+        var queueCommandArgs = { identifier: identifier, memcaheLockId: memcaheLockId, payload: payload }
+        queueCommandForArgs( queueCommandArgs )
       }
 
     	function queueCommandForArgs ( args ) {

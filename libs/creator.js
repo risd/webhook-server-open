@@ -316,7 +316,8 @@ function ensureCname ( options ) {
   } )
 
   var canCreateCname = function ( site ) {
-    return site.endsWith( 'risd.systems' )
+    // the stage prefix is used for setup against Fastly, instead of CloudFlare, as thats what risd.edu works against.
+    return site.endsWith( 'risd.systems' ) && ( ! site.startsWith( 'stage.' ) )
   }
 
   return miss.through.obj( function ( row, enc, next ) {

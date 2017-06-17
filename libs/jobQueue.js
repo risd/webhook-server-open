@@ -155,10 +155,10 @@ module.exports.init = function (config) {
   * @param complete   Function to call after unlock succeeds
   */
   self.lockJob = function(client, lock, identifier, payload, callback, complete) {
-    memcached.add(lock + '_' + identifier + '_processing', 1, 60 * 3, function(err) {
+    memcached.add(lock + '_' + identifier + '_processing', 1, 60 * 30, function(err) {
       if(err) {
         console.log('Delayed');
-        client.put(1, 30, (60 * 3), JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
+        client.put(1, 30, (60 * 30), JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
       } else {
         callback(payload, function(done) { self.unlockJob(client, lock, identifier, payload, function() { done(); }); });
       }
