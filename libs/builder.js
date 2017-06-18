@@ -221,7 +221,7 @@ module.exports.start = function (config, logger) {
             buildUploadSite( { maxParallel: maxParallel } ),
             addCmsRedirects( { maxParallel: maxParallel } ),
             // wwwOrNonRedirects(),
-            deleteRemoteFilesNotInBuild( { maxParallel: maxParallel } ),
+            // deleteRemoteFilesNotInBuild( { maxParallel: maxParallel } ),
             sink(),
             onPipelineComplete)
 
