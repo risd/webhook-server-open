@@ -210,7 +210,7 @@ module.exports.start = function (config, logger) {
             deploys: deploysToConsider,
             // buildSite args
             buildFolder: buildFolder,
-            builtFolder: path.join( buildFolder, '.build' )
+            builtFolder: path.join( buildFolder, '.build' ),
           }
 
           miss.pipe(

@@ -311,13 +311,25 @@ function updateIndex () {
  */
 function ensureCname ( options ) {
 
-  var baseCreateCnameRecordOptions = Object.assign( options, {
+  var baseCreateCnameRecordOptions = Object.assign( {}, options, {
     content: 'c.storage.googleapis.com',
   } )
 
-  var canCreateCname = function ( site ) {
+  var fastlyCreateCnameRecordOptions = Object.assign( {}, options, {
+    content: 'nonssl.global.fastly.net',
+  } )
+
+  var canCreateCname = function ( siteBucket ) {
     // the stage prefix is used for setup against Fastly, instead of CloudFlare, as thats what risd.edu works against.
-    return site.endsWith( 'risd.systems' ) && ( ! site.startsWith( 'stage.' ) )
+    return siteBucket.endsWith( 'risd.systems' )
+  }
+
+  var createCnameRecordOptions = function ( siteBucket ) {
+    if ( siteBucket.startsWith( 'stage.' ) ) {
+      return Object.assign( {}, fastlyCreateCnameRecordOptions, { record: siteBucket } )
+    } else {
+      return Object.assign( {}, baseCreateCnameRecordOptions, { record: siteBucket } )
+    }
   }
 
   return miss.through.obj( function ( row, enc, next ) {
@@ -325,8 +337,7 @@ function ensureCname ( options ) {
     if ( canCreateCname( row.siteBucket ) && row.ensureCname ) {
       console.log( 'site-setup:ensure-cname' )
 
-      var createCnameRecordOptions = Object.assign( baseCreateCnameRecordOptions, { record: row.siteBucket } )
-      createCnameRecord( createCnameRecordOptions, function ( error, cname ) {
+      createCnameRecord( createCnameRecordOptions( row.siteBucket ), function ( error, cname ) {
         row.cname = cname;
         console.log( 'site-setup:ensure-cname:done' )
         next( null, row );

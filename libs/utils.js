@@ -139,20 +139,41 @@ function uploadIfDifferent ( options ) {
     return miss.through.obj( function ( args, enc, next ) {
       if ( args.builtFileMd5 === args.remoteFileMd5 ) return next( null, Object.assign( args, { fileUploaded: false } ) )
 
-      var uploadOptions = streamArgsToUploadOptions( args );
-      
-      cloudStorage.objects.uploadCompressed( uploadOptions, function ( error, uploadResponse ) {
-        if ( error ) {
-          console.log( 'conditional-upload:error' )
-          console.log( error )
-          args.fileUploaded = false;
-        }
-        else {
-          args.fileUploaded = true;
-        }
-        next( null, args )
-      } )
+      var retryableUploadOptions = streamArgsToUploadOptions( args );
+
+      retryableUpload( retryableUploadOptions )
+
+      function retryableUpload ( uploadOptions ) {
+
+        cloudStorage.objects.uploadCompressed( uploadOptions, function ( error, uploadResponse ) {
+          if ( error ) {
+            console.log( 'conditional-upload:error' )
+            console.log( error )
+            if ( uploadOptions.retry < 5 && ( error === 429 || error.toString().startsWith( 5 ) ) ) {
+              uploadOptions.retry = uploadOptions.retry + 1;
+              setTimeout( function () {
+                console.log( 'conditional-upload:retry:' + uploadOptions.retry )
+                retryableUpload( uploadOptions )
+              }, exponentialBackoff( uploadOptions.retry ) )
+            } else {
+              args.fileUploaded = false;
+              next( null, args )
+            }
+          }
+          else {
+            args.fileUploaded = true;
+            next( null, args )
+          }
+          
+        } )
+
+      }
+
     } )
+  }
+
+  function exponentialBackoff ( attempt ) {
+    return Math.pow( 2, attempt ) + ( Math.random() * 1000 )
   }
 
   function streamArgsToUploadOptions ( args ) {
@@ -163,6 +184,7 @@ function uploadIfDifferent ( options ) {
       cacheControl: 'no-cache',
       overrideMimeType: args.overrideMimeType,
       compressed: args.compressed,
+      retry: 0,
     }
   }
 }

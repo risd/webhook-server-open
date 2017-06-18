@@ -113,7 +113,9 @@ module.exports.start = function (config, logger) {
 
     var LOCKED = 'locked'
 
-    memcached.add(lockId, LOCKED, 60 * 30, function(err) {
+    memcached.add(lockId, LOCKED, 60 * 3, function(err) {
+      console.log( 'memcached:add:args' )
+      console.log( arguments )
       if(err) {
         console.log('memcached:add:err')
         callback(err)
@@ -124,7 +126,7 @@ module.exports.start = function (config, logger) {
         console.log('client-put:start')
         console.log(JSON.stringify(identifier))
         console.log(JSON.stringify(payload))
-        client.put(1, 0, (60 * 30),
+        client.put(1, 0, (60 * 3),
           JSON.stringify({ identifier: identifier, payload: payload }),
           function(err) { console.log('client-put:end'); callback(err); });
       }
