@@ -550,7 +550,7 @@ module.exports.start = function (config, logger) {
                   return {
                     buildFolder: args.buildFolder,
                     command: 'grunt',
-                    commandArgs: [ 'build-static', '--emitter' ],
+                    commandArgs: [ 'build-static', '--production=true', '--emitter' ],
                   }
                 }
 
@@ -562,7 +562,7 @@ module.exports.start = function (config, logger) {
 
               function buildFlags ( cachedData ) {
                 return function buildFlagsForFile ( file ) {
-                  return [ '--inFile=' + file, '--data=' + cachedData, '--emitter' ]
+                  return [ '--inFile=' + file, '--data=' + cachedData, '--production=true', '--emitter' ]
                 }
               }
             }            
@@ -779,6 +779,12 @@ module.exports.start = function (config, logger) {
 
                 function createRedirectTask ( redirect ) {
                   var source = sourceFromPattern( redirect.pattern )
+                  
+                  // do not make redirects templates for paths that end in a file extension.
+                  // .html has already been removed, so any others will include a mime type
+                  // that is incompatible with the static file redirect
+                  if ( path.extname( source ) !== '' ) return function noopRedirectTask( taskComplete ) { taskComplete() }
+
                   var redirectFile = path.join( builtFolder, source, 'index.html' )
 
                   var writeRedirectTasks = [ redirectFile ].map( createWriteRedirectTask( redirect.destination ) )
