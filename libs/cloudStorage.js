@@ -366,7 +366,7 @@ module.exports.objects = {
           'Content-Type' : 'application/json; charset=UTF-8',
           body: JSON.stringify({
             name: remote,
-            cacheControl: cacheControl ? cacheControl : "no-cache"
+            cacheControl: cacheControl ? cacheControl : "max-age=0"
           })                  
       },{ 
           'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
@@ -425,7 +425,7 @@ module.exports.objects = {
             'Content-Type' : 'application/json; charset=UTF-8',
             body: JSON.stringify({
               name: remote,
-              cacheControl: cacheControl ? cacheControl : "no-cache",
+              cacheControl: cacheControl ? cacheControl : "max-age=0",
               contentEncoding: 'gzip',
             })                  
         },{ 
