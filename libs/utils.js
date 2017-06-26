@@ -6,6 +6,8 @@ var crypto = require( 'crypto' )
 var zlib = require( 'zlib' )
 var cloudStorage = require('./cloudStorage.js')
 var mime = require( 'mime' )
+var url = require( 'url' )
+var request = require( 'request' )
 
 module.exports = {
   usingArguments: usingArguments,
@@ -75,6 +77,7 @@ function uploadIfDifferent ( options ) {
       feedBuckets( buckets ), // pushes { bucket, builtFile, builtFilePath, builtFileMd5 }
       remoteFileMd5(),        // adds { remoteFileMd5 }
       conditionalUpload(),    // adds { fileUploaded }
+      cachePurge(),           // if fileUploaded
       sink(),
       function onComplete ( error ) {
         if ( error ) return next( error )
@@ -170,6 +173,24 @@ function uploadIfDifferent ( options ) {
       }
 
     } )
+  }
+
+  function cachePurge () {
+    return miss.through.obj( function ( args, enc, next ) {
+      if ( args.fileUploaded === false ) return next( null, args )
+      if ( ! acceptsPurgeRequests( args.bucket ) )  return next( null, args )
+
+      var purgeUrl = url.resolve( 'http://' + args.bucket, args.builtFile )
+      request( { method: 'PURGE', url: purgeUrl }, function ( error, response, body ) {
+        next( null, args )
+      } )
+    } )
+  }
+
+  function acceptsPurgeRequests ( bucket ) {
+    // buckets starting with `stage.` or ending in `risd.edu` are managed by Faslty,
+    // and accept purge requests for removing stale content from the cdn cache.
+    return ( bucket.startsWith( 'stage.' ) || bucket.endsWith( 'risd.edu' ) )
   }
 
   function exponentialBackoff ( attempt ) {
