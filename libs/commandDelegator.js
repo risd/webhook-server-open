@@ -61,6 +61,7 @@ module.exports.start = function (config, logger) {
     { commands: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
     { commands: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
     { commands: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
+    { commands: 'management/commands/redirects/', lock: 'redirects', tube: 'redirects' },
   ];
 
   self.root.auth(config.get('firebaseSecret'), function(err) {

@@ -17,6 +17,7 @@
 
 var builder = require('./libs/builder.js');
 var siteIndexer = require('./libs/siteIndex.js');
+var redirects = require('./libs/redirects.js');
 var inviter = require('./libs/invite.js');
 var creator = require('./libs/creator.js');
 var server = require('./libs/server.js');
@@ -63,6 +64,7 @@ module.exports = function(grunt) {
       forceWrite: process.env.BUILDER_FORCE_WRITE || false,
       maxParallel: concurrencyOption( process.env.BUILDER_MAX_PARALLEL ),
     },
+    fastlyToken: process.env.FASTLY_TOKEN,
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {
@@ -83,6 +85,11 @@ module.exports = function(grunt) {
   grunt.registerTask('siteIndexWorker', 'Worker that handles synchronizing a site Firebase data with its Elastic Search index.', function() {
     var done = this.async();
     siteIndexer.start(grunt.config, grunt.log);
+  });
+
+  grunt.registerTask('redirectsWorker', 'Worker that handles synchronizing a site Firebase redirect settings with its Fastly service.', function() {
+    var done = this.async();
+    redirects.start(grunt.config, grunt.log);
   });
 
   grunt.registerTask('inviteWorker', 'Worker that handles inviting team members', function() {
