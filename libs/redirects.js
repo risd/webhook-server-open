@@ -136,6 +136,8 @@ module.exports.start = function ( config, logger ) {
   var REDIRECT_ONE_TO_ONE_URLS = 'redirect_one_to_one_urls';
   var SNIPPET_RECV_REDIRECT = 'recv_redirect_urls';
   var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
+  var SNIPPET_RECV_TRAILING_SLASH = 'recv_trailing_slash';
+  var baseSnippets = [ SNIPPET_RECV_REDIRECT, SNIPPET_ERROR_REDIRECT, SNIPPET_RECV_TRAILING_SLASH ]
 
   self.root.auth( config.get( 'firebaseSecret' ), function(err) {
     if( err ) {
@@ -154,6 +156,12 @@ module.exports.start = function ( config, logger ) {
   function redirects ( payload, identifier, data, client, callback ) {
     var site = data.sitename;
     var siteName = unescapeSite( site )
+
+    // fastly.request( 'GET', '/service/6Fs54MnCjdq8FDTDdm8DAO/version/3/snippet', function ( error, value ) {
+    //   console.log( error )
+    //   console.log( value )
+    //   callback()
+    // } )
 
     miss.pipe(
       domainsToConfigure( siteName ),  // { domain }
@@ -180,7 +188,9 @@ module.exports.start = function ( config, logger ) {
 
     domainsToConfigureFn( siteName, function ( error, domains ) {
       if ( error ) return emitter.emit( 'error', error )
-      domains.forEach( function ( domain ) { emitter.push( { domain: domain } ) } )
+      domains
+        // .filter( function ( domain ) { return domain === 'stage.edu.risd.systems' } )
+        .forEach( function ( domain ) { emitter.push( { domain: domain } ) } )
       emitter.push( null )
     } )
 
@@ -266,6 +276,7 @@ module.exports.start = function ( config, logger ) {
           createService(),
           configureGoogleBackend(),
           configureDomain(),
+          configureTrailingSlashSnippet(),
           configureVclRecvRedirectSnippet(),
           configureVclErrorRedirectSnippet(),
           configureOneToOneRedirectDictionary(),
@@ -317,6 +328,23 @@ module.exports.start = function ( config, logger ) {
             name: args.domain
           };
           fastly.request( 'POST', apiUrl, apiParams, function ( error, domain ) {
+            if ( error ) return next( error )
+            next( null, args )
+          } )
+        } )
+      }
+
+      function configureTrailingSlashSnippet () {
+        return miss.through.obj( function ( args, enc, next) {
+          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
+          var apiParams = {
+            name: SNIPPET_RECV_TRAILING_SLASH,
+            dynamic: 1,
+            type: 'recv',
+            priority: 99,
+            content: 'if ( req.url !~ {"(?x)\n (?:/$) # last character isn\'t a slash\n | # or \n (?:/\\?) # query string isn\'t immediately preceded by a slash\n "} &&\n req.url ~ {"(?x)\n (?:/[^./]+$) # last path segment doesn\'t contain a . no query string\n | # or\n (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string\n "} ) {\n  set req.url = req.url + "/";\n}',
+          }
+          fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
             if ( error ) return next( error )
             next( null, args )
           } )
@@ -466,7 +494,9 @@ module.exports.start = function ( config, logger ) {
         var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
         fastly.request( 'GET', apiUrl, function ( error, snippets ) {
           if ( error ) return next( error )
-          args.cdn_snippets = snippets.filter( function ( snippet ) { return snippet.name !== SNIPPET_RECV_REDIRECT } ).filter( function ( snippet ) { return snippet.name !== SNIPPET_ERROR_REDIRECT } );
+          args.cdn_snippets = snippets.filter( function ( snippet ) {
+            return baseSnippets.indexOf( snippet.name ) === -1;
+          } );
           next( null, args )
         } )
       } )
@@ -487,6 +517,8 @@ module.exports.start = function ( config, logger ) {
 
       actions = actions.concat( cms_redirects_snippets.map( createSnippetActions ).filter( isNotFalse ) )
       actions = actions.concat( args.cdn_snippets.map( deleteSnippetActions ).filter( isNotFalse ) )
+
+      console.log( 'item_actions:' + item_actions.length )
 
       next( null, {
         item_actions: item_actions,
