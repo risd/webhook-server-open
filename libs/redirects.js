@@ -33,16 +33,31 @@ do basic configuration for the service
   - {
       name: domain
     }
-  POST /service/{id}/version/1/response_object
-  - { status: '301' 
-      response: 'Moved Permanently'
-      name: '301-redirect' }
+  POST /service/{id}/version/1/dictionary
+  - { name: 'redirect_one_to_one_urls' }
+  POST /service/{id}/version/1/snippet
+  - { name: 'recv_redirect_urls',
+      dynamic: 1,
+      type: 'recv',
+      priority: 100,
+      content: 'if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ) {\n  if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ~ "^(http)?"  ) {\n    set req.http.x-redirect-location = table.lookup( redirect_one_to_one_urls, req.url.path );\n  } else {\n    set req.http.x-redirect-location = "http://" req.http.host table.lookup( redirect_one_to_one_urls, req.url.path );  \n  }\n  \n  error 301;\n}',
+    }
+  POST /service/{id}/version/1/snippet
+  - { name: 'error_redirect_synthetic',
+      dynamic: 1,
+      type: 'recv',
+      priority: 100,
+      content: 'if (obj.status == 301 && req.http.x-redirect-location) {\n  set obj.http.Location = req.http.x-redirect-location;\n  set obj.response = "Found";\n  synthetic {""};\n  return(deliver);\n}',
+    }
+  POST /service/{id}/version/1/dictionary
+  - { name: 'redirect_one_to_one_urls' }
+
 return service { id, ... }
 
 
 steps to list the current rules
 firebase.site.settings.urls
-GET /service/{id}/version/{active_version}/header
+GET /service/{id}/version/{active_version}/dictionary/{dictionary_id_one_to_one_redirect_urls}
 
 if no header for redirect.pattern
 POST /service/{id}/version/{active_version}/header
@@ -66,7 +81,10 @@ if there is not one,
 DELETE /service/{id}/version/{active_version}/header/{header-name}
 
 */
+
+var _ = require( 'lodash' )
 var url = require( 'url' )
+var request = require( 'request' )
 var Fastly = require( 'fastly' )
 var firebase = require( 'firebase' )
 var JobQueue = require('./jobQueue.js')
@@ -91,6 +109,8 @@ module.exports.start = function ( config, logger ) {
   var jobQueue = JobQueue.init( config );
 
   var fastly = Fastly( config.get( 'fastlyToken' ) )
+  fastly.jsonRequest = fastlyJsonRequest;
+
   var firebaseUrl = config.get( 'firebase' ) || '';
   this.root = new firebase( 'https://' + firebaseUrl +  '.firebaseio.com/' );
 
@@ -98,7 +118,7 @@ module.exports.start = function ( config, logger ) {
 
   var reportStatus = function(site, message, status) {
     var messagesRef = self.root.root().child('/management/sites/' + site + '/messages/');
-    messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: 'REDIRECTS_UPDATED' }, function() {
+    messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: 'REDIRECTS' }, function() {
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
@@ -110,6 +130,9 @@ module.exports.start = function ( config, logger ) {
       });
     });
   }
+
+  // name of the dictionary on fastly that contains redirects
+  var REDIRECT_ONE_TO_ONE_URLS = 'redirect_one_to_one_urls';
 
   self.root.auth( config.get( 'firebaseSecret' ), function(err) {
     if( err ) {
@@ -131,12 +154,10 @@ module.exports.start = function ( config, logger ) {
 
     miss.pipe(
       domainsToConfigure( siteName ),  // { domain }
-      serviceForDomain(),              // { domain, service_id, active_version }
-      redirectsForDomain( site ),      // { domain, service_id, active_version, cms_redirects, cdn_headers }
-      actionsForService(),             // { domain, service_id, active_version, actions: [ POST,PUT,DELETE ] }
-      cloneServiceVersion(),           // actions.length > 0, clone. { domain, service_id, new_version, actions: [ POST,PUT,DELETE ] }
-      applyActionsForService(),        // { domain, service_id, new_version?, actions: [ POST,PUT,DELETE ] }
-      activateNewServiceVersion(),     // { domain, service_id, new_version? }
+      serviceForDomain(),              // { domain, service_id, dictionary_id }
+      redirectsForDomain( site ),      // { domain, service_id, dictionary_id, cms_redirects, cdn_items }
+      itemsForService(),               // { domain, service_id, dictionary_id, item_actions }
+      applyItemsForService(),          // { domain, service_id, dictionary_id, item_actions }
       sink( console.log ),
       function onComplete ( error ) {
         if ( error ) {
@@ -156,8 +177,8 @@ module.exports.start = function ( config, logger ) {
     domainsToConfigureFn( siteName, function ( error, domains ) {
       if ( error ) return emitter.emit( 'error', error )
       domains
-        .filter( function ( domain ) { return domain !== 'stage.edu.risd.systems' } )
-        // .filter( function ( domain ) { return domain !== 'www.risd.edu' } )
+        .filter( function ( domain ) { return domain === 'stage.edu.risd.systems' } )
+        // .filter( function ( domain ) { return domain === 'www.risd.edu' } )
         .forEach( function ( domain ) { emitter.push( { domain: domain } ) } )
       emitter.push( null )
     } )
@@ -190,12 +211,12 @@ module.exports.start = function ( config, logger ) {
 
       miss.pipe(
         usingArguments( { domain: args.domain } ),
-        existingService(),                          // { service_id?, active_version? }
-        createAndConfigureService(),                // { service_id, active_version }
+        existingService(),                          // { service_id?, active_version?, dictionary_id? }
+        createAndConfigureService(),                // { service_id, active_version, dictionary_id }
         sink( function ( row ) {
           var nextArgs = Object.assign( {}, args, {
             service_id: row.service_id,
-            active_version: row.active_version,
+            dictionary_id: row.dictionary_id,
           } )
           next( null, nextArgs )
         } ),
@@ -208,12 +229,20 @@ module.exports.start = function ( config, logger ) {
     function existingService () {
       return miss.through.obj( function ( args, enc, next ) {
         fastly.request( 'GET', '/service/search?name=' + args.domain, function ( error, service ) {
-          if ( error ) args.service_id = args.active_version = false;
-          else {
-            args.service_id = service.id;
-            args.active_version = activeVersionIn( service.versions )
+          if ( error ) {
+            args.service_id = args.active_version = false;
+            return next( null, args )
           }
-          next( null, args )
+          
+          args.service_id = service.id;
+          args.active_version = activeVersionIn( service.versions )
+
+          var dictionaryApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'dictionary', REDIRECT_ONE_TO_ONE_URLS ].join( '/' )
+          fastly.request( 'GET', dictionaryApiUrl, function ( error, dictionary ) {
+            if ( error ) return next( error )
+            args.dictionary_id = dictionary.id;
+            next( null, args )
+          } )
         } )
       } )
 
@@ -235,10 +264,15 @@ module.exports.start = function ( config, logger ) {
           createService(),
           configureGoogleBackend(),
           configureDomain(),
+          configureVclRecvRedirectSnippet(),
+          configureVclErrorRedirectSnippet(),
+          configureOneToOneRedirectDictionary(),
+          activateNewServiceVersion(),
           sink( function ( row ) {
             var nextArgs = Object.assign( {}, args, {
               service_id: row.service_id,
               active_version: row.active_version,
+              dictionary_id: row.dictionary_id,
             } )
             next( null, nextArgs )
           } ),
@@ -286,6 +320,79 @@ module.exports.start = function ( config, logger ) {
           } )
         } )
       }
+
+      function configureVclRecvRedirectSnippet () {
+        return miss.through.obj( function ( args, enc, next ) {
+          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
+          var apiParams = {
+            name: 'recv_redirect_urls',
+            dynamic: 1,
+            type: 'recv',
+            priority: 100,
+            content: 'if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ) {\n  if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ~ "^(http)?"  ) {\n    set req.http.x-redirect-location = table.lookup( redirect_one_to_one_urls, req.url.path );\n  } else {\n    set req.http.x-redirect-location = "http://" req.http.host table.lookup( redirect_one_to_one_urls, req.url.path );  \n  }\n  \n  error 301;\n}',
+          }
+          fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
+            if ( error ) return next( error )
+            next( null, args )
+          } )
+        } )
+      }
+
+      function configureVclErrorRedirectSnippet () {
+        return miss.through.obj( function ( args, enc, next ) {
+          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
+          var apiParams = {
+            name: 'error_redirect_synthetic',
+            dynamic: 1,
+            type: 'error',
+            priority: 100,
+            content: 'if (obj.status == 301 && req.http.x-redirect-location) {\n  set obj.http.Location = req.http.x-redirect-location;\n  set obj.response = "Found";\n  synthetic {""};\n  return(deliver);\n}',
+          }
+          fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
+            if ( error ) return next( error )
+            next( null, args )
+          } )
+        } )
+      }
+
+      function configureOneToOneRedirectDictionary () {
+        return miss.through.obj( function ( args, enc, next ) {
+          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'dictionary' ].join( '/' )
+          var apiParams = { name: REDIRECT_ONE_TO_ONE_URLS }
+          fastly.request( 'POST', apiUrl, apiParams, function ( error, dictionary ) {
+            if ( error ) return next( error )
+            args.dictionary_id = dictionary.id;
+            next( null, args )
+          } )
+        } )
+      }      
+
+      function activateNewServiceVersion () {
+        return miss.through.obj( function ( args, enc, next ) {
+          if ( typeof args.active_version !== 'number' ) return next( null, args )
+
+          var validateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'validate' ].join( '/' )
+          var activateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'activate' ].join( '/' )
+
+          fastly.request( 'GET', validateApiUrl, function ( error, result ) {
+            if ( error ) {
+              error.atStep = 'activateNewServiceVersion:validate';
+              return next( error )
+            }
+            if ( result.status === 'error' ) {
+              next( result )
+            } else if ( result.status === 'ok' ) {
+              fastly.request( 'PUT', activateApiUrl, function ( error, service ) {
+                if ( error ) {
+                  error.atStep = 'activateNewServiceVersion:activate';
+                  return next( error )
+                }
+                next( null, args )
+              } )    
+            }
+          } )
+        } )
+      }
     }
   }
 
@@ -293,10 +400,11 @@ module.exports.start = function ( config, logger ) {
     var cms_redirects = undefined;
 
     return miss.through.obj( function ( args, enc, next ) {
+
       miss.pipe(
-        usingArguments( Object.assign( {}, args ) ),  // { domain, service_id, active_version }
+        usingArguments( Object.assign( {}, args ) ),  // { domain, service_id, dictionary_id }
         getCmsRedirects( site ),                      // sets cms_redirects
-        getCdnHeaders(),                              // { domain, service_id, active_version, cdn_headers }
+        getCdnItems(),                                // { domain, service_id, dictionary_id, cdn_items }
         sink( function ( row ) {
           var nextArgs = Object.assign( {}, row, { cms_redirects: cms_redirects  } )
           next( null, nextArgs )
@@ -312,8 +420,8 @@ module.exports.start = function ( config, logger ) {
 
         miss.pipe(
           usingArguments( { site: site } ),
-          getSiteKey(),                      // { service_id, active_version, site, siteKey }
-          getRedirects(),                    // { service_id, active_version, site, siteKey } sets cms_redirects
+          getSiteKey(),                      // { service_id, dictionary_id, site, siteKey }
+          getRedirects(),                    // { service_id, dictionary_id, site, siteKey } sets cms_redirects
           sink( function ( row ) {
             next( null, args )
           } ),
@@ -352,6 +460,8 @@ module.exports.start = function ( config, logger ) {
                 cms_redirects.push( redirects[ redirectKey ] )
               } )
             }
+            cms_redirects = _.uniqWith( cms_redirects, function ( a, b ) { return a.pattern === b.pattern } )
+            cms_redirects = cms_redirects.filter( function ( redirect ) { return isAscii( redirect.pattern ) && isAscii( redirect.destination ) } )
             next( null, args )
           }
 
@@ -364,206 +474,71 @@ module.exports.start = function ( config, logger ) {
       }
     }
 
-    function getCdnHeaders () {
+    function getCdnItems () {
       return miss.through.obj( function ( args, enc, next ) {
-        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'header' ].join( '/' )
-        fastly.request( 'GET', apiUrl, function ( error, headers ) {
+        var apiUrl = [ '/service', args.service_id, 'dictionary', args.dictionary_id, 'items' ].join( '/' )
+        fastly.request( 'GET', apiUrl, function ( error, items ) {
           if ( error ) return next( error )
-          args.cdn_headers = headers;
+          args.cdn_items = items;
+          console.log( 'cdn_items:' + items.length )
           next( null, args )
         } )
       } )
     }
   }
 
-  function actionsForService () {
+  function itemsForService () {
 
     return miss.through.obj( function ( args, enc, next ) {
-      var actions = [];
-      actions = actions.concat( args.cms_redirects.map( createOrUpdateActions ).filter( isNotFalse ) )
-      actions = actions.concat( args.cdn_headers.map( deleteActions ).filter( isNotFalse ) )
+      var item_actions = [];
+      item_actions = item_actions.concat( args.cms_redirects.map( createOrUpdateActions ).filter( isNotFalse ) )
+      item_actions = item_actions.concat( args.cdn_items.map( deleteActions ).filter( isNotFalse ) )
 
-      next( null, { actions: actions, domain: args.domain, service_id: args.service_id, active_version: args.active_version } )
-
-      function headerSourceFor ( destination ) {
-        return '\"' + url.resolve( 'http://' + args.domain, destination ) + '\"';
-      }
+      next( null, { item_actions: item_actions, domain: args.domain, service_id: args.service_id, dictionary_id: args.dictionary_id } )
     
-      function actionFor ( requestMethod, redirect ) {
-        var responseName = responseNameFor( redirect.pattern )
-        var requestConditionName = requestConditionNameFor( redirect.pattern )
-        var responseConditionName = responseConditionNameFor( redirect.pattern )
-        var headerName = headerNameFor( redirect.pattern )
-
-        if ( requestMethod === 'POST' ) {
-          var responseApiUrl = function ( service_id, version ) {
-            return [ '/service', service_id, 'version', version, 'response_object' ].join( '/' )
-          }
-          var requestConditionApiUrl = responseConditionApiUrl = function ( service_id, version) {
-            return [ '/service', service_id, 'version', version, 'condition' ].join( '/' ) 
-          }
-          var headerApiUrl = function ( service_id, version) {
-            return [ '/service', service_id, 'version', version, 'header' ].join( '/' )
-          }
-        } else if ( requestMethod === 'PUT' ) {
-          var responseApiUrl = function ( service_id, version ) {
-            return [ '/service', service_id, 'version', version, 'response_object', responseName ].join( '/' )
-          }
-          var requestConditionApiUrl = function ( service_id, version) {
-            return [ '/service', service_id, 'version', version, 'condition', requestConditionName ].join( '/' ) 
-          }
-          var responseConditionApiUrl = function ( service_id, version ) {
-            return [ '/service', service_id, 'version', version, 'condition', responseConditionName ].join( '/' )
-          }
-          var headerApiUrl = function ( service_id, version) {
-            return [ '/service', service_id, 'version', version, 'header', headerName ].join( '/' )
-          }
+      function actionFor ( operation, redirect ) {
+        return {
+          op: operation,
+          item_key: redirect.pattern,
+          item_value: redirect.destination,
         }
-        return [ {
-          requestMethod: requestMethod,
-          url: requestConditionApiUrl,
-          params: {
-            type: 'REQUEST',
-            name: requestConditionName,
-            statement: 'req.url ~ \"' + redirect.pattern + '\"',
-            priority: redirect.priority ? redirect.priority + 10 : 10,
-          },
-        }, {
-          requestMethod: requestMethod,
-          url: responseConditionApiUrl,
-          params: {
-            type: 'RESPONSE',
-            name: responseConditionName,
-            statement: 'req.url ~ \"' + redirect.pattern + '\" && resp.status == 301',
-            priority: redirect.priority ? redirect.priority + 10 : 10,
-          },
-        }, {
-          requestMethod: requestMethod,
-          url: responseApiUrl,
-          params: {
-            name: responseName,
-            status: '301',
-            response: 'Moved Permanently',
-            request_condition: requestConditionName,
-          },
-        }, {
-          requestMethod: requestMethod,
-          url: headerApiUrl,
-          params: {
-            name: headerName,
-            src: headerSourceFor( redirect.destination ),
-            priority: redirect.priority ? redirect.priority + 10 : 10,
-            response_condition: responseConditionName,
-            type: 'response',
-            action: 'set',
-            dst: 'http.Location',
-            ignore_if_set: 0,
-          },
-        } ]
       }
 
       function createOrUpdateActions ( cms_redirect ) {
-        for (var i = args.cdn_headers.length - 1; i >= 0; i--) {
-          if ( args.cdn_headers[i].name === headerNameFor( cms_redirect.pattern ) ) {
-            if ( args.cdn_headers[i].src === headerSourceFor( cms_redirect.destination ) ) {
+        for (var i = args.cdn_items.length - 1; i >= 0; i--) {
+          if ( args.cdn_items[i].item_key === cms_redirect.pattern ) {
+            if ( args.cdn_items[i].item_value === cms_redirect.destination ) {
               // already exists, no updated needed
               return false;
             } else {
               // already exists, but updated
-              return actionFor( 'PUT', cms_redirect )
+              return actionFor( 'update', cms_redirect )
             }
           }
         }
 
-        // not found in cdn_headers, lets make it
-        return actionFor( 'POST', cms_redirect )
+        // not found in cdn_items, lets make it
+        return actionFor( 'create', cms_redirect )
       }
 
-      function deleteActions ( cdn_header ) {
+      function deleteActions ( cdn_item ) {
         for (var i = args.cms_redirects.length - 1; i >= 0; i--) {
-          if ( headerNameFor( args.cms_redirects[i].name ) === cdn_header.name ) return false;
+          if ( args.cms_redirects[i].pattern === cdn_item.item_key ) return false;
         }
-        return [ {
-          requestMethod: 'DELETE',
-          url: function ( service_id, version ) {
-            return [ '/service', service_id, 'version', version, 'header', cdn_header.name ].join( '/' )
-          },
-          params: {},
-        }, {
-          requestMethod: 'DELETE',
-          url: function ( service_id, version) {
-            return [ '/service', service_id, 'version', version, 'condition', cdn_header.response_condition ].join( '/' )
-          },
-          params: {},
-        }, {
-          requestMethod: 'DELETE',
-          url: function ( service_id, version) {
-            return [ '/service', service_id, 'version', version, 'condition', requestConditionNameFromResponseCondition( cdn_header.response_condition ) ].join( '/' )
-          },
-          params: {},
-        }, {
-          requestMethod: 'DELETE',
-          url: function ( service_id, version) {
-            return [ '/service', service_id, 'version', version, 'response_object', responseNameFromResponseCondition( cdn_header.response_condition ) ].join( '/' )
-          },
-          params: {},
-        } ]
+
+        return {
+          op: "delete",
+          item_key: cdn_item.item_key,
+        }
       }
 
       function isNotFalse ( value ) { return value !== false; }
     } )
-
-    function headerNameFor ( pattern ) {
-      return 'header-response-redirect-' + pattern;
-    }
-
-    function requestConditionNameFor( pattern ) {
-      return 'request-condition-' + pattern;
-    }
-
-    function responseConditionPrefix () {
-      return 'response-condition-';
-    }
-    function responseConditionNameFor ( pattern ) {
-      return responseConditionPrefix() + pattern;
-    }
-
-    function responseNameFor ( pattern ) {
-      return 'response-301-' + pattern;
-    }
-
-    function requestConditionNameFromResponseCondition( response_condition ) {
-      return requestConditionNameFor( response_condition.split( responseConditionPrefix() )[ 1 ] )
-    }
-
-    function responseNameFromResponseCondition( response_condition ) {
-      return responseNameFor( response_condition.split( responseConditionPrefix() )[ 1 ] )
-    }
   }
 
-  function cloneServiceVersion () {
+  function applyItemsForService () {
     return miss.through.obj( function ( args, enc, next ) {
-      if ( args.actions.length === 0 ) return next( null, args )
-
-      var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'clone' ].join( '/' )
-      fastly.request( 'PUT', apiUrl, function ( error, new_version ) {
-        if ( error ) return next( error )
-        console.log( 'cloned' )
-        console.log( new_version )
-        var nextArgs = {
-          domain: args.domain,
-          service_id: args.service_id,
-          new_version: new_version.number,
-          actions: args.actions,
-        }
-        next( null, nextArgs )
-      } )
-    } )
-  }
-
-  function applyActionsForService () {
-    return miss.through.obj( function ( args, enc, next ) {
-      if ( args.actions.length === 0 && typeof args.new_version !== 'number' ) return next( null, args )
+      if ( args.item_actions.length === 0 && typeof args.dictionary_id !== 'number' ) return next( null, args )
 
       miss.pipe(
         feedActions( args ),
@@ -574,7 +549,7 @@ module.exports.start = function ( config, logger ) {
           var nextArgs = {
             domain: args.domain,
             service_id: args.service_id,
-            new_version: args.new_version,
+            dictionary_id: args.dictionary_id,
           }
           next( null, nextArgs )
         } )
@@ -582,10 +557,20 @@ module.exports.start = function ( config, logger ) {
 
     function feedActions ( args ) {
       var emitter = miss.through.obj()
-
-      args.actions.forEach( function ( action ) {
+      var maxActions = 200;
+      var iterations = Math.ceil( args.item_actions.length / maxActions )
+      var item_actions_chunks = []
+      for (var i = 0; i < iterations; i++) {
+        item_actions_chunks.push( args.item_actions.slice( ( maxActions * i ), ( maxActions * ( i + 1 ) ) ) )
+      }
+      item_actions_chunks.forEach( function ( item_actions ) {
         setTimeout( function () {
-          emitter.push( { service_id: args.service_id, domain: args.domain, new_version: args.new_version, action: action } )
+          emitter.push( {
+            service_id: args.service_id,
+            domain: args.domain,
+            dictionary_id: args.dictionary_id,
+            item_actions: item_actions
+          } )
         }, 1 )
       } )
       setTimeout( function () { emitter.push( null ) }, 1 )
@@ -601,78 +586,47 @@ module.exports.start = function ( config, logger ) {
 
         if ( requests >= requests_limit ) return next( null, args )
 
-        var service_id = args.service_id;
-        var version = args.new_version;
-        var action = args.action;
-
-        miss.pipe(
-          miss.from.obj( action.concat( null ) ),
-          miss.through.obj( execute ),
-          sink(),
-          function onComplete ( error ) {
-            if ( error ) return next( error )
-            next( null, args )
-          } )
-
-        function execute ( actionArgs, actionEnc, nextAction ) {
-          requests = requests + 1;
-          if ( ! ( actionArgs.params.name ? isAscii( actionArgs.params.name ) : true ) ) {
-            console.log( 'not-ascii' )
-            console.log( actionArgs )
-            return nextAction( null, actionArgs )
-          }
-
-          var maxAttempts = 5;
-          var attempts = actionArgs.attempt || 0;
-          fastly.request( actionArgs.requestMethod, actionArgs.url( service_id, version ), actionArgs.params, function ( error, value ) {
-            if ( error ) {
-              console.log( 'execute:error' )
-              console.log( actionArgs )
-              if ( actionArgs.attempt < maxAttempts ) {
-                actionArgs.attempt = actionArgs.attempt + 1;
-                return setTimeout( function () {
-                  execute( actionArgs, actionEnc, nextAction )
-                }, exponentialBackoff( actionArgs.attempt ) )
-              }
-              return nextAction( error )
-            }
-            nextAction( null,  actionArgs )
-          } )
-        }
-
+        var apiUrl = [ '/service', args.service_id, 'dictionary', args.dictionary_id, 'items' ].join( '/' )
+        console.log( 'items:' + args.item_actions.length )
+        fastly.jsonRequest( 'PATCH', apiUrl, { items: args.item_actions }, function ( error, result ) {
+          if ( error ) return next( error )
+          next( null, args )
+        } )
       } )
-
-      function exponentialBackoff ( attempt ) {
-        return Math.pow( 2, attempt ) + ( Math.random() * 1000 )
-      }
     }
   }
 
-  function activateNewServiceVersion () {
-    return miss.through.obj( function ( args, enc, next ) {
-      if ( typeof args.new_version !== 'number' ) return next( null, args )
+  function fastlyJsonRequest ( method, url, json, callback ) {
+    var headers = {
+      'fastly-key': config.get( 'fastlyToken' ),
+      'content-type': 'application/json',
+      'accept': 'application/json'
+    };
 
-      var validateApiUrl = [ '/service', args.service_id, 'version', args.new_version, 'validate' ].join( '/' )
-      var activateApiUrl = [ '/service', args.service_id, 'version', args.new_version, 'activate' ].join( '/' )
-
-      fastly.request( 'GET', validateApiUrl, function ( error, result ) {
-        if ( error ) {
-          error.atStep = 'activateNewServiceVersion:validate';
-          return next( error )
+    // HTTP request
+    request({
+        method: method,
+        url: 'https://api.fastly.com' + url,
+        headers: headers,
+        body: JSON.stringify( json ),
+    }, function (err, response, body) {
+        if (response) {
+            var statusCode = response.statusCode;
+            if (!err && (statusCode < 200 || statusCode > 302))
+                err = new Error(body);
+            if (err) err.statusCode = statusCode;
         }
-        if ( result.status === 'error' ) {
-          next( result )
-        } else if ( result.status === 'ok' ) {
-          fastly.request( 'PUT', activateApiUrl, function ( error, service ) {
-            if ( error ) {
-              error.atStep = 'activateNewServiceVersion:activate';
-              return next( error )
+        if (err) return callback(err);
+        if (response.headers['content-type'] === 'application/json') {
+            try {
+                body = JSON.parse(body);
+            } catch (er) {
+                return callback(er);
             }
-            next( null, args )
-          } )    
         }
-      } )
-    } )
+
+        callback(null, body);
+    });
   }
 
 }
