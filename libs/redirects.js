@@ -84,6 +84,7 @@ DELETE /service/{id}/version/{active_version}/header/{header-name}
 
 var _ = require( 'lodash' )
 var url = require( 'url' )
+var crypto = require( 'crypto' )
 var request = require( 'request' )
 var Fastly = require( 'fastly' )
 var firebase = require( 'firebase' )
@@ -133,6 +134,8 @@ module.exports.start = function ( config, logger ) {
 
   // name of the dictionary on fastly that contains redirects
   var REDIRECT_ONE_TO_ONE_URLS = 'redirect_one_to_one_urls';
+  var SNIPPET_RECV_REDIRECT = 'recv_redirect_urls';
+  var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
 
   self.root.auth( config.get( 'firebaseSecret' ), function(err) {
     if( err ) {
@@ -154,10 +157,11 @@ module.exports.start = function ( config, logger ) {
 
     miss.pipe(
       domainsToConfigure( siteName ),  // { domain }
-      serviceForDomain(),              // { domain, service_id, dictionary_id }
-      redirectsForDomain( site ),      // { domain, service_id, dictionary_id, cms_redirects, cdn_items }
-      itemsForService(),               // { domain, service_id, dictionary_id, item_actions }
-      applyItemsForService(),          // { domain, service_id, dictionary_id, item_actions }
+      serviceForDomain(),              // { domain, service_id, active_version, dictionary_id }
+      redirectsForDomain( site ),      // { domain, service_id, active_version, dictionary_id, cms_redirects, cdn_items, cdn_snippets }
+      actionsForService(),             // { domain, service_id, active_version, dictionary_id, item_actions, actions }
+      applyItemsForService(),          // { domain, service_id, active_version, dictionary_id, item_actions, actions }
+      applyActionsForService(),        // { domain, service_id, active_version, dictionary_id, item_actions, actions }
       sink( console.log ),
       function onComplete ( error ) {
         if ( error ) {
@@ -176,10 +180,7 @@ module.exports.start = function ( config, logger ) {
 
     domainsToConfigureFn( siteName, function ( error, domains ) {
       if ( error ) return emitter.emit( 'error', error )
-      domains
-        .filter( function ( domain ) { return domain === 'stage.edu.risd.systems' } )
-        // .filter( function ( domain ) { return domain === 'www.risd.edu' } )
-        .forEach( function ( domain ) { emitter.push( { domain: domain } ) } )
+      domains.forEach( function ( domain ) { emitter.push( { domain: domain } ) } )
       emitter.push( null )
     } )
 
@@ -217,6 +218,7 @@ module.exports.start = function ( config, logger ) {
           var nextArgs = Object.assign( {}, args, {
             service_id: row.service_id,
             dictionary_id: row.dictionary_id,
+            active_version: row.active_version,
           } )
           next( null, nextArgs )
         } ),
@@ -267,7 +269,7 @@ module.exports.start = function ( config, logger ) {
           configureVclRecvRedirectSnippet(),
           configureVclErrorRedirectSnippet(),
           configureOneToOneRedirectDictionary(),
-          activateNewServiceVersion(),
+          activateServiceVersion(),
           sink( function ( row ) {
             var nextArgs = Object.assign( {}, args, {
               service_id: row.service_id,
@@ -325,7 +327,7 @@ module.exports.start = function ( config, logger ) {
         return miss.through.obj( function ( args, enc, next ) {
           var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
           var apiParams = {
-            name: 'recv_redirect_urls',
+            name: SNIPPET_RECV_REDIRECT,
             dynamic: 1,
             type: 'recv',
             priority: 100,
@@ -342,7 +344,7 @@ module.exports.start = function ( config, logger ) {
         return miss.through.obj( function ( args, enc, next ) {
           var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
           var apiParams = {
-            name: 'error_redirect_synthetic',
+            name: SNIPPET_ERROR_REDIRECT,
             dynamic: 1,
             type: 'error',
             priority: 100,
@@ -365,33 +367,6 @@ module.exports.start = function ( config, logger ) {
             next( null, args )
           } )
         } )
-      }      
-
-      function activateNewServiceVersion () {
-        return miss.through.obj( function ( args, enc, next ) {
-          if ( typeof args.active_version !== 'number' ) return next( null, args )
-
-          var validateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'validate' ].join( '/' )
-          var activateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'activate' ].join( '/' )
-
-          fastly.request( 'GET', validateApiUrl, function ( error, result ) {
-            if ( error ) {
-              error.atStep = 'activateNewServiceVersion:validate';
-              return next( error )
-            }
-            if ( result.status === 'error' ) {
-              next( result )
-            } else if ( result.status === 'ok' ) {
-              fastly.request( 'PUT', activateApiUrl, function ( error, service ) {
-                if ( error ) {
-                  error.atStep = 'activateNewServiceVersion:activate';
-                  return next( error )
-                }
-                next( null, args )
-              } )    
-            }
-          } )
-        } )
       }
     }
   }
@@ -402,9 +377,10 @@ module.exports.start = function ( config, logger ) {
     return miss.through.obj( function ( args, enc, next ) {
 
       miss.pipe(
-        usingArguments( Object.assign( {}, args ) ),  // { domain, service_id, dictionary_id }
+        usingArguments( Object.assign( {}, args ) ),  // { domain, service_id, active_version, dictionary_id }
         getCmsRedirects( site ),                      // sets cms_redirects
-        getCdnItems(),                                // { domain, service_id, dictionary_id, cdn_items }
+        getCdnItems(),                                // { domain, service_id, active_version, dictionary_id, cdn_items }
+        getCdnSnippets(),                             // { domain, service_id, active_version, dictionary_id, cdn_items, cdn_snippets }
         sink( function ( row ) {
           var nextArgs = Object.assign( {}, row, { cms_redirects: cms_redirects  } )
           next( null, nextArgs )
@@ -420,8 +396,8 @@ module.exports.start = function ( config, logger ) {
 
         miss.pipe(
           usingArguments( { site: site } ),
-          getSiteKey(),                      // { service_id, dictionary_id, site, siteKey }
-          getRedirects(),                    // { service_id, dictionary_id, site, siteKey } sets cms_redirects
+          getSiteKey(),                      // { site, siteKey }
+          getRedirects(),                    // { site, siteKey } sets cms_redirects
           sink( function ( row ) {
             next( null, args )
           } ),
@@ -480,31 +456,48 @@ module.exports.start = function ( config, logger ) {
         fastly.request( 'GET', apiUrl, function ( error, items ) {
           if ( error ) return next( error )
           args.cdn_items = items;
-          console.log( 'cdn_items:' + items.length )
+          next( null, args )
+        } )
+      } )
+    }
+
+    function getCdnSnippets () {
+      return miss.through.obj( function ( args, enc, next ) {
+        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
+        fastly.request( 'GET', apiUrl, function ( error, snippets ) {
+          if ( error ) return next( error )
+          args.cdn_snippets = snippets.filter( function ( snippet ) { return snippet.name !== SNIPPET_RECV_REDIRECT } ).filter( function ( snippet ) { return snippet.name !== SNIPPET_ERROR_REDIRECT } );
           next( null, args )
         } )
       } )
     }
   }
 
-  function itemsForService () {
+  function actionsForService () {
 
     return miss.through.obj( function ( args, enc, next ) {
       var item_actions = [];
-      item_actions = item_actions.concat( args.cms_redirects.map( createOrUpdateActions ).filter( isNotFalse ) )
-      item_actions = item_actions.concat( args.cdn_items.map( deleteActions ).filter( isNotFalse ) )
+      var actions = [];
 
-      next( null, { item_actions: item_actions, domain: args.domain, service_id: args.service_id, dictionary_id: args.dictionary_id } )
-    
-      function actionFor ( operation, redirect ) {
-        return {
-          op: operation,
-          item_key: redirect.pattern,
-          item_value: redirect.destination,
-        }
-      }
+      var cms_redirects_items = args.cms_redirects.filter( isNotRegex )
+      var cms_redirects_snippets = args.cms_redirects.filter( isRegex )
 
-      function createOrUpdateActions ( cms_redirect ) {
+      item_actions = item_actions.concat( cms_redirects_items.map( createOrUpdateItemActions ).filter( isNotFalse ) )
+      item_actions = item_actions.concat( args.cdn_items.map( deleteItemActions ).filter( isNotFalse ) )
+
+      actions = actions.concat( cms_redirects_snippets.map( createSnippetActions ).filter( isNotFalse ) )
+      actions = actions.concat( args.cdn_snippets.map( deleteSnippetActions ).filter( isNotFalse ) )
+
+      next( null, {
+        item_actions: item_actions,
+        actions: actions,
+        domain: args.domain,
+        service_id: args.service_id,
+        active_version: args.active_version,
+        dictionary_id: args.dictionary_id,
+      } )
+
+      function createOrUpdateItemActions ( cms_redirect ) {
         for (var i = args.cdn_items.length - 1; i >= 0; i--) {
           if ( args.cdn_items[i].item_key === cms_redirect.pattern ) {
             if ( args.cdn_items[i].item_value === cms_redirect.destination ) {
@@ -519,11 +512,19 @@ module.exports.start = function ( config, logger ) {
 
         // not found in cdn_items, lets make it
         return actionFor( 'create', cms_redirect )
+    
+        function actionFor ( operation, redirect ) {
+          return {
+            op: operation,
+            item_key: redirect.pattern,
+            item_value: redirect.destination,
+          }
+        }
       }
 
-      function deleteActions ( cdn_item ) {
-        for (var i = args.cms_redirects.length - 1; i >= 0; i--) {
-          if ( args.cms_redirects[i].pattern === cdn_item.item_key ) return false;
+      function deleteItemActions ( cdn_item ) {
+        for (var i = cms_redirects_items.length - 1; i >= 0; i--) {
+          if ( cms_redirects_items[i].pattern === cdn_item.item_key ) return false;
         }
 
         return {
@@ -532,7 +533,125 @@ module.exports.start = function ( config, logger ) {
         }
       }
 
+      function createSnippetActions ( cms_redirect ) {
+        var snippetName = snippetNameFor( cms_redirect )
+
+        for (var i = args.cdn_snippets.length - 1; i >= 0; i--) {
+          if ( args.cdn_snippets[i].name === snippetName ) {
+            // name is unique to thhe contents of the redirect, so it already exists
+            return false;
+          }
+        }
+
+        // not found in cdn_items, lets make it
+        return actionFor( 'POST', cms_redirect )
+
+        function actionFor ( method, redirect ) {
+          if ( method === 'PUT' ) {
+            var snippetApiUrl = function ( service_id, version ) {
+              return [ '/service', service_id, 'version', version, 'snippet', snippetName ].join( '/' )
+            }
+          }
+          if ( method === 'POST' ) {
+            var snippetApiUrl = function ( service_id, version ) {
+              return [ '/service', service_id, 'version', version, 'snippet' ].join( '/' )
+            }
+          }
+          return {
+            requestMethod: method,
+            url: snippetApiUrl,
+            params: {
+              name: snippetName,
+              priority: 100,
+              dynamic: 1,
+              type: 'recv',
+              content: snippetContentFor( redirect ),
+            },
+          }
+        }
+
+        // sample content
+        // if ( req.url ~ "^/academics/graphic-design/faculty/" ) {\n  set req.http.x-redirect-location = "http://" req.http.host "/academics/graphic-design/faculty/";\n  error 301;\n}
+        function patternFromSnippet ( content ) {
+          if ( !content ) return false;
+          return content.split( 'req.url ~ "' )[ 1 ].split( '" ) {\n' )[ 0 ]
+        }
+
+        function destinationFromSnippet ( content ) {
+          if ( !content ) return false;
+          return content.split( 'req.http.host "' )[ 1 ].split( '";\n  error 301' )[ 0 ]
+        }
+      }
+
+      function deleteSnippetActions ( cdn_snippet ) {
+
+        for (var i = 0; i < cms_redirects_snippets.length; i++) {
+          if ( snippetNameFor( cms_redirects_snippets[i] ) === cdn_snippet.name ) return false;
+        }
+
+        var snippetApiUrl = function ( service_id, version ) {
+          return [ '/service', service_id, 'version', version, 'snippet', cdn_snippet.name ].join( '/' )
+        }
+        return {
+          requestMethod: 'DELETE',
+          url: snippetApiUrl,
+          params: {},
+        }
+      }
+
+      function snippetNameFor ( redirect ) {
+        return 'redirect_' + hashForContent( snippetContentFor( redirect ) )
+
+        function hashForContent( content ) {
+          var hash = crypto.createHash('md5').update(content).digest('base64')
+          var base36 = {
+            encode: function (str) {
+              return Array.prototype.map.call(str, function (c) {
+                return c.charCodeAt(0).toString(36);
+              }).join("");
+            },
+            decode: function (str) {
+              //assumes one character base36 strings have been zero padded by encodeAscii
+              var chunked = [];
+              for (var i = 0; i < str.length; i = i + 2) {
+                chunked[i] = String.fromCharCode(parseInt(str[i] + str[i + 1], 36));
+              }
+              return chunked.join("");
+            },
+            encodeAscii: function (str) {
+              return Array.prototype.map.call(str, function (c) {
+                var b36 = base36.encode(c, "");
+                if (b36.length === 1) {
+                  b36 = "0" + b36;
+                }
+                return b36;
+              }).join("")
+            },
+            decodeAscii: function (str) {
+              //ignores special characters/seperators if they're included
+              return str.replace(/[a-z0-9]{2}/gi, function (s) {
+                return base36.decode(s);
+              })
+            }
+          }
+
+          return base36.encodeAscii( hash )
+        }
+      }
+
+      function snippetContentFor( redirect ) {
+        return 'if ( req.url ~ "' + redirect.pattern + '" ) {\n  set req.http.x-redirect-location = "http://" req.http.host "' + redirect.destination + '";\n  error 301;\n}'
+      }
+
       function isNotFalse ( value ) { return value !== false; }
+
+      function isRegex ( redirect ) {
+        return redirect.pattern.startsWith( '^' )
+      }
+
+      function isNotRegex ( redirect ) {
+        return !isRegex( redirect )
+      }
     } )
   }
 
@@ -546,18 +665,13 @@ module.exports.start = function ( config, logger ) {
         sink(),
         function onComplete ( error ) {
           if ( error ) return next( error )
-          var nextArgs = {
-            domain: args.domain,
-            service_id: args.service_id,
-            dictionary_id: args.dictionary_id,
-          }
-          next( null, nextArgs )
+          next( null, args )
         } )
     } )
 
     function feedActions ( args ) {
       var emitter = miss.through.obj()
-      var maxActions = 200;
+      var maxActions = 400;
       var iterations = Math.ceil( args.item_actions.length / maxActions )
       var item_actions_chunks = []
       for (var i = 0; i < iterations; i++) {
@@ -587,13 +701,134 @@ module.exports.start = function ( config, logger ) {
         if ( requests >= requests_limit ) return next( null, args )
 
         var apiUrl = [ '/service', args.service_id, 'dictionary', args.dictionary_id, 'items' ].join( '/' )
-        console.log( 'items:' + args.item_actions.length )
         fastly.jsonRequest( 'PATCH', apiUrl, { items: args.item_actions }, function ( error, result ) {
           if ( error ) return next( error )
           next( null, args )
         } )
       } )
     }
+  }
+
+  function applyActionsForService () {
+    return miss.through.obj( function ( args, enc, next ) {
+      if ( args.actions.length === 0 ) return next( null, args )
+
+      miss.pipe(
+        usingArguments( args ),
+        cloneServiceVersion(),
+        feedActions(),
+        applyActions(),
+        sink(),
+        function onComplete ( error ) {
+          if ( error ) return next( error )
+
+          miss.pipe(
+            usingArguments( args ),
+            activateServiceVersion(),
+            sink(),
+            function onActivateComplete( error ) {
+              if ( error ) return next( error )
+              next( null, args )
+            } )
+        } )
+
+    } )
+
+    function cloneServiceVersion () {
+      return miss.through.obj( function ( args, enc, next ) {
+        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'clone' ].join( '/' )
+        fastly.request( 'PUT', apiUrl, function ( error, new_version ) {
+          if ( error ) return next( error )
+          next( null, Object.assign( args, { active_version: new_version.number } ) )
+        } )
+      } )
+    }
+
+    function feedActions () {
+      return miss.through.obj( function ( args, enc, next ) {
+        var stream = this;
+        args.actions.forEach( function ( action ) {
+          stream.push( { service_id: args.service_id, domain: args.domain, active_version: args.active_version, action: action } )
+        } )
+        next()
+      } )
+    }
+
+    function applyActions () {
+      var requests = 0;
+      var requests_limit = 500;
+
+      return throughConcurrent.obj( { maxConcurrency: 10 }, function ( args, enc, next ) {
+
+        if ( requests >= requests_limit ) return next( null, args )
+
+        var service_id = args.service_id;
+        var version = args.active_version;
+        var action = args.action;
+
+        miss.pipe(
+          usingArguments( action ),
+          miss.through.obj( execute ),
+          sink(),
+          function onComplete ( error ) {
+            if ( error ) return next( error )
+            next( null, args )
+          } )
+
+        function execute ( actionArgs, actionEnc, nextAction ) {
+          requests = requests + 1;
+
+          var maxAttempts = 5;
+          var attempts = actionArgs.attempt || 0;
+          fastly.request( actionArgs.requestMethod, actionArgs.url( service_id, version ), actionArgs.params, function ( error, value ) {
+            if ( error ) {
+              console.log( 'execute:error' )
+              console.log( actionArgs )
+              if ( actionArgs.attempt < maxAttempts ) {
+                actionArgs.attempt = actionArgs.attempt + 1;
+                return setTimeout( function () {
+                  execute( actionArgs, actionEnc, nextAction )
+                }, exponentialBackoff( actionArgs.attempt ) )
+              }
+              return nextAction( error )
+            }
+            nextAction( null,  actionArgs )
+          } )
+        }
+
+      } )
+
+      function exponentialBackoff ( attempt ) {
+        return Math.pow( 2, attempt ) + ( Math.random() * 1000 )
+      }
+    }
+  }
+
+  function activateServiceVersion () {
+    return miss.through.obj( function ( args, enc, next ) {
+      if ( typeof args.active_version !== 'number' ) return next( null, args )
+
+      var validateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'validate' ].join( '/' )
+      var activateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'activate' ].join( '/' )
+
+      fastly.request( 'GET', validateApiUrl, function ( error, result ) {
+        if ( error ) {
+          error.atStep = 'activateNewServiceVersion:validate';
+          return next( error )
+        }
+        if ( result.status === 'error' ) {
+          next( result )
+        } else if ( result.status === 'ok' ) {
+          fastly.request( 'PUT', activateApiUrl, function ( error, service ) {
+            if ( error ) {
+              error.atStep = 'activateNewServiceVersion:activate';
+              return next( error )
+            }
+            next( null, args )
+          } )    
+        }
+      } )
+    } )
   }
 
   function fastlyJsonRequest ( method, url, json, callback ) {
