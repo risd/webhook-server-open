@@ -2,6 +2,7 @@
 
 // Requires
 var fs = require('fs');
+var url = require( 'url' )
 var firebase = require('firebase');
 var colors = require('colors');
 var _ = require('lodash');
@@ -331,6 +332,11 @@ module.exports.start = function (config, logger) {
                 },
               }
 
+              var siteMapOptions = {
+                buckets: buckets,
+                builtFolder: args.builtFolder,
+              };
+
               var uploadOptions = {
                 buckets: buckets,
                 maxParallel: maxParallel,
@@ -343,6 +349,7 @@ module.exports.start = function (config, logger) {
                 getBuildOrder(),              // adds { buildOrder }
                 feedBuilds(),                 // pushes { buildFolder, command, flags }
                 runBuildEmitter( buildEmitterOptions ),  // pushes { builtFile, builtFilePath }
+                buildSitemap( siteMapOptions ),          // through stream, writes { builtFile, builtFilePath } on end
                 uploadIfDifferent( uploadOptions ),
                 sink(),
                 function onComplete ( error ) {
@@ -662,6 +669,88 @@ module.exports.start = function (config, logger) {
                 return [ streamArgs.command, streamArgs.commandArgs, { stdio: 'pipe', cwd: streamArgs.buildFolder } ]
               }
             }
+
+            /**
+             * Collects all { builtFile } values that pass through, and pushes
+             * the same object that comes in.
+             * 
+             * On end, a site map XML file is written and a { builtFile, builtFilePath }
+             * object is pushed to present the new file.
+             *
+             * Site maps are written at {bucket}-sitemap.xml
+             * 
+             * @param  {object} options
+             * @param  {number} options.buckets         The domains to write the urls for.
+             * @param  {number} options.builtFolder     The folder to write site maps to.
+             * @return {[type]} [description]
+             */
+            function buildSitemap ( options ) {
+              var urls = [];
+              var buckets = options.buckets || [];
+              var builtFolder = options.builtFolder;
+
+              function includeInSiteMap( file ) {
+                return file.endsWith( 'index.html' ) && ( !file.startsWith( '_wh_previews' ) )
+              }
+
+              function normalizeForSiteMap( file ) {
+                if ( file === 'index.html' ) return '/'
+                return file.replace( 'index.html', '' )
+              }
+
+              return miss.through.obj( collect, writeOnEnd )
+
+              function collect ( args, enc, next ) {
+                if ( includeInSiteMap( args.builtFile ) ) urls.push( normalizeForSiteMap( args.builtFile ) )
+                next( null, args )
+              }
+
+              function writeOnEnd () {
+                var stream = this;
+                var siteMapTasks = options.buckets.map( createSiteMapTask )
+                async.parallel( siteMapTasks, function ( error, siteMaps ) {
+                  if ( error ) return stream.emit( 'error', error );
+                  console.log( 'site-maps' )
+                  console.log( siteMaps )
+                  siteMaps.forEach( function ( siteMap ) { stream.push( siteMap ) } )
+                  stream.push( null )
+                } )
+              }
+
+              function createSiteMapTask ( bucket ) {
+                return function siteMapTask ( taskComplete ) {
+                  var siteMapFile = bucket.replace( /\./g, '-' ) + '-sitemap.xml';
+                  var siteMapPath = path.join( builtFolder, siteMapFile )
+                  var siteMapContent = siteMapFor( bucket, urls )
+                  fs.writeFile( siteMapPath, siteMapContent, function ( error ) {
+                    if ( error ) return taskComplete( error )
+                    var uploadArgs = {
+                      builtFile: siteMapFile,
+                      builtFilePath: siteMapPath,
+                    }
+                    taskComplete( null, uploadArgs )
+                  } )
+                }
+              }
+
+              function siteMapFor ( host, urls ) {
+                console.log( urls )
+                var protocol = host.endsWith( 'risd.systems' ) ? 'https' : 'http';
+                var protocolHost = [ protocol, host ].join( '://' )
+                var openingTag =
+                  [ '<?xml version="1.0" encoding="UTF-8"?>',
+                    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' ].join( '\n' )
+                var urlItems = urls.map( function ( urlLoc ) {
+                  return [
+                    '\t<url>',
+                      '\t\t<loc>' + url.resolve( protocolHost, urlLoc ) + '</loc>',
+                    '\t</url>\n',
+                  ].join( '\n' )
+                } ).join( '' )
+                var closingTag = '</urlset>\n'
+                return [ openingTag, urlItems, closingTag ].join( '' )
+              }
+            }
           }
 
           /**
@@ -692,7 +781,7 @@ module.exports.start = function (config, logger) {
               miss.pipe(
                 usingArguments( { builtFolder: args.builtFolder } ),
                 feedCloudFiles( { buckets: buckets } ),            // adds { bucket, remoteBuiltFile }
-                feedNotLocalFiles(),                               // pushes previous if conditions are met
+                feedNotLocalFiles( { maxParallel: maxParallel } ), // pushes previous if conditions are met
                 deleteFromBucket( { maxParallel: maxParallel } ),  // adds { remoteDeleted }
                 sink(),
                 function onComplete ( error ) {
@@ -746,8 +835,11 @@ module.exports.start = function (config, logger) {
             }
 
             // compare remote files to local files. if the local file does not exist, push it for deletion.
-            function feedNotLocalFiles () {
-              return miss.through.obj( function ( args, enc, next ) {
+            function feedNotLocalFiles ( options ) {
+              if ( !options ) options = {};
+              var maxParallel = options.maxParallel || 1;
+
+              return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
                 var localFile = localForRemote( args.remoteBuiltFile )
                 var localFilePath = path.join( args.builtFolder, localFile )
                 fs.open( localFilePath, 'r', function ( error, fd ) {
