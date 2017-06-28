@@ -690,7 +690,7 @@ module.exports.start = function (config, logger) {
               var builtFolder = options.builtFolder;
 
               function includeInSiteMap( file ) {
-                return file.endsWith( 'index.html' ) && ( !file.startsWith( '_wh_previews' ) )
+                return file.endsWith( 'index.html' ) && ( !file.startsWith( '_wh_previews' ) ) && ( !file.startsWith( 'cms/index.html' ) )
               }
 
               function normalizeForSiteMap( file ) {
@@ -734,7 +734,6 @@ module.exports.start = function (config, logger) {
               }
 
               function siteMapFor ( host, urls ) {
-                console.log( urls )
                 var protocol = host.endsWith( 'risd.systems' ) ? 'https' : 'http';
                 var protocolHost = [ protocol, host ].join( '://' )
                 var openingTag =
