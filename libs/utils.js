@@ -70,7 +70,8 @@ function uploadIfDifferent ( options ) {
     }
 
     if ( args.bucket ) uploadArgs.bucket = args.bucket;
-    
+    if ( args.overrideMimeType ) uploadArgs.overrideMimeType = args.overrideMimeType;
+
     miss.pipe(
       usingArguments( uploadArgs ),
       builtFileMd5(),         // adds builtFileMd5
@@ -88,14 +89,18 @@ function uploadIfDifferent ( options ) {
   function builtFileMd5 () {
     return miss.through.obj( function ( args, enc, next ) {
       var encoding = 'utf8';
+
       fs.readFile( args.builtFilePath, encoding, function ( error, builtFileContent ) {
         if ( error ) builtFileContent = args.builtFilePath;
 
         zlib.gzip( builtFileContent, function ( error, compressedBuiltFileContent ) {
           
-          args.overrideMimeType = path.extname( args.builtFilePath ) === ''
-            ? 'text/html'
-            : mime.lookup( args.builtFilePath )
+          if ( !args.overrideMimeType ) {
+            args.overrideMimeType = path.extname( args.builtFilePath ) === ''
+              ? 'text/html'
+              : mime.lookup( args.builtFilePath )
+          }
+          
           args.builtFileMd5 = crypto.createHash('md5').update(compressedBuiltFileContent, encoding).digest('base64');
           // args.compressed = compressedBuiltFileContent.toString( encoding );
 
@@ -112,7 +117,7 @@ function uploadIfDifferent ( options ) {
 
       // One file per bucket
       if ( args.bucket ) {
-        stream.push( args )
+        return next( null, args )
       }
       // Same file for multiple buckets?
       if ( buckets ) {
@@ -130,6 +135,7 @@ function uploadIfDifferent ( options ) {
 
   function remoteFileMd5 () {
     return miss.through.obj( function ( args, enc, next ) {
+
       cloudStorage.objects.getMeta( args.bucket, args.builtFile, function ( error, remoteFileMeta ) {
         if ( error ) args.remoteFileMd5 = false;
         else args.remoteFileMd5 = remoteFileMeta.md5Hash;
@@ -140,6 +146,7 @@ function uploadIfDifferent ( options ) {
 
   function conditionalUpload () {
     return miss.through.obj( function ( args, enc, next ) {
+
       if ( args.builtFileMd5 === args.remoteFileMd5 ) return next( null, Object.assign( args, { fileUploaded: false } ) )
 
       var retryableUploadOptions = streamArgsToUploadOptions( args );

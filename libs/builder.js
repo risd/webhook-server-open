@@ -336,6 +336,7 @@ module.exports.start = function (config, logger) {
                 buckets: buckets,
                 builtFolder: args.builtFolder,
               };
+              var robotsTxtOptions = Object.assign( { buildFolder: args.buildFolder }, siteMapOptions );
 
               var uploadOptions = {
                 buckets: buckets,
@@ -350,6 +351,7 @@ module.exports.start = function (config, logger) {
                 feedBuilds(),                 // pushes { buildFolder, command, flags }
                 runBuildEmitter( buildEmitterOptions ),  // pushes { builtFile, builtFilePath }
                 buildSitemap( siteMapOptions ),          // through stream, writes { builtFile, builtFilePath } on end
+                buildRobotsTxt( robotsTxtOptions ),      // through stream, writes { builtFile, builtFilePath } on end
                 uploadIfDifferent( uploadOptions ),
                 sink(),
                 function onComplete ( error ) {
@@ -748,6 +750,95 @@ module.exports.start = function (config, logger) {
                 } ).join( '' )
                 var closingTag = '</urlset>\n'
                 return [ openingTag, urlItems, closingTag ].join( '' )
+              }
+            }
+
+            function buildRobotsTxt ( options ) {
+              var buckets = options.buckets || [];
+              var buildFolder = options.buildFolder;
+              var builtFolder = options.builtFolder;
+              var shouldBuild = false;
+              var builtFile = 'robots.txt';
+
+              return miss.through.obj( filterRobotsTxt, writeRobotsTxt )
+
+              function filterRobotsTxt ( args, enc, next ) {
+                if ( args.builtFile.endsWith( builtFile ) ) {
+                  shouldBuild = true;
+                  return next()
+                }
+                next( null, args )
+              }
+
+              function writeRobotsTxt () {
+                if ( shouldBuild === false ) return stream.push( null )
+                var stream = this;
+                miss.pipe(
+                  feedBuckets(),
+                  buildAndRead(),
+                  sink( function ( args ) {
+                    stream.push( args )
+                  } ),
+                  function onComplete ( error ) {
+                    if ( error ) return stream.emit( 'error', error )
+                    stream.push( null )
+                  } )
+              }
+
+              function feedBuckets () {
+                return miss.from.obj( buckets.map( function ( bucket ) { return { bucket: bucket } } ).concat( [ null ] ) )
+              }
+
+              function buildAndRead () {
+                return miss.through.obj( function ( args, enc, next ) {
+                  var robotsDataContent = buildDataForBucket( args.bucket )
+                  var robotsDataPath = path.join( builtFolder, 'robots-data.json' )
+
+                  var buildParams = [
+                    'build-page',
+                    '--inFile=pages/robots.txt',
+                    '--production=true',
+                    '--data=.build/robots-data.json',
+                    '--emitter'
+                  ]
+
+                  var builtRobotsPath = path.join( builtFolder, builtFile )
+
+
+                  fs.writeFile( robotsDataPath, robotsDataContent, function ( error ) {
+                    if ( error ) return next( error )
+
+                    runInDir( 'grunt', buildFolder, buildParams, function ( error ) {
+                      if ( error ) return next( error )
+
+                      fs.readFile( builtRobotsPath, function ( error, contents ) {
+                        if ( error ) return next( error )
+
+                        var uploadArgs = {
+                          builtFile: builtFile,
+                          builtFilePath: contents.toString(),
+                          bucket: args.bucket,
+                          overrideMimeType: 'text/plain',
+                        }
+
+                        next( null, uploadArgs )
+                      } )
+                    } )
+                  } )
+                } )
+              }
+
+              function buildDataForBucket ( bucket ) {
+                var buildData = {
+                  contentType: {},
+                  data: {},
+                  settings: {
+                    general: {
+                      site_url: bucket
+                    }
+                  }
+                }
+                return JSON.stringify( buildData )
               }
             }
           }
