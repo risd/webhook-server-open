@@ -16,6 +16,9 @@ var JobQueue = require('./jobQueue.js');
 var request = require('request');
 var miss = require('mississippi');
 
+var utils = require( './utils.js' );
+var usingArguments = utils.usingArguments;
+var sink = utils.sink;
 var cloudStorage = require('./cloudStorage.js');
 
 var escapeUserId = function(userid) {
@@ -158,6 +161,7 @@ module.exports.start = function (config, logger) {
         updateAcls(),
         updateIndex(),
         ensureCname( config.get( 'cloudflare' ) ),
+        ensureCdn( config.get( 'fastlyToken' ) ),
         generateKey(),
         sink(),
         function onEnd ( error ) {
@@ -184,10 +188,12 @@ module.exports.createCnameRecord = createCnameRecord;
  * @param  {string}   options.cloudflare.client.key
  * @param  {string}   options.cloudflare.client.email
  * @param  {string}   options.cloudflare.zone_id
+ * @param  {string}   options.fastlyToken
  * @param  {Function} callback
  * @return {Function}
  */
 function setupBucket ( options, callback ) {
+
   var bucketToSetup = {
     siteBucket:   options.siteBucket,
     ensureCname:  options.ensureCname || true,
@@ -202,6 +208,7 @@ function setupBucket ( options, callback ) {
     updateAcls(),
     updateIndex(),
     ensureCname( options.cloudflare ),
+    ensureCdn( options.fastlyToken ),
     sink(),
     function ( error ) {
       if ( error ) return callback( error )
@@ -294,8 +301,8 @@ function updateIndex () {
     row.cloudStorage.buckets.updateIndex(
       row.siteBucket,
       'index.html', '404.html',
-      function ( err, body ) {
-        if ( err ) return next( err, null )
+      function ( error, body ) {
+        if ( error ) { error.step = 'updateIndex'; return next( error, null ) }
         else next( null, row )
       } )
   });
@@ -311,35 +318,33 @@ function updateIndex () {
  */
 function ensureCname ( options ) {
 
-  var baseCreateCnameRecordOptions = Object.assign( {}, options, {
-    content: 'c.storage.googleapis.com',
-  } )
+  // should be part of options, and configuration based
+  
+  var cloudFlareManagedDomains = options.domains;
+
+  var isManagedByCloudFlare = function ( domain ) {
+    return cloudFlareManagedDomains.filter( function ( managedDomain ) {
+      return domain.endsWith( managedDomain )
+    } ).length === 1;
+  }
 
   var fastlyCreateCnameRecordOptions = Object.assign( {}, options, {
     content: 'nonssl.global.fastly.net',
   } )
 
-  var canCreateCname = function ( siteBucket ) {
-    // the stage prefix is used for setup against Fastly, instead of CloudFlare, as thats what risd.edu works against.
-    return siteBucket.endsWith( 'risd.systems' )
-  }
-
   var createCnameRecordOptions = function ( siteBucket ) {
-    if ( siteBucket.startsWith( 'stage.' ) ) {
-      return Object.assign( {}, fastlyCreateCnameRecordOptions, { record: siteBucket } )
-    } else {
-      return Object.assign( {}, baseCreateCnameRecordOptions, { record: siteBucket } )
-    }
+    return Object.assign( {}, fastlyCreateCnameRecordOptions, { record: siteBucket } )
   }
 
   return miss.through.obj( function ( row, enc, next ) {
 
-    if ( canCreateCname( row.siteBucket ) && row.ensureCname ) {
-      console.log( 'site-setup:ensure-cname' )
+    if ( isManagedByCloudFlare( row.siteBucket ) && row.ensureCname ) {
+      console.log( 'site-setup:ensure-cname:' + row.siteBucket )
 
       createCnameRecord( createCnameRecordOptions( row.siteBucket ), function ( error, cname ) {
         row.cname = cname;
         console.log( 'site-setup:ensure-cname:done' )
+        console.log( row )
         next( null, row );
       } )
     } else {
@@ -347,12 +352,6 @@ function ensureCname ( options ) {
       next( null, row )
     }
 
-  } )
-}
-
-function sink () {
-  return miss.through.obj( function ( row, enc, next ) {
-    next();
   } )
 }
 
@@ -371,8 +370,7 @@ function sink () {
  */
 function createCnameRecord ( options, onComplete ) {
   console.log( 'create-cname-record:start' )
-  console.log( options )
-
+  
   var Cloudflare = require('cloudflare');
 
   var client = new Cloudflare( options.client )
@@ -384,29 +382,61 @@ function createCnameRecord ( options, onComplete ) {
   
   var createRecordOptions = { type: 'CNAME', zone_id: zone_id, proxied: true }
 
-  function createRecord ( withRecord ) {
+  function createRecord ( recordValues, withRecord ) {
 
-    var dnsCnameRecord = Cloudflare.DNSRecord.create( Object.assign( createRecordOptions, {
-        name: cnameRecord,
-        content: cnameContent,
-      } ) );
+    var dnsCnameRecord = Cloudflare.DNSRecord.create( Object.assign( {}, createRecordOptions, recordValues ) );
 
     client.addDNS( dnsCnameRecord )
       .then( function ( cname ) {
         return withRecord( null, cname )
       } )
       .catch( function ( error ) {
+        error.step = 'createCnameRecord:createRecord';
         withRecord( error, recordCreated )
       } )
+  }
 
+  function updateRecord ( record, withRecord ) {
+    client.editDNS( record )
+      .then( function ( cname ) {
+        return withRecord( null, cname )
+      } )
+      .catch( function ( error ) {
+        error.step = 'createCnameRecord:updateRecord';
+        withRecord( error, recordCreated )
+      } )
   }
 
   return gatherCnames( zone_id, function ( error, cnames ) {
-    if ( error ) return onComplete( error, recordCreated )
+    if ( error ) { error.step = 'createCnameRecord:gatherCnames'; return onComplete( error, recordCreated ) }
 
-    if ( cnames.indexOf( cnameRecord ) === -1 ) return createRecord( onComplete )
+    var recordValues = {
+      name: cnameRecord,
+      content: cnameContent,
+    }
+
+    var existingRecord = valueInArray( cnames, nameKey, cnameRecord )
+    
+    if ( !existingRecord ) {
+      // does not exist, lets make it
+      return createRecord( recordValues, onComplete )
+    }
+    else if ( existingRecord.content !== cnameContent ) {
+      // exists, but has dated content, lets update it
+      existingRecord.content = cnameContent;
+      return updateRecord( existingRecord, onComplete )
+    }
     else return onComplete( null, ( recordCreated = true ) )
 
+    function valueInArray ( arr, keyFn, seekingValue ) {
+      var index = arr.map( keyFn ).indexOf( seekingValue )
+      if ( index === -1 ) return undefined;
+      return arr[ index ]
+    }
+
+    function nameKey ( record ) {
+      return record.name;
+    }
   } )
 
   function gatherCnames ( zone_id, withCnames ) {
@@ -415,8 +445,7 @@ function createCnameRecord ( options, onComplete ) {
     var cnameSources = [];
 
     function pluckCnamesFromRecords ( records ) {
-      cnameSources = cnameSources.concat(
-        records.map( function( record ) { return record.name } ) )
+      cnameSources = cnameSources.concat( records )
     }
 
     function getPageOfCnames ( pageOptions, withPage ) {
@@ -450,4 +479,39 @@ function createCnameRecord ( options, onComplete ) {
     return record.indexOf( www ) === 0 ? record.slice( www.length ) : record;
   }
 
+}
+
+function ensureCdn ( fastlyToken ) {
+  return miss.through.obj( function ( row, enc, next ) {
+    console.log( 'ensure-cdn:' + row.siteBucket );
+
+    var fastlyOptions = { domain: row.siteBucket, fastlyToken: fastlyToken }
+    fastlyServiceForDomain( fastlyOptions, function ( error, service ) {
+      if ( error ) { error.step = 'ensureCdn'; return next( error ) }
+
+      console.log( 'ensure-cdn:done' );
+      row.fastly = service;
+      return next( null, row )
+    } )
+  } )
+}
+
+function fastlyServiceForDomain ( options, callback ) {
+  if ( !options ) return callback( new Error( 'Requires { fastlyToken, domain }.' ) )
+  var fastlyToken = options.fastlyToken;
+  var domain = options.domain;
+
+  var fastly = require( 'Fastly' )( fastlyToken )
+  var serviceForDomain = require( './redirects.js' ).serviceForDomain;
+
+  miss.pipe(
+    usingArguments( { domain: domain } ),
+    serviceForDomain( fastly ),
+    sink( function ( row ) {
+      // row = { service_id, dictionary_id, active_version }
+      callback( null, Object.assign( {}, row, { usesFastly: true } ) )
+    } ),
+    function onComplete ( error ) {
+      if ( error ) { error.step = 'fastlyServiceForDomain'; return callback( error ) }
+    } )
 }

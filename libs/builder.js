@@ -65,6 +65,7 @@ module.exports.start = function (config, logger) {
   var setupBucketOptions = {
     cloudStorage: cloudStorage,
     cloudflare: config.get( 'cloudflare' ),
+    fastlyToken: config.get( 'fastlyToken' ),
   }
 
 
@@ -285,10 +286,12 @@ module.exports.start = function (config, logger) {
               console.log( 'make-deploy-buckets:start' )
               var setupBucketTasks = args.deploys.map( makeDeployBucketTask )
               async.parallel( setupBucketTasks, function ( error ) {
-                console.log( 'make-deploy-buckets:end' )
-                console.log( error )
-                if ( error ) return next( error )
-                next( null, args)
+                if ( error ) {
+                  console.log( error )
+                  console.log( error.stack )
+                  return next( error )
+                }
+                next( null, args )
               } )
               
             } )
@@ -721,11 +724,15 @@ module.exports.start = function (config, logger) {
 
               function createSiteMapTask ( bucket ) {
                 return function siteMapTask ( taskComplete ) {
-                  var siteMapFile = bucket.replace( /\./g, '-' ) + '-sitemap.xml';
+                  var siteMapFile = siteMapName( bucket );
                   var siteMapPath = path.join( builtFolder, siteMapFile )
                   var siteMapContent = siteMapFor( bucket, urls )
                   fs.writeFile( siteMapPath, siteMapContent, function ( error ) {
-                    if ( error ) return taskComplete( error )
+                    if ( error ) {
+                      console.log( 'site-map:error' )
+                      console.log( error )
+                      return taskComplete()
+                    }
                     var uploadArgs = {
                       builtFile: siteMapFile,
                       builtFilePath: siteMapPath,
@@ -736,8 +743,7 @@ module.exports.start = function (config, logger) {
               }
 
               function siteMapFor ( host, urls ) {
-                var protocol = host.endsWith( 'risd.systems' ) ? 'https' : 'http';
-                var protocolHost = [ protocol, host ].join( '://' )
+                var protocolHost = hostWithProtocol( host )
                 var openingTag =
                   [ '<?xml version="1.0" encoding="UTF-8"?>',
                     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' ].join( '\n' )
@@ -751,6 +757,15 @@ module.exports.start = function (config, logger) {
                 var closingTag = '</urlset>\n'
                 return [ openingTag, urlItems, closingTag ].join( '' )
               }
+            }
+
+            function siteMapName( host ) {
+              return host.replace( /\./g, '-' ) + '-sitemap.xml';
+            }
+
+            function hostWithProtocol( host ) {
+              var protocol = host.endsWith( 'risd.systems' ) ? 'https' : 'http';
+              return [ protocol, host ].join( '://' )
             }
 
             function buildRobotsTxt ( options ) {
@@ -834,7 +849,8 @@ module.exports.start = function (config, logger) {
                   data: {},
                   settings: {
                     general: {
-                      site_url: bucket
+                      site_url: bucket,
+                      site_map: url.resolve( hostWithProtocol( bucket ), siteMapName( bucket ) )
                     }
                   }
                 }

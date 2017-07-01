@@ -157,6 +157,7 @@ module.exports.start = function ( config, logger ) {
             .forEach( function ( str ) {
               var builtFile = str.trim().slice( buildEvent.length )
               var builtFilePath = path.join( builtFolder, builtFile )
+              console.log( 'build-event:' + builtFile )
               stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, branch: args.branch } )
             } )
 
@@ -214,7 +215,7 @@ module.exports.start = function ( config, logger ) {
             builtFile: args.builtFile,
             builtFilePath: args.builtFilePath,
           }
-
+          console.log( uploadArgs )
           stream.push( uploadArgs )
 
         } )

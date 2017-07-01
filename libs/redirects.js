@@ -1,84 +1,6 @@
 /*
 
-list deploys:
-- filter: `stage.*.risd.systems`, `*.risd.edu`
-
-for each:
-
-get the service
-list the current rules
-if there are new rules, clone the active version
-add the rules to the new version
-set the new version as the active one
-
-
-steps to get the service
-GET /service/search?name={domain}
-if error return create a service
-otherwise, return service { id, active_version, ... }
-
-steps to create a service
-POST /service
-- name: domain
-returns { id, ... }
-do basic configuration for the service
-  POST /service/{id}/version/1/backend
-  - {
-      hostname: 'storage.googleapis.com',
-      address: 'storage.googleapis.com',
-      name: 'addr storage.googleapis.com',
-      port: 80,
-    }
-  POST /service/{id}/version/1/domain
-  - {
-      name: domain
-    }
-  POST /service/{id}/version/1/dictionary
-  - { name: 'redirect_one_to_one_urls' }
-  POST /service/{id}/version/1/snippet
-  - { name: 'recv_redirect_urls',
-      dynamic: 1,
-      type: 'recv',
-      priority: 100,
-      content: 'if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ) {\n  if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ~ "^(http)?"  ) {\n    set req.http.x-redirect-location = table.lookup( redirect_one_to_one_urls, req.url.path );\n  } else {\n    set req.http.x-redirect-location = "http://" req.http.host table.lookup( redirect_one_to_one_urls, req.url.path );  \n  }\n  \n  error 301;\n}',
-    }
-  POST /service/{id}/version/1/snippet
-  - { name: 'error_redirect_synthetic',
-      dynamic: 1,
-      type: 'recv',
-      priority: 100,
-      content: 'if (obj.status == 301 && req.http.x-redirect-location) {\n  set obj.http.Location = req.http.x-redirect-location;\n  set obj.response = "Found";\n  synthetic {""};\n  return(deliver);\n}',
-    }
-  POST /service/{id}/version/1/dictionary
-  - { name: 'redirect_one_to_one_urls' }
-
-return service { id, ... }
-
-
-steps to list the current rules
-firebase.site.settings.urls
-GET /service/{id}/version/{active_version}/dictionary/{dictionary_id_one_to_one_redirect_urls}
-
-if no header for redirect.pattern
-POST /service/{id}/version/{active_version}/header
-- {
-    name: 'response-redirect-' + nameFor( redirect )
-    type: 'response'
-    action: 'set'
-    dst: 'http.Location'
-    src: redirect.destination
-    ignore_if_set: 0
-    priority: redirect.priority
-  }
-
-if there is a header for redirect.pattern
-check to see that `priority` & `src` value match
-if they do not match, update the record
-PUT /service/{id}/version/{active_version}/header/{header-name}
-
-for every header value, ensure there is a matching nameFor( redirect.pattern )
-if there is not one,
-DELETE /service/{id}/version/{active_version}/header/{header-name}
+Redirects management via Fastly.
 
 */
 
@@ -102,6 +24,12 @@ var sink = utils.sink;
 var unescapeSite = function(site) {
   return site.replace(/,1/g, '.');
 }
+
+// name of the dictionary on fastly that contains redirects
+var REDIRECT_ONE_TO_ONE_URLS = 'redirect_one_to_one_urls';
+var SNIPPET_RECV_REDIRECT = 'recv_redirect_urls';
+var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
+var SNIPPET_RECV_TRAILING_SLASH = 'recv_trailing_slash';
 
 module.exports.start = function ( config, logger ) {
   var self = this;
@@ -132,11 +60,6 @@ module.exports.start = function ( config, logger ) {
     });
   }
 
-  // name of the dictionary on fastly that contains redirects
-  var REDIRECT_ONE_TO_ONE_URLS = 'redirect_one_to_one_urls';
-  var SNIPPET_RECV_REDIRECT = 'recv_redirect_urls';
-  var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
-  var SNIPPET_RECV_TRAILING_SLASH = 'recv_trailing_slash';
   var baseSnippets = [ SNIPPET_RECV_REDIRECT, SNIPPET_ERROR_REDIRECT, SNIPPET_RECV_TRAILING_SLASH ]
 
   self.root.auth( config.get( 'firebaseSecret' ), function(err) {
@@ -157,15 +80,9 @@ module.exports.start = function ( config, logger ) {
     var site = data.sitename;
     var siteName = unescapeSite( site )
 
-    // fastly.request( 'GET', '/service/6Fs54MnCjdq8FDTDdm8DAO/version/3/snippet', function ( error, value ) {
-    //   console.log( error )
-    //   console.log( value )
-    //   callback()
-    // } )
-
     miss.pipe(
       domainsToConfigure( siteName ),  // { domain }
-      serviceForDomain(),              // { domain, service_id, active_version, dictionary_id }
+      serviceForDomain( fastly ),      // { domain, service_id, active_version, dictionary_id }
       redirectsForDomain( site ),      // { domain, service_id, active_version, dictionary_id, cms_redirects, cdn_items, cdn_snippets }
       actionsForService(),             // { domain, service_id, active_version, dictionary_id, item_actions, actions }
       applyItemsForService(),          // { domain, service_id, active_version, dictionary_id, item_actions, actions }
@@ -203,10 +120,6 @@ module.exports.start = function ( config, logger ) {
       return deploy.bucket;
     }
 
-    var usesFastly = function ( domain ) {
-      return domain.startsWith( 'stage.' ) || domain.endsWith( 'risd.edu' )
-    }
-
     deploys.get( { siteName: siteName }, function ( error, configuration ) {
       if ( error ) {
         console.log( error )
@@ -215,188 +128,6 @@ module.exports.start = function ( config, logger ) {
       var fastlyDomains = configuration.deploys.map( domainForDeploy ).filter( usesFastly )
       callback( null, fastlyDomains )
     } )
-  }
-
-  function serviceForDomain () {
-    return miss.through.obj( function ( args, enc, next ) {
-
-      miss.pipe(
-        usingArguments( { domain: args.domain } ),
-        existingService(),                          // { service_id?, active_version?, dictionary_id? }
-        createAndConfigureService(),                // { service_id, active_version, dictionary_id }
-        sink( function ( row ) {
-          var nextArgs = Object.assign( {}, args, {
-            service_id: row.service_id,
-            dictionary_id: row.dictionary_id,
-            active_version: row.active_version,
-          } )
-          next( null, nextArgs )
-        } ),
-        function onComplete ( error ) {
-          if ( error ) return next( error )
-        } )
-
-    } )
-
-    function existingService () {
-      return miss.through.obj( function ( args, enc, next ) {
-        fastly.request( 'GET', '/service/search?name=' + args.domain, function ( error, service ) {
-          if ( error ) {
-            args.service_id = args.active_version = false;
-            return next( null, args )
-          }
-          
-          args.service_id = service.id;
-          args.active_version = activeVersionIn( service.versions )
-
-          var dictionaryApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'dictionary', REDIRECT_ONE_TO_ONE_URLS ].join( '/' )
-          fastly.request( 'GET', dictionaryApiUrl, function ( error, dictionary ) {
-            if ( error ) return next( error )
-            args.dictionary_id = dictionary.id;
-            next( null, args )
-          } )
-        } )
-      } )
-
-      function activeVersionIn ( versions ) {
-        var activeVersion = versions.filter( function isActive ( version ) { return version.active } )
-        if ( activeVersion.length === 1 ) {
-          return activeVersion[ 0 ].number;
-        }
-      }
-    }
-
-    function createAndConfigureService () {
-      return miss.through.obj( function (args, enc, next ) {
-
-        if ( args.service_id !== false ) return next( null, args )
-
-        miss.pipe(
-          usingArguments( { domain: args.domain } ),
-          createService(),
-          configureGoogleBackend(),
-          configureDomain(),
-          configureTrailingSlashSnippet(),
-          configureVclRecvRedirectSnippet(),
-          configureVclErrorRedirectSnippet(),
-          configureOneToOneRedirectDictionary(),
-          activateServiceVersion(),
-          sink( function ( row ) {
-            var nextArgs = Object.assign( {}, args, {
-              service_id: row.service_id,
-              active_version: row.active_version,
-              dictionary_id: row.dictionary_id,
-            } )
-            next( null, nextArgs )
-          } ),
-          function onComplete ( error ) {
-            if ( error ) return next( error )
-          } )
-
-      } )
-
-      function createService () {
-        return miss.through.obj( function ( args, enc, next ) {
-          fastly.request( 'POST', '/service', { name: args.domain }, function ( error, service ) {
-            args.service_id = service.id;
-            args.active_version = 1;
-            next( null, args )
-          } )
-        } )
-      }
-
-      function configureGoogleBackend () {
-        return miss.through.obj( function ( args, enc, next ) {
-          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'backend' ].join( '/' );
-          var apiParams = {
-            hostname: 'storage.googleapis.com',
-            address: 'storage.googleapis.com',
-            name: 'addr storage.googleapis.com',
-            port: 80,
-          };
-          fastly.request( 'POST', apiUrl, apiParams, function ( error, backend ) {
-            if ( error ) return next( error )
-            next( null, args )
-          } )
-        } )
-      }
-
-      function configureDomain () {
-        return miss.through.obj( function ( args, enc, next ) {
-          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'domain' ].join( '/' );
-          var apiParams = {
-            name: args.domain
-          };
-          fastly.request( 'POST', apiUrl, apiParams, function ( error, domain ) {
-            if ( error ) return next( error )
-            next( null, args )
-          } )
-        } )
-      }
-
-      function configureTrailingSlashSnippet () {
-        return miss.through.obj( function ( args, enc, next) {
-          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
-          var apiParams = {
-            name: SNIPPET_RECV_TRAILING_SLASH,
-            dynamic: 1,
-            type: 'recv',
-            priority: 99,
-            content: 'if ( req.url !~ {"(?x)\n (?:/$) # last character isn\'t a slash\n | # or \n (?:/\\?) # query string isn\'t immediately preceded by a slash\n "} &&\n req.url ~ {"(?x)\n (?:/[^./]+$) # last path segment doesn\'t contain a . no query string\n | # or\n (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string\n "} ) {\n  set req.url = req.url + "/";\n}',
-          }
-          fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
-            if ( error ) return next( error )
-            next( null, args )
-          } )
-        } )
-      }
-
-      function configureVclRecvRedirectSnippet () {
-        return miss.through.obj( function ( args, enc, next ) {
-          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
-          var apiParams = {
-            name: SNIPPET_RECV_REDIRECT,
-            dynamic: 1,
-            type: 'recv',
-            priority: 100,
-            content: 'if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ) {\n  if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ~ "^(http)?"  ) {\n    set req.http.x-redirect-location = table.lookup( redirect_one_to_one_urls, req.url.path );\n  } else {\n    set req.http.x-redirect-location = "http://" req.http.host table.lookup( redirect_one_to_one_urls, req.url.path );  \n  }\n  \n  error 301;\n}',
-          }
-          fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
-            if ( error ) return next( error )
-            next( null, args )
-          } )
-        } )
-      }
-
-      function configureVclErrorRedirectSnippet () {
-        return miss.through.obj( function ( args, enc, next ) {
-          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
-          var apiParams = {
-            name: SNIPPET_ERROR_REDIRECT,
-            dynamic: 1,
-            type: 'error',
-            priority: 100,
-            content: 'if (obj.status == 301 && req.http.x-redirect-location) {\n  set obj.http.Location = req.http.x-redirect-location;\n  set obj.response = "Found";\n  synthetic {""};\n  return(deliver);\n}',
-          }
-          fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
-            if ( error ) return next( error )
-            next( null, args )
-          } )
-        } )
-      }
-
-      function configureOneToOneRedirectDictionary () {
-        return miss.through.obj( function ( args, enc, next ) {
-          var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'dictionary' ].join( '/' )
-          var apiParams = { name: REDIRECT_ONE_TO_ONE_URLS }
-          fastly.request( 'POST', apiUrl, apiParams, function ( error, dictionary ) {
-            if ( error ) return next( error )
-            args.dictionary_id = dictionary.id;
-            next( null, args )
-          } )
-        } )
-      }
-    }
   }
 
   function redirectsForDomain ( site ) {
@@ -756,7 +487,7 @@ module.exports.start = function ( config, logger ) {
 
           miss.pipe(
             usingArguments( args ),
-            activateServiceVersion(),
+            activateServiceVersion( fastly ),
             sink(),
             function onActivateComplete( error ) {
               if ( error ) return next( error )
@@ -836,33 +567,6 @@ module.exports.start = function ( config, logger ) {
     }
   }
 
-  function activateServiceVersion () {
-    return miss.through.obj( function ( args, enc, next ) {
-      if ( typeof args.active_version !== 'number' ) return next( null, args )
-
-      var validateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'validate' ].join( '/' )
-      var activateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'activate' ].join( '/' )
-
-      fastly.request( 'GET', validateApiUrl, function ( error, result ) {
-        if ( error ) {
-          error.atStep = 'activateNewServiceVersion:validate';
-          return next( error )
-        }
-        if ( result.status === 'error' ) {
-          next( result )
-        } else if ( result.status === 'ok' ) {
-          fastly.request( 'PUT', activateApiUrl, function ( error, service ) {
-            if ( error ) {
-              error.atStep = 'activateNewServiceVersion:activate';
-              return next( error )
-            }
-            next( null, args )
-          } )    
-        }
-      } )
-    } )
-  }
-
   function fastlyJsonRequest ( method, url, json, callback ) {
     var headers = {
       'fastly-key': config.get( 'fastlyToken' ),
@@ -896,4 +600,215 @@ module.exports.start = function ( config, logger ) {
     });
   }
 
+}
+
+module.exports.serviceForDomain = serviceForDomain;
+
+function serviceForDomain ( fastly ) {
+  return miss.through.obj( function ( args, enc, next ) {
+    console.log( 'serviceForDomain' )
+    miss.pipe(
+      usingArguments( { domain: args.domain } ),
+      existingService(),                          // { service_id?, active_version?, dictionary_id? }
+      createAndConfigureService(),                // { service_id, active_version, dictionary_id }
+      sink( function ( row ) {
+        var nextArgs = Object.assign( {}, args, {
+          service_id: row.service_id,
+          dictionary_id: row.dictionary_id,
+          active_version: row.active_version,
+        } )
+        next( null, nextArgs )
+      } ),
+      function onComplete ( error ) {
+        if ( error ) return next( error )
+      } )
+
+  } )
+
+  function existingService () {
+    return miss.through.obj( function ( args, enc, next ) {
+      fastly.request( 'GET', '/service/search?name=' + args.domain, function ( error, service ) {
+        if ( error ) {
+          args.service_id = args.active_version = false;
+          return next( null, args )
+        }
+        
+        args.service_id = service.id;
+        args.active_version = activeVersionIn( service.versions )
+
+        var dictionaryApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'dictionary', REDIRECT_ONE_TO_ONE_URLS ].join( '/' )
+        fastly.request( 'GET', dictionaryApiUrl, function ( error, dictionary ) {
+          if ( error ) return next( error )
+          args.dictionary_id = dictionary.id;
+          next( null, args )
+        } )
+      } )
+    } )
+
+    function activeVersionIn ( versions ) {
+      var activeVersion = versions.filter( function isActive ( version ) { return version.active } )
+      if ( activeVersion.length === 1 ) {
+        return activeVersion[ 0 ].number;
+      }
+    }
+  }
+
+  function createAndConfigureService () {
+    return miss.through.obj( function ( args, enc, next ) {
+
+      if ( args.service_id !== false ) return next( null, args )
+
+      miss.pipe(
+        usingArguments( { domain: args.domain } ),
+        createService(),
+        configureGoogleBackend(),
+        configureDomain(),
+        configureTrailingSlashSnippet(),
+        configureVclRecvRedirectSnippet(),
+        configureVclErrorRedirectSnippet(),
+        configureOneToOneRedirectDictionary(),
+        activateServiceVersion( fastly ),
+        sink( function ( row ) {
+          var nextArgs = Object.assign( {}, args, {
+            service_id: row.service_id,
+            active_version: row.active_version,
+            dictionary_id: row.dictionary_id,
+          } )
+          next( null, nextArgs )
+        } ),
+        function onComplete ( error ) {
+          if ( error ) return next( error )
+        } )
+
+    } )
+
+    function createService () {
+      return miss.through.obj( function ( args, enc, next ) {
+        fastly.request( 'POST', '/service', { name: args.domain }, function ( error, service ) {
+          args.service_id = service.id;
+          args.active_version = 1;
+          next( null, args )
+        } )
+      } )
+    }
+
+    function configureGoogleBackend () {
+      return miss.through.obj( function ( args, enc, next ) {
+        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'backend' ].join( '/' );
+        var apiParams = {
+          hostname: 'storage.googleapis.com',
+          address: 'storage.googleapis.com',
+          name: 'addr storage.googleapis.com',
+          port: 80,
+        };
+        fastly.request( 'POST', apiUrl, apiParams, function ( error, backend ) {
+          if ( error ) return next( error )
+          next( null, args )
+        } )
+      } )
+    }
+
+    function configureDomain () {
+      return miss.through.obj( function ( args, enc, next ) {
+        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'domain' ].join( '/' );
+        var apiParams = {
+          name: args.domain
+        };
+        fastly.request( 'POST', apiUrl, apiParams, function ( error, domain ) {
+          if ( error ) return next( error )
+          next( null, args )
+        } )
+      } )
+    }
+
+    function configureTrailingSlashSnippet () {
+      return miss.through.obj( function ( args, enc, next) {
+        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
+        var apiParams = {
+          name: SNIPPET_RECV_TRAILING_SLASH,
+          dynamic: 1,
+          type: 'recv',
+          priority: 99,
+          content: 'if ( req.url !~ {"(?x)\n (?:/$) # last character isn\'t a slash\n | # or \n (?:/\\?) # query string isn\'t immediately preceded by a slash\n "} &&\n req.url ~ {"(?x)\n (?:/[^./]+$) # last path segment doesn\'t contain a . no query string\n | # or\n (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string\n "} ) {\n  set req.url = req.url + "/";\n}',
+        }
+        fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
+          if ( error ) return next( error )
+          next( null, args )
+        } )
+      } )
+    }
+
+    function configureVclRecvRedirectSnippet () {
+      return miss.through.obj( function ( args, enc, next ) {
+        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
+        var apiParams = {
+          name: SNIPPET_RECV_REDIRECT,
+          dynamic: 1,
+          type: 'recv',
+          priority: 100,
+          content: 'if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ) {\n  if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ~ "^(http)?"  ) {\n    set req.http.x-redirect-location = table.lookup( redirect_one_to_one_urls, req.url.path );\n  } else {\n    set req.http.x-redirect-location = "http://" req.http.host table.lookup( redirect_one_to_one_urls, req.url.path );  \n  }\n  \n  error 301;\n}',
+        }
+        fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
+          if ( error ) return next( error )
+          next( null, args )
+        } )
+      } )
+    }
+
+    function configureVclErrorRedirectSnippet () {
+      return miss.through.obj( function ( args, enc, next ) {
+        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'snippet' ].join( '/' )
+        var apiParams = {
+          name: SNIPPET_ERROR_REDIRECT,
+          dynamic: 1,
+          type: 'error',
+          priority: 100,
+          content: 'if (obj.status == 301 && req.http.x-redirect-location) {\n  set obj.http.Location = req.http.x-redirect-location;\n  set obj.response = "Found";\n  synthetic {""};\n  return(deliver);\n}',
+        }
+        fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
+          if ( error ) return next( error )
+          next( null, args )
+        } )
+      } )
+    }
+
+    function configureOneToOneRedirectDictionary () {
+      return miss.through.obj( function ( args, enc, next ) {
+        var apiUrl = [ '/service', args.service_id, 'version', args.active_version, 'dictionary' ].join( '/' )
+        var apiParams = { name: REDIRECT_ONE_TO_ONE_URLS }
+        fastly.request( 'POST', apiUrl, apiParams, function ( error, dictionary ) {
+          if ( error ) return next( error )
+          args.dictionary_id = dictionary.id;
+          next( null, args )
+        } )
+      } )
+    }
+  }
+}
+
+function activateServiceVersion ( fastly ) {
+  return miss.through.obj( function ( args, enc, next ) {
+    if ( typeof args.active_version !== 'number' ) return next( null, args )
+
+    var validateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'validate' ].join( '/' )
+    var activateApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'activate' ].join( '/' )
+
+    fastly.request( 'GET', validateApiUrl, function ( error, result ) {
+      if ( error ) {
+        error.atStep = 'activateNewServiceVersion:validate';
+        return next( error )
+      }
+      if ( result.status === 'error' ) {
+        next( result )
+      } else if ( result.status === 'ok' ) {
+        fastly.request( 'PUT', activateApiUrl, function ( error, service ) {
+          if ( error ) {
+            error.atStep = 'activateNewServiceVersion:activate';
+            return next( error )
+          }
+          next( null, args )
+        } )    
+      }
+    } )
+  } )
 }

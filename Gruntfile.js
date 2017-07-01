@@ -59,6 +59,7 @@ module.exports = function(grunt) {
         key: process.env.CLOUDFLARE_KEY,
       },
       zone_id: process.env.CLOUDFLARE_ZONE,
+      domains: process.env.CLOUDFLARE_DOMAINS ? process.env.CLOUDFLARE_DOMAINS.split( ',' ) : []
     },
     builder: {
       forceWrite: process.env.BUILDER_FORCE_WRITE || false,
