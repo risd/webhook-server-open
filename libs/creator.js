@@ -207,8 +207,8 @@ function setupBucket ( options, callback ) {
     createBucket(),
     updateAcls(),
     updateIndex(),
-    ensureCname( options.cloudflare ),
     ensureCdn( options.fastlyToken ),
+    ensureCname( options.cloudflare ),
     sink(),
     function ( error ) {
       if ( error ) return callback( error )
@@ -328,12 +328,14 @@ function ensureCname ( options ) {
     } ).length === 1;
   }
 
-  var fastlyCreateCnameRecordOptions = Object.assign( {}, options, {
-    content: 'nonssl.global.fastly.net',
-  } )
+  var googleRecordContent =  { content: 'c.storage.googleapis.com', };
+  var fastlyRecordContent =  { content: 'nonssl.global.fastly.net', };
 
-  var createCnameRecordOptions = function ( siteBucket ) {
-    return Object.assign( {}, fastlyCreateCnameRecordOptions, { record: siteBucket } )
+  var createCnameRecordOptions = function ( usesFastly, siteBucket ) {
+    return Object.assign( {},
+      options,
+      usesFastly ? fastlyRecordContent : googleRecordContent,
+      { record: siteBucket } )
   }
 
   return miss.through.obj( function ( row, enc, next ) {
@@ -341,7 +343,9 @@ function ensureCname ( options ) {
     if ( isManagedByCloudFlare( row.siteBucket ) && row.ensureCname ) {
       console.log( 'site-setup:ensure-cname:' + row.siteBucket )
 
-      createCnameRecord( createCnameRecordOptions( row.siteBucket ), function ( error, cname ) {
+      var usesFastly = row.cdn.usesFastly;
+
+      createCnameRecord( createCnameRecordOptions( usesFastly, row.siteBucket ), function ( error, cname ) {
         row.cname = cname;
         console.log( 'site-setup:ensure-cname:done' )
         console.log( row )
@@ -370,7 +374,7 @@ function ensureCname ( options ) {
  */
 function createCnameRecord ( options, onComplete ) {
   console.log( 'create-cname-record:start' )
-  
+
   var Cloudflare = require('cloudflare');
 
   var client = new Cloudflare( options.client )
@@ -426,7 +430,7 @@ function createCnameRecord ( options, onComplete ) {
       existingRecord.content = cnameContent;
       return updateRecord( existingRecord, onComplete )
     }
-    else return onComplete( null, ( recordCreated = true ) )
+    else return onComplete( null, existingRecord )
 
     function valueInArray ( arr, keyFn, seekingValue ) {
       var index = arr.map( keyFn ).indexOf( seekingValue )
@@ -478,7 +482,6 @@ function createCnameRecord ( options, onComplete ) {
     var www = 'www.'
     return record.indexOf( www ) === 0 ? record.slice( www.length ) : record;
   }
-
 }
 
 function ensureCdn ( fastlyToken ) {
@@ -490,7 +493,7 @@ function ensureCdn ( fastlyToken ) {
       if ( error ) { error.step = 'ensureCdn'; return next( error ) }
 
       console.log( 'ensure-cdn:done' );
-      row.fastly = service;
+      row.cdn = service;
       return next( null, row )
     } )
   } )
@@ -501,17 +504,20 @@ function fastlyServiceForDomain ( options, callback ) {
   var fastlyToken = options.fastlyToken;
   var domain = options.domain;
 
-  var fastly = require( 'Fastly' )( fastlyToken )
+  var fastly = require( 'fastly' )( fastlyToken )
   var serviceForDomain = require( './redirects.js' ).serviceForDomain;
+
+  var service = { usesFastly: false };
 
   miss.pipe(
     usingArguments( { domain: domain } ),
     serviceForDomain( fastly ),
     sink( function ( row ) {
       // row = { service_id, dictionary_id, active_version }
-      callback( null, Object.assign( {}, row, { usesFastly: true } ) )
+      Object.assign( service, row, { usesFastly: true } )
     } ),
     function onComplete ( error ) {
       if ( error ) { error.step = 'fastlyServiceForDomain'; return callback( error ) }
+      return callback( null, service )
     } )
 }

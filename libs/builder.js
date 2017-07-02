@@ -786,8 +786,8 @@ module.exports.start = function (config, logger) {
               }
 
               function writeRobotsTxt () {
-                if ( shouldBuild === false ) return stream.push( null )
                 var stream = this;
+                if ( shouldBuild === false ) return stream.push( null )
                 miss.pipe(
                   feedBuckets(),
                   buildAndRead(),

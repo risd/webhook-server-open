@@ -125,7 +125,7 @@ module.exports.start = function ( config, logger ) {
         console.log( error )
         return;
       }
-      var fastlyDomains = configuration.deploys.map( domainForDeploy ).filter( usesFastly )
+      var fastlyDomains = configuration.deploys.map( domainForDeploy )
       callback( null, fastlyDomains )
     } )
   }
@@ -606,6 +606,9 @@ module.exports.serviceForDomain = serviceForDomain;
 
 function serviceForDomain ( fastly ) {
   return miss.through.obj( function ( args, enc, next ) {
+
+    if ( !usesFastly( args.domain ) ) return next()
+
     console.log( 'serviceForDomain' )
     miss.pipe(
       usingArguments( { domain: args.domain } ),
@@ -625,6 +628,12 @@ function serviceForDomain ( fastly ) {
 
   } )
 
+  function usesFastly ( domain ) {
+    return domain.endsWith( 'risd.edu' )
+      || ( domain.startsWith( 'stage.' ) && domain.endsWith( 'risd.systems' ) )
+      || ( domain.endsWith( 'risdweekend.com' ) )
+  }
+
   function existingService () {
     return miss.through.obj( function ( args, enc, next ) {
       fastly.request( 'GET', '/service/search?name=' + args.domain, function ( error, service ) {
@@ -632,7 +641,6 @@ function serviceForDomain ( fastly ) {
           args.service_id = args.active_version = false;
           return next( null, args )
         }
-        
         args.service_id = service.id;
         args.active_version = activeVersionIn( service.versions )
 
@@ -685,6 +693,13 @@ function serviceForDomain ( fastly ) {
     function createService () {
       return miss.through.obj( function ( args, enc, next ) {
         fastly.request( 'POST', '/service', { name: args.domain }, function ( error, service ) {
+          if ( error ) {
+            console.log( 'create-service:error' )
+            console.log( error )
+            console.log( error.stack );
+          }
+          console.log( 'create-service' )
+          console.log( service )
           args.service_id = service.id;
           args.active_version = 1;
           next( null, args )
