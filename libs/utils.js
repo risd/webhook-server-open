@@ -185,19 +185,17 @@ function uploadIfDifferent ( options ) {
   function cachePurge () {
     return miss.through.obj( function ( args, enc, next ) {
       if ( args.fileUploaded === false ) return next( null, args )
-      if ( ! acceptsPurgeRequests( args.bucket ) )  return next( null, args )
 
       var purgeUrl = url.resolve( 'http://' + args.bucket, args.builtFile )
+      if ( purgeUrl.endsWith( '/index.html' ) ) {
+        purgeUrl = purgeUrl.replace( '/index.html', '/' )
+      }
       request( { method: 'PURGE', url: purgeUrl }, function ( error, response, body ) {
+        console.log( 'purge:' + purgeUrl )
+        console.log( body )
         next( null, args )
       } )
     } )
-  }
-
-  function acceptsPurgeRequests ( bucket ) {
-    // buckets starting with `stage.` or ending in `risd.edu` are managed by Faslty,
-    // and accept purge requests for removing stale content from the cdn cache.
-    return ( bucket.startsWith( 'stage.' ) || bucket.endsWith( 'risd.edu' ) )
   }
 
   function exponentialBackoff ( attempt ) {
