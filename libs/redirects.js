@@ -610,6 +610,7 @@ function serviceForDomain ( fastly ) {
     if ( !usesFastly( args.domain ) ) return next()
 
     console.log( 'serviceForDomain' )
+
     miss.pipe(
       usingArguments( { domain: args.domain } ),
       existingService(),                          // { service_id?, active_version?, dictionary_id? }
@@ -641,9 +642,10 @@ function serviceForDomain ( fastly ) {
           args.service_id = args.active_version = false;
           return next( null, args )
         }
+        
         args.service_id = service.id;
         args.active_version = activeVersionIn( service.versions )
-
+        
         var dictionaryApiUrl = [ '/service', args.service_id, 'version', args.active_version, 'dictionary', REDIRECT_ONE_TO_ONE_URLS ].join( '/' )
         fastly.request( 'GET', dictionaryApiUrl, function ( error, dictionary ) {
           if ( error ) return next( error )
