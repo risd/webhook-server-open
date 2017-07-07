@@ -45,6 +45,9 @@ module.exports.start = function (config, logger) {
   }
   var search = WebHookElasticSearch( searchOptions )
 
+  console.log( 'searchOptions' )
+  console.log( searchOptions )
+
   var siteDataOptions = {
     firebase: {
       name: config.get('firebase'),
@@ -113,7 +116,7 @@ module.exports.start = function (config, logger) {
         return;
       }
 
-      var siteName = siteData.name();
+      var siteName = unescapeSite( siteData.name() );
 
       // Run a domain so we can survive any errors
       var domainInstance = domain.create();
@@ -139,9 +142,18 @@ module.exports.start = function (config, logger) {
             search.updateIndex( updateIndexOptions, function ( error, results ) {
 
               console.log( 'update-index-results' )
-              console.log( 'error:' + results.error )
-              console.log( 'items-indexed:' + results.items.length )
-              reportStatus(siteName, 'Re-index process complete', 0);
+              if ( error ) {
+                console.log( 'error:' )
+                console.log( error )
+              }
+              if ( results.error ) {
+                console.log( 'indexed-error:' )
+                console.log( results.error )
+              }
+              if ( results.items ) {
+                console.log( 'indexed-items:' + results.items.length )
+              }
+              reportStatus(siteData.name(), 'Re-index process complete', 0);
               jobCallback( error )
 
             } )
