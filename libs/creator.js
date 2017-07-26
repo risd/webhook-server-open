@@ -466,7 +466,7 @@ function createCnameRecord ( options, callback ) {
 
   function createRecord ( recordValues, withRecord ) {
 
-    var dnsCnameRecord = Cloudflare.DNSRecord.create( Object.assign( {}, createRecordOptions, recordValues ) );
+    var dnsCnameRecord = Cloudflare.DNSRecord.create( Object.assign( {}, recordValues ) );
 
     client.addDNS( dnsCnameRecord )
       .then( function ( cname ) {
@@ -479,6 +479,7 @@ function createCnameRecord ( options, callback ) {
   }
 
   function updateRecord ( record, withRecord ) {
+
     client.editDNS( record )
       .then( function ( cname ) {
         return withRecord( null, cname )
