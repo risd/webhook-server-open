@@ -13,7 +13,7 @@ var _ = require('lodash');
 var uuid = require('node-uuid');
 var async = require('async');
 var JobQueue = require('./jobQueue.js');
-var Mailgun = require('mailgun').Mailgun;
+var Mailgun = require('mailgun-js');
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -29,7 +29,10 @@ var unescapeUserId = function(userid) {
  */
 module.exports.start = function (config, logger) {
   var fromEmail = config.get('fromEmail');
-  var mailgun = new Mailgun(config.get('mailgunKey')); // Mailgun for sending the emails
+  var mailgun = new Mailgun({
+    apiKey: config.get('mailgunKey'),
+    domain: config.get('mailgunDomain'),
+  });
 
   var jobQueue = JobQueue.init(config);
   var self = this;
@@ -47,28 +50,30 @@ module.exports.start = function (config, logger) {
     console.log('Waiting for invites'.red);
 
     // Wait for jobs
-    jobQueue.reserveJob('invite', 'invite', function(payload, identifier, data, client, callback) {
-      var username = data.userid;
-      var fromUsername = data.from_userid;
-      var siteref = data.siteref;
-
-      // Check to see if the user exists
-      self.root.child(escapeUserId(username)).once('value', function(data) {
-        var user = data.val();
-
-
-        // If hte user doesnt exist, send a registration email
-        if(!user || !user.exists) {
-          sendRegistrationEmail(username, fromUsername, siteref);
-        } else { // If they do, send a login to the site
-          sendLoginEmail(username, fromUsername, siteref);
-        }
-
-        callback();
-      });
-    });
+    jobQueue.reserveJob('invite', 'invite', inviter);
 
   });
+
+  return inviter;
+
+  function inviter (payload, identifier, data, client, callback) {
+    var username = data.userid;
+    var fromUsername = data.from_userid;
+    var siteref = data.siteref;
+
+    // Check to see if the user exists
+    self.root.child(escapeUserId(username)).once('value', function(data) {
+      var user = data.val();
+
+
+      // If hte user doesnt exist, send a registration email
+      if(!user || !user.exists) {
+        sendRegistrationEmail(username, fromUsername, siteref, callback);
+      } else { // If they do, send a login to the site
+        sendLoginEmail(username, fromUsername, siteref, callback);
+      }
+    });
+  }
 
   /*
   * Sends a registration-invite email to the user. This is an email that both sends the user
@@ -78,7 +83,7 @@ module.exports.start = function (config, logger) {
   * @param fromUsername The username (email) thats being invited, should be the same as email
   * @param siteref      The site that the user is being invited to
   */
-  function sendRegistrationEmail(email, fromUsername, siteref) {
+  function sendRegistrationEmail(email, fromUsername, siteref, callback) {
     console.log('Sending email');
 
     var siteRefUrl = 'http://' + unescapeUserId(siteref);
@@ -91,10 +96,17 @@ module.exports.start = function (config, logger) {
       var url = siteRefUrl + '/cms/#/create-user?username=' + email;
       var siteUrl = siteRefUrl +'/';
 
-      var content = fs.readFileSync('libs/emails/invite-signup.email');
-      content = _.template(content, { fromUser: fromUsername, siteUrl: siteUrl, url: url });
+      var contentTemplate = fs.readFileSync('libs/emails/invite-signup.email');
+      var content = _.template(contentTemplate);
 
-      mailgun.sendText(fromEmail, email, '[Webhook] You\'ve been invited to edit ' + unescapeUserId(siteref), content);
+      var message = {
+        from: fromEmail,
+        to: email,
+        subject: '[Webhook] You\'ve been invited to edit ' + unescapeUserId(siteref),
+        text: content({ fromUser: fromUsername, siteUrl: siteUrl, url: url }),
+      }
+
+      mailgun.messages().send( message, callback )
     });
 
   }
@@ -107,7 +119,7 @@ module.exports.start = function (config, logger) {
   * @param fromUsername The username (email) thats being invited, should be the same as email
   * @param siteref      The site that the user is being invited to
   */
-  function sendLoginEmail(email, fromUsername, siteref) {
+  function sendLoginEmail(email, fromUsername, siteref, callback) {
     console.log('Sending email');
 
     var siteRefUrl = 'http://' + unescapeUserId(siteref);
@@ -120,10 +132,17 @@ module.exports.start = function (config, logger) {
       var url = siteRefUrl + '/cms/';
       var siteUrl = siteRefUrl + '/';
 
-      var content = fs.readFileSync('libs/emails/invite-login.email');
-      content = _.template(content, { fromUser: fromUsername, siteUrl: siteUrl, url: url });
+      var contentTemplate = fs.readFileSync('libs/emails/invite-login.email');
+      var content = _.template(contentTemplate);
 
-      mailgun.sendText(fromEmail, email, '[Webhook] You\'ve been invited to edit ' + unescapeUserId(siteref), content);
+      var message = {
+        from: fromEmail,
+        to: email,
+        subject: '[Webhook] You\'ve been invited to edit ' + unescapeUserId(siteref),
+        text: content({ fromUser: fromUsername, siteUrl: siteUrl, url: url }),
+      }
+
+      mailgun.messages().send( message, callback )
     });
   }
 };
