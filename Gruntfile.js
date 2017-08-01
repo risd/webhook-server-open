@@ -34,6 +34,7 @@ module.exports = function(grunt) {
     firebase: process.env.FIREBASE,                                             // The name of your firebase
     firebaseSecret: process.env.FIREBASE_KEY,                                    // Your firebase's API key
     mailgunKey: process.env.MAILGUN_SECRET_KEY,                                           // The API key from mailgun
+    mailgunDomain: process.env.MAILGUN_DOMAIN,                                           // The domain that uses mailgun
     fromEmail: process.env.FROM_EMAIL,                               // Mailgun will send ALL emails for ALL sites from this email address.
     elasticServer: process.env.ELASTIC_SEARCH_SERVER,                               // The address of your elastic server
     elasticUser: process.env.ELASTIC_SEARCH_USER,                                       // The read/write user on your elastic server

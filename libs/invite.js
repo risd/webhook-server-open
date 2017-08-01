@@ -29,9 +29,10 @@ var unescapeUserId = function(userid) {
  */
 module.exports.start = function (config, logger) {
   var fromEmail = config.get('fromEmail');
+  var mailgunDomain = config.get('mailgunDomain');
   var mailgun = new Mailgun({
     apiKey: config.get('mailgunKey'),
-    domain: config.get('mailgunDomain'),
+    domain: mailgunDomain,
   });
 
   var jobQueue = JobQueue.init(config);
@@ -102,8 +103,8 @@ module.exports.start = function (config, logger) {
       var message = {
         from: fromEmail,
         to: email,
-        subject: '[Webhook] You\'ve been invited to edit ' + unescapeUserId(siteref),
-        text: content({ fromUser: fromUsername, siteUrl: siteUrl, url: url }),
+        subject: '[' + mailgunDomain + '] You\'ve been invited to edit ' + unescapeUserId(siteref),
+        text: content({ fromUser: fromUsername, siteUrl: siteUrl, url: url, domain: mailgunDomain }),
       }
 
       mailgun.messages().send( message, callback )
@@ -138,8 +139,8 @@ module.exports.start = function (config, logger) {
       var message = {
         from: fromEmail,
         to: email,
-        subject: '[Webhook] You\'ve been invited to edit ' + unescapeUserId(siteref),
-        text: content({ fromUser: fromUsername, siteUrl: siteUrl, url: url }),
+        subject: '[' + mailgunDomain + '] You\'ve been invited to edit ' + unescapeUserId(siteref),
+        text: content({ fromUser: fromUsername, siteUrl: siteUrl, url: url, domain: mailgunDomain }),
       }
 
       mailgun.messages().send( message, callback )
