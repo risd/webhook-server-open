@@ -42,6 +42,8 @@ ELASTIC_SEARCH_PASSWORD=
 CLOUDFLARE_EMAIL=
 CLOUDFLARE_KEY=
 CLOUDFLARE_ZONE=
+FASTLY_TOKEN=
+FASTLY_IP=
 ```
 
 The `GOOGLE_KEY_FILE` location can be defined by the path to the file produced by running `grunt extractKey=gcloud.json`, where `gcloud.json` is the Google Service Account JSON file associated with the project.
