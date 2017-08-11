@@ -64,7 +64,10 @@ module.exports = function(grunt) {
       forceWrite: process.env.BUILDER_FORCE_WRITE || false,
       maxParallel: concurrencyOption( process.env.BUILDER_MAX_PARALLEL ),
     },
-    fastlyToken: process.env.FASTLY_TOKEN,
+    fastly: {
+      token: process.env.FASTLY_TOKEN,
+      ip: process.env.FASTLY_IP,
+    }
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {

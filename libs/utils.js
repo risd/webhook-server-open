@@ -52,14 +52,16 @@ function sink ( fn ) {
  * Expects: cloudStorage, fs, crypto, zlib
  * 
  * @param  {object} options
- * @param  {object} options.buckets[]    List of buckets to upload the file to
- * @param  {object} options.maxParallel  The max number of streams to spawn at once.
- * @return {object} stream               Transforms stream that handles the work.
+ * @param  {object} options.buckets[]      List of buckets to upload the file to
+ * @param  {object} options.maxParallel    The max number of streams to spawn at once.
+ * @param  {object} options.purgeProxy?    The address to use as a proxy when defining the cache PURGE request
+ * @return {object} stream                 Transforms stream that handles the work.
  */
 function uploadIfDifferent ( options ) {
   if ( !options ) options = {};
   var buckets = options.buckets;
   var maxParallel = options.maxParallel || 1;
+  var purgeProxy = options.purgeProxy;
 
   return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
     var stream = this;
@@ -78,7 +80,7 @@ function uploadIfDifferent ( options ) {
       feedBuckets( buckets ), // pushes { bucket, builtFile, builtFilePath, builtFileMd5 }
       remoteFileMd5(),        // adds { remoteFileMd5 }
       conditionalUpload(),    // adds { fileUploaded }
-      cachePurge(),           // if fileUploaded
+      cachePurge( { purgeProxy: purgeProxy } ),           // if fileUploaded
       sink(),
       function onComplete ( error ) {
         if ( error ) return next( error )
@@ -182,7 +184,10 @@ function uploadIfDifferent ( options ) {
     } )
   }
 
-  function cachePurge () {
+  function cachePurge ( options ) {
+    if ( ! options ) options = {}
+    var purgeProxy = options.purgeProxy;
+
     return miss.through.obj( function ( args, enc, next ) {
       if ( args.fileUploaded === false ) return next( null, args )
 
@@ -190,7 +195,11 @@ function uploadIfDifferent ( options ) {
       if ( purgeUrl.endsWith( '/index.html' ) ) {
         purgeUrl = purgeUrl.replace( '/index.html', '/' )
       }
-      request( { method: 'PURGE', url: purgeUrl }, function ( error, response, body ) {
+
+      var requestOptions = { method: 'PURGE', url: purgeUrl }
+      if ( purgeProxy ) requestOptions.proxy = purgeProxy;
+
+      request( requestOptions, function ( error, response, body ) {
         console.log( 'purge:' + purgeUrl )
         console.log( body )
         next( null, args )

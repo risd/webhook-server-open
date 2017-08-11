@@ -65,7 +65,7 @@ module.exports.start = function (config, logger) {
   var setupBucketOptions = {
     cloudStorage: cloudStorage,
     cloudflare: config.get( 'cloudflare' ),
-    fastlyToken: config.get( 'fastlyToken' ),
+    fastlyToken: config.get( 'fastly' ).token,
   }
 
 
@@ -199,6 +199,7 @@ module.exports.start = function (config, logger) {
 
           var deploysToConsider = deploys.filter( function isDeployForBranch ( deploy ) { return branch === deploy.branch } )
           var maxParallel = config.get( 'builder' ).maxParallel;
+          var purgeProxy = config.get( 'fastly' ).ip;
 
           var pipelineArgs = {
             siteName: siteName,
@@ -220,7 +221,7 @@ module.exports.start = function (config, logger) {
             queueDelayedJob(),
             installDependencies(),
             makeDeployBuckets(),
-            buildUploadSite( { maxParallel: maxParallel } ),
+            buildUploadSite( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
             // deleteRemoteFilesNotInBuild( { maxParallel: maxParallel } ),
             sink(),
             onPipelineComplete)
@@ -317,11 +318,13 @@ module.exports.start = function (config, logger) {
            * 
            * @param  {object} options
            * @param  {number} options.maxParallel?  Max number of build workers to spawn.
+           * @param  {number} options.purgeProxy?   The address to use as a proxy when defining the cache PURGE request
            * @return {object} stream                Transform stream that handles the work.
            */
           function buildUploadSite ( options ) {
             if ( !options ) options = {}
             var maxParallel = options.maxParallel || 1;
+            var purgeProxy = options.purgeProxy;
 
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'build-upload-site:start' )
@@ -344,6 +347,7 @@ module.exports.start = function (config, logger) {
               var uploadOptions = {
                 buckets: buckets,
                 maxParallel: maxParallel,
+                purgeProxy: options.purgeProxy,
               }
               
               miss.pipe(
@@ -985,6 +989,7 @@ module.exports.start = function (config, logger) {
               var maxParallel = options.maxParallel || 1;
 
               return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
+                console.log( 'deleting:' + [args.bucket, args.remoteBuiltFile].join('/') )
                 cloudStorage.objects.del( args.bucket, args.remoteBuiltFile, function ( error ) {
                   args.remoteDeleted = true;
                   next( null, args );

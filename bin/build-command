@@ -2,6 +2,31 @@
 
 require('dotenv').config()
 
+var siteBranchCmdOptions = {
+  edu: {
+    develop: eduDevelop,
+  },
+  edutest: {
+    master: eduTestMaster,
+  },
+  'risd-undergraduate-welcome': {
+    develop: undergradDevelop,
+    master: undergradMaster,
+  },
+  'risd-identity-research': {
+    master: risdIdentityMaster,
+  },
+  'risd-policies': {
+    develop: risdPoliciesDevelop,
+  },
+  'risd-weekend': {
+    master: risdWeekendMaster,
+  },
+}
+
+var cmd = parseArgs( process.argv.slice( 2 ) )
+if ( ! cmd ) return printHelp()
+
 var grunt = require( 'grunt' );
 var webhookTasks = require( '../Gruntfile.js' );
 var builder = require( '../libs/builder.js' );
@@ -27,16 +52,46 @@ var jobCallback = function ( error ) {
   process.exit( error ? 1 : 0 )
 }
 
-// var cmd = eduTestMaster()
-// var cmd = risdIdentityMaster()
-// var cmd = uniqueCliTestMaster()
-// var cmd = undergradDevelop();
-// var cmd = undergradMaster();
-var cmd = edu();
-
 build( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
 
-function edu () {
+// [] -> { siteName, branch } | false
+function parseArgs ( args ) {
+  var cmd = false;
+  if ( args[ 0 ] in siteBranchCmdOptions ) {
+    if ( args[ 1 ] in siteBranchCmdOptions[ args[ 0 ] ] ) {
+      cmd = siteBranchCmdOptions[ args[ 0 ] ][ args[ 1 ] ]()
+    }
+  }
+  return cmd;
+}
+
+function printHelp () {
+  var msg = `build-command {site-name} --branch={branch}\nPossible values include: \n\t${ possibleCmds().map( cmdList ).join( '\n\t' ) }`
+  console.log( msg )
+
+  function cmdList ( cmd ) {
+    return `${ cmd.site } --branch=${ cmd.branch }`
+  }
+}
+
+function possibleCmds () {
+  return Object.keys( siteBranchCmdOptions )
+    .map( siteNestedBranchCmds )
+    .reduce( concatSiteBranch, [] )
+
+    function siteNestedBranchCmds ( site ) {
+      return { site: site, branches: Object.keys( siteBranchCmdOptions[ site ] ) }
+    }
+
+    function concatSiteBranch ( previous, current ) {
+      return previous.concat( current.branches.map( flattenSiteBranch ) )
+      function flattenSiteBranch ( branch ) {
+        return { site: current.site, branch: branch }
+      }
+    }
+}
+
+function eduDevelop () {
   var data = {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
@@ -44,11 +99,12 @@ function edu () {
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
     "deploys": [
-      // { branch: 'feature/prioritized-build', bucket: 'edu-build-test.risd.systems' },
-      { branch: 'develop', bucket: 'edu.risd.systems' }
+      { branch: 'develop', bucket: 'edu.risd.systems' },
+      { branch: 'develop', bucket: 'stage.edu.risd.systems' },
+      { branch: 'develop', bucket: 'www.risd.edu' },
     ]
   }
-  var identifier = "edu,1risd,1systems_feature-develop"
+  var identifier = "edu,1risd,1systems_develop"
 
   var cmd = {
     "identifier": identifier,
@@ -158,6 +214,49 @@ function risdIdentityMaster () {
     ]
   }
   var identifier = "risd-identity-research,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function risdPoliciesDevelop () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-policies,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+    "deploys": [
+      { branch: 'develop', bucket: 'risd-policies.risd.systems' },
+      { branch: 'develop', bucket: 'policies.risd.edu' },
+    ]
+  }
+  var identifier = "risd-policies,1risd,1systems_develop"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function risdWeekendMaster () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-weekend,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+    "deploys": [
+      { branch: 'master', bucket: 'risdweekend.com' },
+    ]
+  }
+  var identifier = "risd-weekend,1risd,1systems_master"
 
   var cmd = {
     "identifier": identifier,
