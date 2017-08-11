@@ -161,7 +161,7 @@ module.exports.start = function (config, logger) {
         updateAcls(),
         updateIndex(),
         ensureCname( config.get( 'cloudflare' ) ),
-        ensureCdn( config.get( 'fastlyToken' ) ),
+        ensureCdn( config.get( 'fastly' ).token ),
         generateKey(),
         sink(),
         function onEnd ( error ) {
