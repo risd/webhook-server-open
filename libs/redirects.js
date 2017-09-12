@@ -37,7 +37,7 @@ module.exports.start = function ( config, logger ) {
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init( config );
 
-  var fastly = Fastly( config.get( 'fastlyToken' ) )
+  var fastly = Fastly( config.get( 'fastly' ).token )
   fastly.jsonRequest = fastlyJsonRequest;
 
   var firebaseUrl = config.get( 'firebase' ) || '';
@@ -569,7 +569,7 @@ module.exports.start = function ( config, logger ) {
 
   function fastlyJsonRequest ( method, url, json, callback ) {
     var headers = {
-      'fastly-key': config.get( 'fastlyToken' ),
+      'fastly-key': config.get( 'fastly' ).token,
       'content-type': 'application/json',
       'accept': 'application/json'
     };
