@@ -39,14 +39,15 @@ function eduTest () {
     "sitename":"edu,1risd,1systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
-    "contentType": "news",
-    "itemKey": "-KlL2CDzvmavdsimprxs",
+    "contentType": "employee",
+    "itemKey": "-KKrlLnwu3uGNKo5SI7x",
     "deploys": [
-      { branch: 'feature/prioritized-build', bucket: 'edu-build-test.risd.systems' },
+      { branch: 'develop', bucket: 'www.risd.edu' },
+      { branch: 'develop', bucket: 'stage.edu.risd.systems' },
       { branch: 'develop', bucket: 'edu.risd.systems' }
     ]
   }
-  var identifier = "previewBuild_edu,1risd,1systems-news--KkCr9jrCI-e2qyGdHiC-queued"
+  var identifier = "previewBuild_edu,1risd,1systems-employee---KKrlLnwu3uGNKo5SI7x"
 
   var cmd = {
     "identifier": identifier,
