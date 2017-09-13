@@ -57,9 +57,11 @@ build( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
 // [] -> { siteName, branch } | false
 function parseArgs ( args ) {
   var cmd = false;
+  var site = args[ 0 ]
   if ( args[ 0 ] in siteBranchCmdOptions ) {
-    if ( args[ 1 ] in siteBranchCmdOptions[ args[ 0 ] ] ) {
-      cmd = siteBranchCmdOptions[ args[ 0 ] ][ args[ 1 ] ]()
+    var bucket = args[ 1 ].split( '=' )[ 1 ]
+    if ( bucket in siteBranchCmdOptions[ site ] ) {
+      cmd = siteBranchCmdOptions[ site ][ bucket ]()
     }
   }
   return cmd;
