@@ -14,6 +14,7 @@ module.exports = {
   sink: sink,
   uploadIfDifferent: uploadIfDifferent,
   redirectTemplateForDestination: redirectTemplateForDestination,
+  cachePurge: cachePurge,
 }
 
 // Read stream that passes in initialze arguments
@@ -149,7 +150,7 @@ function uploadIfDifferent ( options ) {
   function conditionalUpload () {
     return miss.through.obj( function ( args, enc, next ) {
 
-      if ( args.builtFileMd5 === args.remoteFileMd5 ) return next( null, Object.assign( args, { fileUploaded: false } ) )
+      if ( args.builtFileMd5 === args.remoteFileMd5 ) return next()
 
       var retryableUploadOptions = streamArgsToUploadOptions( args );
 
@@ -184,29 +185,6 @@ function uploadIfDifferent ( options ) {
     } )
   }
 
-  function cachePurge ( options ) {
-    if ( ! options ) options = {}
-    var purgeProxy = options.purgeProxy;
-
-    return miss.through.obj( function ( args, enc, next ) {
-      if ( args.fileUploaded === false ) return next( null, args )
-
-      var purgeUrl = url.resolve( 'http://' + args.bucket, args.builtFile )
-      if ( purgeUrl.endsWith( '/index.html' ) ) {
-        purgeUrl = purgeUrl.replace( '/index.html', '/' )
-      }
-
-      var requestOptions = { method: 'PURGE', url: purgeUrl }
-      if ( purgeProxy ) requestOptions.proxy = purgeProxy;
-
-      request( requestOptions, function ( error, response, body ) {
-        console.log( 'purge:' + purgeUrl )
-        console.log( body )
-        next( null, args )
-      } )
-    } )
-  }
-
   function exponentialBackoff ( attempt ) {
     return Math.pow( 2, attempt ) + ( Math.random() * 1000 )
   }
@@ -222,6 +200,27 @@ function uploadIfDifferent ( options ) {
       retry: 0,
     }
   }
+}
+
+function cachePurge ( options ) {
+  if ( ! options ) options = {}
+  var purgeProxy = options.purgeProxy;
+
+  return miss.through.obj( function ( args, enc, next ) {
+    
+    var purgeUrl = url.resolve( 'http://' + args.bucket, args.builtFile )
+    if ( purgeUrl.endsWith( '/index.html' ) ) {
+      purgeUrl = purgeUrl.replace( '/index.html', '/' )
+    }
+
+    var requestOptions = { method: 'PURGE', url: purgeUrl }
+    if ( purgeProxy ) requestOptions.proxy = purgeProxy;
+
+    request( requestOptions, function ( error, response, body ) {
+      console.log( 'purge:' + purgeUrl )
+      next( null, args )
+    } )
+  } )
 }
 
 function redirectTemplateForDestination ( destination ) {
