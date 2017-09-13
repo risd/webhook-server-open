@@ -97,6 +97,8 @@ module.exports.start = function (config, logger) {
     });
   });
 
+  return this;
+
   /*
   * Queues the command in beanstalk/firebase
   *
@@ -149,40 +151,40 @@ module.exports.start = function (config, logger) {
       commandData.ref().remove();
       
       if ( item.tube === 'build' ) {
-      	console.log( 'building' )
-      	// lock id should be site name and site branch
-      	// since the branch is linked to the zip file that
-      	// gets used to build the site
-      	// if no branch is defined, then queue a command for
-      	// each of the branches
-      	deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
-					if ( error ) {
-						console.log( error )
-						return;
-					}
+        console.log( 'building' )
+        // lock id should be site name and site branch
+        // since the branch is linked to the zip file that
+        // gets used to build the site
+        // if no branch is defined, then queue a command for
+        // each of the branches
+        deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
+          if ( error ) {
+            console.log( error )
+            return;
+          }
 
-					if ( payload.branch ) {
-						var branches = [ payload.branch ]
-					} else {
-						var branches = configuration.deploys.map( function ( deploy ) { return deploy.branch; } )
-					}
+          if ( payload.branch ) {
+            var branches = [ payload.branch ]
+          } else {
+            var branches = configuration.deploys.map( function ( deploy ) { return deploy.branch; } )
+          }
 
-					branches = _.uniq( branches );
+          branches = _.uniq( branches );
 
-					var buildCommandsArgs = branches.map( function ( branch ) {
-						var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, branch )
-						payload.branch = branch;
+          var buildCommandsArgs = branches.map( function ( branch ) {
+            var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, branch )
+            payload.branch = branch;
             payload.deploys = configuration.deploys;
-						return {
-							identifier: identifier,
-							memcaheLockId: [ item.lock, identifier, 'queued' ].join( '_' ),
-							payload: Object.assign( {}, payload ),
-						}
-					} )
+            return {
+              identifier: identifier,
+              memcaheLockId: [ item.lock, identifier, 'queued' ].join( '_' ),
+              payload: Object.assign( {}, payload ),
+            }
+          } )
 
-					buildCommandsArgs.forEach( queueCommandForArgs )					
+          buildCommandsArgs.forEach( queueCommandForArgs )          
 
-	    	} )
+        } )
 
       } else if ( item.tube ==='previewBuild' ) {
 
@@ -209,44 +211,44 @@ module.exports.start = function (config, logger) {
         queueCommandForArgs( queueCommandArgs )
       }
 
-    	function queueCommandForArgs ( args ) {
-      	var identifier = args.identifier;
-      	var memcaheLockId = args.memcaheLockId;
-      	var payload = args.payload;
+      function queueCommandForArgs ( args ) {
+        var identifier = args.identifier;
+        var memcaheLockId = args.memcaheLockId;
+        var payload = args.payload;
 
-      	console.log('memcaheLockId');
-	      console.log(memcaheLockId);
+        console.log('memcaheLockId');
+        console.log(memcaheLockId);
 
-	      console.log('handlingCommand')
-	      console.log(identifier)
-	      console.log(lockId)
-	      console.log(memcaheLockId)
-	      console.log(JSON.stringify(payload))
+        console.log('handlingCommand')
+        console.log(identifier)
+        console.log(lockId)
+        console.log(memcaheLockId)
+        console.log(JSON.stringify(payload))
 
-	      console.log('queueing task');
+        console.log('queueing task');
 
-	      handlingCommand = handlingCommand + 1;
+        handlingCommand = handlingCommand + 1;
 
-	      queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
+        queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
 
-	      function onQueueComplete (error) {
-	        if (error) {
-	          console.log('command not queued');
-	        }
+        function onQueueComplete (error) {
+          if (error) {
+            console.log('command not queued');
+          }
 
-	        memcached.del(memcaheLockId, function () {
-	          console.log('memcached:del:', memcaheLockId)
-	          handlingCommand = handlingCommand - 1;
-	          maybeDie()
-	        })
-	      }
+          memcached.del(memcaheLockId, function () {
+            console.log('memcached:del:', memcaheLockId)
+            handlingCommand = handlingCommand - 1;
+            maybeDie()
+          })
+        }
 
-	      function maybeDie () {
-	        // If we had a sigterm and no one is handling commands, die
-	        if(dieSoon && (handlingCommand === 0)) {
-	          process.exit(0);
-	        }
-	      }
+        function maybeDie () {
+          // If we had a sigterm and no one is handling commands, die
+          if(dieSoon && (handlingCommand === 0)) {
+            process.exit(0);
+          }
+        }
 
       }
 
@@ -254,7 +256,5 @@ module.exports.start = function (config, logger) {
       console.log(err);
     });
   }
-
-  return this;
 
 };
