@@ -197,8 +197,8 @@ module.exports.start = function (config, logger) {
           var now = Date.now();
           var buildtime = data.build_time ? Date.parse(data.build_time) : now;
           var buildDiff = Math.floor((buildtime - now)/1000);
-
-          var deploysToConsider = deploys.filter( function isDeployForBranch ( deploy ) { return branch === deploy.branch } )
+          
+          var deploysToConsider = deploys.filter( isDeployForBranch( branch ) )
           var maxParallel = config.get( 'builder' ).maxParallel;
           var purgeProxy = config.get( 'fastly' ).ip;
 
@@ -1014,7 +1014,8 @@ module.exports.start = function (config, logger) {
       domainInstance.on('error', function(err) { 
         console.log('domain-instance:error');
         console.log(err);
-        reportStatus(siteName, 'Failed to build, errors encountered in build process', 1);
+        var deployingToBuckets = deploys.filter( isDeployForBranch( branch ) ).map( function bucketForDeploy ( deploy ) { return deploy.bucket; } )
+        reportStatus(siteName, 'Failed to build, errors encountered in build process of ' + deployingToBuckets.join(', '), 1);
         jobCallback();
       });
 
@@ -1028,7 +1029,7 @@ module.exports.start = function (config, logger) {
 
           console.log('download-zip:start')
           downloadSiteZip(buildFolderRoot, site, branch, function( downloadError, downloadedFile ) {
-            if ( downloadError ) throw error;
+            if ( downloadError ) throw downloadError;
 
             console.log('download-zip:done')
 
@@ -1098,4 +1099,10 @@ function runInDir(command, cwd, args, callback) {
     }
 
   });
+}
+
+function isDeployForBranch ( branch ) {
+  return function isDeploy ( deploy ) {
+    return branch === deploy.branch
+  }
 }
