@@ -29,6 +29,7 @@ var usingArguments = utils.usingArguments;
 var sink = utils.sink;
 var uploadIfDifferent = utils.uploadIfDifferent;
 var redirectTemplateForDestination = utils.redirectTemplateForDestination;
+var cachePurge = utils.cachePurge;
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -222,7 +223,7 @@ module.exports.start = function (config, logger) {
             installDependencies(),
             makeDeployBuckets(),
             buildUploadSite( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
-            // deleteRemoteFilesNotInBuild( { maxParallel: maxParallel } ),
+            // deleteRemoteFilesNotInBuild( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
             sink(),
             onPipelineComplete)
 
@@ -876,11 +877,13 @@ module.exports.start = function (config, logger) {
            * 
            * @param  {object} options
            * @param  {number} options.maxParallel?  Max number of build workers to spawn.
+           * @param  {object} options.purgeProxy?    The address to use as a proxy when defining the cache PURGE request
            * @return {object} stream  Transform stream that will handle the work.
            */
           function deleteRemoteFilesNotInBuild ( options ) {
             if ( !options ) options = {};
             var maxParallel = options.maxParallel || 1;
+            var purgeProxy = options.purgeProxy;
 
             return miss.through.obj( function ( args, enc, next ) {
               
@@ -890,9 +893,10 @@ module.exports.start = function (config, logger) {
 
               miss.pipe(
                 usingArguments( { builtFolder: args.builtFolder } ),
-                feedCloudFiles( { buckets: buckets } ),            // adds { bucket, remoteBuiltFile }
+                feedCloudFiles( { buckets: buckets } ),            // adds { bucket, builtFile }
                 feedNotLocalFiles( { maxParallel: maxParallel } ), // pushes previous if conditions are met
                 deleteFromBucket( { maxParallel: maxParallel } ),  // adds { remoteDeleted }
+                cachePurge( { purgeProxy: purgeProxy } ),
                 sink(),
                 function onComplete ( error ) {
                   console.log( 'delete-remote-files-not-in-build:end' )
@@ -925,7 +929,7 @@ module.exports.start = function (config, logger) {
 
                         listResult.items.filter( nonStatic ).forEach( function ( remoteFile ) {
                           stream.push( Object.assign( {}, args, {
-                            remoteBuiltFile: remoteFile.name,
+                            builtFile: remoteFile.name,
                             bucket: bucket,
                           } ) )
                         } )
@@ -950,7 +954,7 @@ module.exports.start = function (config, logger) {
               var maxParallel = options.maxParallel || 1;
 
               return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
-                var localFile = localForRemote( args.remoteBuiltFile )
+                var localFile = localForRemote( args.builtFile )
                 var localFilePath = path.join( args.builtFolder, localFile )
                 fs.open( localFilePath, 'r', function ( error, fd ) {
                   // file does not exist, lets see if it exists as named html file
@@ -983,14 +987,14 @@ module.exports.start = function (config, logger) {
               }
             }
 
-            // deletes the { bucket, remoteBuiltFile }
+            // deletes the { bucket, builtFile }
             function deleteFromBucket ( options ) {
               if ( !options ) options = {};
               var maxParallel = options.maxParallel || 1;
 
               return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
-                console.log( 'deleting:' + [args.bucket, args.remoteBuiltFile].join('/') )
-                cloudStorage.objects.del( args.bucket, args.remoteBuiltFile, function ( error ) {
+                console.log( 'deleting:' + [args.bucket, args.builtFile].join('/') )
+                cloudStorage.objects.del( args.bucket, args.builtFile, function ( error ) {
                   args.remoteDeleted = true;
                   next( null, args );
                 } )
