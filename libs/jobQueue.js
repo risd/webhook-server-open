@@ -12,6 +12,11 @@ var Memcached = require('memcached');
 var async = require('async');
 var domain = require('domain');
 
+// 30 minutes
+var jobLifetime = 60 * 30
+
+module.exports.jobLifetime = jobLifetime;
+
 module.exports.init = function (config) {
 
   // For testing purposes, we can suppress using this job queue
@@ -155,10 +160,12 @@ module.exports.init = function (config) {
   * @param complete   Function to call after unlock succeeds
   */
   self.lockJob = function(client, lock, identifier, payload, callback, complete) {
-    memcached.add(lock + '_' + identifier + '_processing', 1, 60 * 30, function(err) {
+    var lockId = lock + '_' + identifier + '_processing';
+    memcached.add(lockId, 1, jobLifetime, function(err) {
       if(err) {
         console.log('Delayed');
-        client.put(1, 30, (60 * 3), JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
+        // priority, delay, time to run
+        client.put(1, 30, jobLifetime, JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
       } else {
         callback(payload, function(done) { self.unlockJob(client, lock, identifier, payload, function() { done(); }); });
       }

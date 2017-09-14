@@ -102,7 +102,6 @@ function eduDevelop () {
     "branch":"develop",
     "deploys": [
       { branch: 'develop', bucket: 'edu.risd.systems' },
-      { branch: 'develop', bucket: 'stage.edu.risd.systems' },
       { branch: 'develop', bucket: 'www.risd.edu' },
     ]
   }

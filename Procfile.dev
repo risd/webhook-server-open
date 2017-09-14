@@ -11,3 +11,7 @@ build_worker4: npm run build-worker
 site_index: npm run site-index-worker
 preview_build_worker: npm run preview-build-worker
 redirects_worker: npm run redirects-worker
+# timeout_worker_1: npm run timeout-worker
+# timeout_worker_2: npm run timeout-worker
+# timeout_worker_3: npm run timeout-worker
+# timeout_worker_4: npm run timeout-worker

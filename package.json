@@ -13,6 +13,7 @@
     "site-index-worker": "grunt siteIndexWorker",
     "redirects-worker": "grunt redirectsWorker",
     "preview-build-worker": "grunt previewBuildWorker",
+    "timeout-worker": "grunt timeoutWorker",
     "backup-cron": "grunt backupCron",
     "extract-key": "grunt extractKey",
     "dev": "nf start --procfile=Procfile.dev"

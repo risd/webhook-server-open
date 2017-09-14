@@ -25,6 +25,7 @@ var delegator = require('./libs/commandDelegator.js');
 var backup = require('./libs/backup.js');
 var extractKey = require('./libs/extractKey.js');
 var previewBuilder = require('./libs/preview-builder.js');
+var timeoutWorker = require('./libs/timeout-worker.js');
 
 require('dotenv').config({ silent: true });
 
@@ -72,7 +73,8 @@ module.exports = function(grunt) {
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {
     var done = this.async();
-    delegator.start(grunt.config, grunt.log);
+    var d = delegator.start(grunt.config, grunt.log);
+    d.on('ready', console.log)
   });
 
   grunt.registerTask('buildWorker', 'Worker that handles building sites', function() {
@@ -120,6 +122,11 @@ module.exports = function(grunt) {
     var file = grunt.option('file');
     extractKey.start(file, grunt.config, grunt.log);
   });
+
+  grunt.registerTask('timeoutWorker', 'Timeout in order to test proper queue management.', function () {
+    var done = this.async();
+    timeoutWorker.start(grunt.config, grunt.log);
+  })
 
   grunt.registerTask('echoConfig', 'Logs out the current config object.', function () {
     console.log( grunt.config() )
