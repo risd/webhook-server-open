@@ -7,6 +7,8 @@
 * queue up multiple copies of the same job.
 */
 
+var events = require('events');
+var util = require('util');
 var firebase = require('firebase');
 var colors = require('colors');
 var _ = require('lodash');
@@ -16,6 +18,7 @@ var cloudStorage = require('./cloudStorage.js');
 var Memcached = require('memcached');
 var Deploys = require( 'webhook-deploy-configuration' )
 var miss = require( 'mississippi' )
+var jobLifetime = require('./jobQueue.js').jobLifetime;
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -40,7 +43,12 @@ process.on('SIGTERM', function() {
  * @param  {Object}   config     Configuration options from .firebase.conf
  * @param  {Object}   logger     Object to use for logging, defaults to no-ops (DEPRECATED)
  */
-module.exports.start = function (config, logger) {
+module.exports.start = CommandDelegator;
+
+function CommandDelegator (config, logger) {
+  if ( ! ( this instanceof CommandDelegator ) ) return new CommandDelegator( config, logger )
+  events.EventEmitter.call( this )
+
   cloudStorage.setProjectName(config.get('googleProjectId'));
   cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
 
@@ -64,6 +72,8 @@ module.exports.start = function (config, logger) {
     { commands: 'management/commands/redirects/', lock: 'redirects', tube: 'redirects' },
   ];
 
+  var commandHandlersStore = commandHandlersInterface();
+
   self.root.auth(config.get('firebaseSecret'), function(err) {
     if(err) {
       console.log(err.red);
@@ -72,41 +82,79 @@ module.exports.start = function (config, logger) {
 
     // For each command we listen on a seperate tube and firebase url
     console.log('Starting clients'.red);
-    commandUrls.forEach(function(item) {
 
+    var commandTasks = commandUrls.map( connectionForCommandTasks );
+
+    return async.parallel( commandTasks, onCommandHandlers )
+  });
+
+  return this;
+
+  function onCommandHandlers ( error, commandHandlers ) {
+    commandHandlers.forEach( function ( handler ) {
+      commandHandlersStore.add(  handler.tube, handler.commandHandler )
+    } )
+
+    self.emit( 'ready', commandHandlersStore.queue )
+  }
+
+  function connectionForCommandTasks ( item ) {
+    return function task ( onConnectionMade ) {
       // Seperate client per command
       var client = new beanstalkd.Client();
       client.connect(config.get('beanstalkServer'), function(err, conn) {
         if(err) {
           console.log(err);
-          process.exit(1);
+          return process.exit(1);
         }
         conn.use(item.tube, function(err, tubename) {
           if(err) {
             console.log(err);
-            process.exit(1);
+            return process.exit(1);
           }
-          handleCommands(conn, item);
+          var commandHandler = handleCommands(conn, item);
+          onConnectionMade( null, { tube: item.tube, commandHandler: commandHandler })
         });
       });
       
       client.on('close', function(err) {
         console.log('Closed connection');
-        process.exit(1);
+        return process.exit(1);
       });
-    });
-  });
+    }
+  }
+
+  function commandHandlersInterface () {
+    var handlers = {};
+    
+    var add = function ( tube, handler ) {
+      handlers[ tube ] = handler;
+    }
+
+    var queue = function ( tube, commandData ) {
+      try {
+        handlers[ tube ]( commandData )
+      } catch ( error ) {
+        throw error;
+      }
+    }
+
+    return {
+      add: add,
+      queue: queue,
+    }
+  }
 
   /*
-  * Queues the command in beanstalk/firebase
-  *
-  * @param client     The beanstalk client
-  * @param item       The item containing tube/lock information
-  * @param identifier Unique identifier for the command
-  * @param lockId     Lock to use
-  * @param payload    Payload of the command to queue up
-  * @param callback   Called when finished
-  */
+   * Queues the command in beanstalk/firebase
+   *
+   * @param client     The beanstalk client
+   * @param item       The item containing tube/lock information
+   * @param identifier Unique identifier for the command
+   * @param lockId     Lock to use
+   * @param payload    Payload of the command to queue up
+   * @param callback   Called when finished
+   */
   function queueCommand(client, item, identifier, lockId, payload, callback) {
     console.log('Queueing Command for ' + item.tube);
 
@@ -114,22 +162,19 @@ module.exports.start = function (config, logger) {
 
     var LOCKED = 'locked'
 
-    memcached.add(lockId, LOCKED, 60 * 3, function(err) {
-      console.log( 'memcached:add:args' )
-      console.log( arguments )
-      if(err) {
+    console.log( 'lock-job' )
+    console.log( lockId )
+
+    memcached.add(lockId, LOCKED, jobLifetime, function(err) {
+      if (err) {
         console.log('memcached:add:err')
-        callback(err)
-        return;
+        return callback(err);
       } else {
         console.log('memcached:add')
-        // We give it a TTL of 3 minutes
-        console.log('client-put:start')
-        console.log(JSON.stringify(identifier))
-        console.log(JSON.stringify(payload))
-        client.put(1, 0, (60 * 3),
+        // priority, delay, time to run
+        client.put(1, 0, jobLifetime,
           JSON.stringify({ identifier: identifier, payload: payload }),
-          function(err) { console.log('client-put:end'); callback(err); });
+          function(err) { callback(err); });
       }
     });
   };
@@ -138,51 +183,71 @@ module.exports.start = function (config, logger) {
   // as jobs are added we queue them up ten listen again.
   function handleCommands(client, item) { 
     console.log('Waiting on commands for ' + item.tube);
-    self.root.child(item.commands).on('child_added', function(commandData) {
+    self.root.child(item.commands).on('child_added', onCommandSnapshot, onCommandSnapshotError);
 
-      var payload = commandData.val();
-      var identifier = commandData.name();
+    return handleCommandData;
+
+    function onCommandSnapshot ( snapshot ) {
+
+      var payload = snapshot.val();
+      var identifier = snapshot.name();
+      
+      // We remove the data immediately to avoid duplicates
+      snapshot.ref().remove();
+
+      var commandData = {
+        payload: payload,
+        identifier: identifier,
+      }
+
+      return handleCommandData( commandData );
+
+    }
+
+    function onCommandSnapshotError (err) {
+      console.log(err);
+    }
+
+    function handleCommandData ( commandData ) {
+      var payload = commandData.payload;
+      var identifier = commandData.identifier;
+
       var lockId = payload.id || 'noneya';
       var memcaheLockId = item.lock + '_' + lockId + '_queued';
-
-      // We remove the data immediately to avoid duplicates
-      commandData.ref().remove();
-      
       if ( item.tube === 'build' ) {
-      	console.log( 'building' )
-      	// lock id should be site name and site branch
-      	// since the branch is linked to the zip file that
-      	// gets used to build the site
-      	// if no branch is defined, then queue a command for
-      	// each of the branches
-      	deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
-					if ( error ) {
-						console.log( error )
-						return;
-					}
+        // lock id should be site name and site branch
+        // since the branch is linked to the zip file that
+        // gets used to build the site
+        // if no branch is defined, then queue a command for
+        // each of the branches
+        deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
+          if ( error ) {
+            console.log( error )
+            return;
+          }
 
-					if ( payload.branch ) {
-						var branches = [ payload.branch ]
-					} else {
-						var branches = configuration.deploys.map( function ( deploy ) { return deploy.branch; } )
-					}
+          if ( payload.branch ) {
+            var branches = [ payload.branch ]
+          } else {
+            var branches = configuration.deploys.map( function ( deploy ) { return deploy.branch; } )
+          }
 
-					branches = _.uniq( branches );
+          branches = _.uniq( branches );
 
-					var buildCommandsArgs = branches.map( function ( branch ) {
-						var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, branch )
-						payload.branch = branch;
+          var buildCommandsArgs = branches.map( function ( branch ) {
+            var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, branch )
+            payload.branch = branch;
             payload.deploys = configuration.deploys;
-						return {
-							identifier: identifier,
-							memcaheLockId: [ item.lock, identifier, 'queued' ].join( '_' ),
-							payload: Object.assign( {}, payload ),
-						}
-					} )
+            return {
+              identifier: identifier,
+              memcaheLockId: [ item.lock, identifier, 'queued' ].join( '_' ),
+              payload: Object.assign( {}, payload ),
+            }
+          } )
 
-					buildCommandsArgs.forEach( queueCommandForArgs )					
+          buildCommandsArgs.forEach( queueCommandForArgs )          
 
-	    	} )
+        } )
 
       } else if ( item.tube ==='previewBuild' ) {
 
@@ -209,52 +274,53 @@ module.exports.start = function (config, logger) {
         queueCommandForArgs( queueCommandArgs )
       }
 
-    	function queueCommandForArgs ( args ) {
-      	var identifier = args.identifier;
-      	var memcaheLockId = args.memcaheLockId;
-      	var payload = args.payload;
+      function queueCommandForArgs ( args ) {
+        var identifier = args.identifier;
+        var memcaheLockId = args.memcaheLockId;
+        var payload = args.payload;
 
-      	console.log('memcaheLockId');
-	      console.log(memcaheLockId);
+        console.log('memcaheLockId');
+        console.log(memcaheLockId);
 
-	      console.log('handlingCommand')
-	      console.log(identifier)
-	      console.log(lockId)
-	      console.log(memcaheLockId)
-	      console.log(JSON.stringify(payload))
+        console.log('handlingCommand')
+        console.log(identifier)
+        console.log(lockId)
+        console.log(memcaheLockId)
+        console.log(JSON.stringify(payload))
 
-	      console.log('queueing task');
+        console.log('queueing task');
 
-	      handlingCommand = handlingCommand + 1;
+        handlingCommand = handlingCommand + 1;
 
-	      queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
+        queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
 
-	      function onQueueComplete (error) {
-	        if (error) {
-	          console.log('command not queued');
-	        }
+        function onQueueComplete (error) {
+          if (error) {
+            console.log('command not queued');
+          } else {
+            console.log('command queued')
+          }
 
-	        memcached.del(memcaheLockId, function () {
-	          console.log('memcached:del:', memcaheLockId)
-	          handlingCommand = handlingCommand - 1;
-	          maybeDie()
-	        })
-	      }
+          memcached.del(memcaheLockId, function () {
+            console.log('memcached:del:', memcaheLockId)
+            handlingCommand = handlingCommand - 1;
+            maybeDie()
+          })
+        }
 
-	      function maybeDie () {
-	        // If we had a sigterm and no one is handling commands, die
-	        if(dieSoon && (handlingCommand === 0)) {
-	          process.exit(0);
-	        }
-	      }
+        function maybeDie () {
+          // If we had a sigterm and no one is handling commands, die
+          if(dieSoon && (handlingCommand === 0)) {
+            process.exit(0);
+          }
+        }
 
       }
 
-    }, function(err) {
-      console.log(err);
-    });
+    }
+
   }
 
-  return this;
+}
 
-};
+util.inherits( CommandDelegator, events.EventEmitter )

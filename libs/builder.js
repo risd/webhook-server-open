@@ -223,7 +223,7 @@ module.exports.start = function (config, logger) {
             installDependencies(),
             makeDeployBuckets(),
             buildUploadSite( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
-            // deleteRemoteFilesNotInBuild( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
+            deleteRemoteFilesNotInBuild( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
             sink(),
             onPipelineComplete)
 
