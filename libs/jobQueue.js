@@ -165,7 +165,7 @@ module.exports.init = function (config) {
     var lockId = lock + '_' + identifier + '_processing';
     memcached.add(lockId, 1, jobLifetime, function(err) {
       if(err) {
-        console.log('Delayed');
+        console.log('Delayed: ' + identifier);
         // priority, delay, time to run
         client.put(1, jobRecheckDelay, jobLifetime, JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
       } else {
