@@ -1,0 +1,82 @@
+#!/usr/bin/env node
+
+/**
+ * Interact with the command delegator without going through
+ * firebase to propogate command messages to be queued.
+ * Instead, the `commandDelegator` emits `commandHandlers`
+ * on `ready`, which can be used to push messages into the
+ * same memcached / beanstalk queue.
+ */
+
+var grunt = require( 'grunt' );
+var webhookTasks = require( '../Gruntfile.js' );
+var commandDelegator = require( '../libs/commandDelegator.js' );
+
+webhookTasks( grunt );
+
+var commandor = commandDelegator.start( grunt.config, grunt.log )
+
+var timeoutPayload = {
+  "id":"1505343488488d6a0f192f9f34ad1b7cf43bd43e916f1",
+  "userid":"rrodrigu@risd.edu",
+}
+
+var buildPayload = {
+  "id": "150535463822552ff3ac6153b4bf1beaba927d2b36522",
+  "sitename": "edu,1risd,1systems",
+  "userid": "mgdevelopers@risd.edu",
+  "branch": "develop",
+  "deploys": [ {
+    "branch":"develop",
+    "bucket":"edu.risd.systems"
+  }, {
+    "branch":"develop",
+    "bucket":"www.risd.edu"
+  } ]
+}
+
+var commandData = {
+  "identifier": "risd-sei,1risd,1systems_develop",
+  "payload": buildPayload,
+}
+
+var coordinator = createInstances()
+  .base( commandData )
+  .instances( 20 );
+
+// when the command delegator is ready, it emits its
+// command handlers. These are the functions that are
+// connected to firebase command trees. Allowing you to
+// call the command delegator from outside of firebase,
+// and still use the 
+commandor.on( 'ready', function ( commandHandlers ) {
+  coordinator.runFn( commandHandlers.bind( null, 'build' ) )
+} )
+
+function createInstances () {
+  var self = this;
+  var instanceBase;
+  var numberOfInstances = 1;
+
+  this.base = function (x) {
+    if ( !arguments.length ) return instanceBase;
+    instanceBase = x;
+    return self;
+  }
+
+  this.instances = function (x) {
+    if ( !arguments.length ) return numberOfInstances;
+    numberOfInstances = x;
+    return self;
+  }
+
+  this.runFn = function ( fn ) {
+    for (var i = 0; i < numberOfInstances; i++) {
+      var payload = Object.assign( { instance: i }, instanceBase.payload )
+      var data = Object.assign( { payload: payload }, instanceBase )
+      fn( data )
+    }
+  }
+
+  return this;
+}

@@ -167,6 +167,7 @@ function CommandDelegator (config, logger) {
 
     memcached.add(lockId, LOCKED, jobLifetime, function(err) {
       if (err) {
+        // job is already in the queue
         console.log('memcached:add:err')
         return callback(err);
       } else {

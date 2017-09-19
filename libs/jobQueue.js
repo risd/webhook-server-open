@@ -12,8 +12,10 @@ var Memcached = require('memcached');
 var async = require('async');
 var domain = require('domain');
 
-// 30 minutes
-var jobLifetime = 60 * 30
+// 60 minutes, to be safe
+var jobLifetime = 60 * 60;
+// 60 seconds
+var jobRecheckDelay = 60;
 
 module.exports.jobLifetime = jobLifetime;
 
@@ -165,7 +167,7 @@ module.exports.init = function (config) {
       if(err) {
         console.log('Delayed');
         // priority, delay, time to run
-        client.put(1, 30, jobLifetime, JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
+        client.put(1, jobRecheckDelay, jobLifetime, JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
       } else {
         callback(payload, function(done) { self.unlockJob(client, lock, identifier, payload, function() { done(); }); });
       }
