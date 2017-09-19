@@ -6,6 +6,10 @@
  * Instead, the `commandDelegator` emits `commandHandlers`
  * on `ready`, which can be used to push messages into the
  * same memcached / beanstalk queue.
+ *
+ * This relies on having a memcach & beanstalk server running
+ * with the config given by `grunt.config` & any workers
+ * listening on the tubes that you are pushing jobs into.
  */
 
 var grunt = require( 'grunt' );
