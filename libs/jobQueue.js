@@ -12,8 +12,8 @@ var Memcached = require('memcached');
 var async = require('async');
 var domain = require('domain');
 
-// 60 minutes, to be safe
-var jobLifetime = 60 * 60;
+// 120 minutes, to be safe
+var jobLifetime = 60 * 60 * 2;
 // 60 seconds
 var jobRecheckDelay = 60;
 
