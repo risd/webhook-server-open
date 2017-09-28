@@ -303,7 +303,7 @@ module.exports.start = function(config, logger)
                         'url' : fileUrl,
                         'size' : stat.size, 
                         'mimeType' : mimeType,
-                        'resize_url' : resizeUrl
+                        'resize_url' : resizeUrl,
                       });
 
                     });
@@ -313,7 +313,7 @@ module.exports.start = function(config, logger)
                       'message' : 'Finished', 
                       'url' : fileUrl, 
                       'size' : stat.size, 
-                      'mimeType' : mimeType 
+                      'mimeType' : mimeType,
                     });
                   }
                 }
@@ -398,7 +398,7 @@ module.exports.start = function(config, logger)
               console.log( 'upload-task-complete' )
               console.log( JSON.stringify( result ) )
 
-              var mimeType = mime.lookup(payload.path);
+              var mimeType = mime.lookup(localFile);
               cleanUpFiles(req);
 
               // If resize url needed, send request to google app engine app
@@ -410,10 +410,21 @@ module.exports.start = function(config, logger)
                     resizeUrl = body;
                   }
                   
-                  res.json(200, { 'message' : 'Finished', 'url' : fileUrl, 'resize_url' : resizeUrl });
+                  res.json(200, {
+                    'message' : 'Finished',
+                    'url' : fileUrl,
+                    'resize_url' : resizeUrl,
+                    'mimeType' : mimeType,
+                    'size': result.size,
+                  });
                 });
               } else {
-                res.json(200, { 'message' : 'Finished', 'url' : fileUrl });
+                res.json(200, {
+                  'message' : 'Finished',
+                  'url' : fileUrl,
+                  'mimeType' : mimeType,
+                  'size': result.size,
+                });
               }
             })
 
