@@ -290,7 +290,7 @@ module.exports.start = function(config, logger)
 
                   // If resize url requested, send request to Google App for resize url
                   if(resizeUrlRequested) {
-                    request('http://' + config.get('googleProjectId') + '.appspot.com/' + siteBucket + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
+                    request('http://' + config.get('googleProjectId') + '.appspot.com/' + config.get( 'uploadsBucket' ) + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
                       var resizeUrl = '';
 
                       if(data && data.statusCode === 200) {
