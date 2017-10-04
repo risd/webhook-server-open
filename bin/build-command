@@ -22,6 +22,14 @@ var siteBranchCmdOptions = {
   'risd-weekend': {
     master: risdWeekendMaster,
   },
+  'cdcf': {
+    develop: cdcfDevelop,
+    master: cdcfMaster,
+  },
+  'info': {
+    develop: infoDevelop,
+    master: infoMaster,
+  }
 }
 
 var cmd = parseArgs( process.argv.slice( 2 ) )
@@ -258,6 +266,88 @@ function risdWeekendMaster () {
     ]
   }
   var identifier = "risd-weekend,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function cdcfDevelop () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"critical-futures,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+    "deploys": [
+      { branch: 'develop', bucket: 'critical-futures.risd.systems' },
+    ]
+  }
+  var identifier = "critical-futures,1risd,1systems_develope"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+function cdcfMaster () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"critical-futures,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+    "deploys": [
+      { branch: 'master', bucket: 'cd-cf.org' },
+    ]
+  }
+  var identifier = "critical-futures,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function infoDevelop () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"info,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+    "deploys": [
+      { branch: 'develop', bucket: 'info.risd.systems' },
+    ]
+  }
+  var identifier = "info,1risd,1systems_develope"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+function infoMaster () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"critical-futures,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+    "deploys": [
+      { branch: 'master', bucket: 'cd-cf.org' },
+    ]
+  }
+  var identifier = "critical-futures,1risd,1systems_master"
 
   var cmd = {
     "identifier": identifier,
