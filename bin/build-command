@@ -29,7 +29,7 @@ var siteBranchCmdOptions = {
   'info': {
     develop: infoDevelop,
     master: infoMaster,
-  }
+  },
 }
 
 var cmd = parseArgs( process.argv.slice( 2 ) )
@@ -340,14 +340,14 @@ function infoMaster () {
   var data = {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"critical-futures,1risd,1systems",
+    "sitename":"info,1risd,1systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
-      { branch: 'master', bucket: 'cd-cf.org' },
+      { branch: 'master', bucket: 'info.risd.edu' },
     ]
   }
-  var identifier = "critical-futures,1risd,1systems_master"
+  var identifier = "info,1risd,1systems_master"
 
   var cmd = {
     "identifier": identifier,
