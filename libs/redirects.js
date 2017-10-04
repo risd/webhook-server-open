@@ -37,8 +37,7 @@ module.exports.start = function ( config, logger ) {
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init( config );
 
-  var fastly = Fastly( config.get( 'fastly' ).token )
-  fastly.jsonRequest = fastlyJsonRequest;
+  var fastly = FastlyWebhook( config.get( 'fastly' ) )
 
   var firebaseUrl = config.get( 'firebase' ) || '';
   this.root = new firebase( 'https://' + firebaseUrl +  '.firebaseio.com/' );
@@ -125,8 +124,8 @@ module.exports.start = function ( config, logger ) {
         console.log( error )
         return;
       }
-      var fastlyDomains = configuration.deploys.map( domainForDeploy )
-      callback( null, fastlyDomains )
+      var domains = configuration.deploys.map( domainForDeploy )
+      callback( null, domains )
     } )
   }
 
@@ -409,7 +408,7 @@ module.exports.start = function ( config, logger ) {
       function isNotFalse ( value ) { return value !== false; }
 
       function isRegex ( redirect ) {
-        return redirect.pattern.startsWith( '^' )
+        return redirect.pattern.match( /\^|\\|\$/g )
       }
 
       function isNotRegex ( redirect ) {
@@ -567,39 +566,6 @@ module.exports.start = function ( config, logger ) {
     }
   }
 
-  function fastlyJsonRequest ( method, url, json, callback ) {
-    var headers = {
-      'fastly-key': config.get( 'fastly' ).token,
-      'content-type': 'application/json',
-      'accept': 'application/json'
-    };
-
-    // HTTP request
-    request({
-        method: method,
-        url: 'https://api.fastly.com' + url,
-        headers: headers,
-        body: JSON.stringify( json ),
-    }, function (err, response, body) {
-        if (response) {
-            var statusCode = response.statusCode;
-            if (!err && (statusCode < 200 || statusCode > 302))
-                err = new Error(body);
-            if (err) err.statusCode = statusCode;
-        }
-        if (err) return callback(err);
-        if (response.headers['content-type'] === 'application/json') {
-            try {
-                body = JSON.parse(body);
-            } catch (er) {
-                return callback(er);
-            }
-        }
-
-        callback(null, body);
-    });
-  }
-
 }
 
 module.exports.serviceForDomain = serviceForDomain;
@@ -746,7 +712,7 @@ function serviceForDomain ( fastly ) {
           dynamic: 1,
           type: 'recv',
           priority: 99,
-          content: 'if ( req.url !~ {"(?x)\n (?:/$) # last character isn\'t a slash\n | # or \n (?:/\\?) # query string isn\'t immediately preceded by a slash\n "} &&\n req.url ~ {"(?x)\n (?:/[^./]+$) # last path segment doesn\'t contain a . no query string\n | # or\n (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string\n "} ) {\n  set req.url = req.url + "/";\n}',
+          content: 'if ( req.url !~ {"(?x)\n\t (?:/$) # last character isn\'t a slash\n\t | # or \n\t (?:/\\?) # query string isn\'t immediately preceded by a slash\n\t "} &&\n\t req.url ~ {"(?x)\n\t (?:/[^./]+$) # last path segment doesn\'t contain a . no query string\n\t | # or\n\t (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string\n\t "} ) {\n\t  set req.http.x-redirect-location = req.url "/";\n\terror 301;\n}',
         }
         fastly.request( 'POST', apiUrl, apiParams, function ( error, snippet ) {
           if ( error ) return next( error )
