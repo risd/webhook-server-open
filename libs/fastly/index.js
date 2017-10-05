@@ -2,12 +2,15 @@ var miss = require( 'mississippi' )
 var request = require( 'request' )
 var Fastly = require( 'fastly' )
 var assert = require( 'assert' )
+var async = require( 'async' )
 
-// cornerstones of the service
-var REDIRECT_ONE_TO_ONE_URLS = 'redirect_one_to_one_urls';
-var SNIPPET_RECV_REDIRECT = 'recv_redirect_urls';
-var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
+// base configuration of the service
+var DICTIONARY_REDIRECT_HOSTS = 'dictionary_redirect_hosts';
+var DICTIONARY_REDIRECT_URLS = 'dictionary_redirect_urls';
+var SNIPPET_RECV_REDIRECT_URLS = 'recv_redirect_urls';
+var SNIPPET_RECV_REDIRECT_HOSTS = 'recv_redirect_hosts';
 var SNIPPET_RECV_TRAILING_SLASH = 'recv_trailing_slash';
+var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
 
 module.exports = FastlyWebhookService;
 
@@ -15,26 +18,43 @@ function FastlyWebhookService ( options ) {
   if ( ! ( this instanceof FastlyWebhookService ) ) return new FastlyWebhookService( options )
 
   assert( typeof options === 'object', 'Requires an options object as first argument. Including `token` & `service_id` keys.' )
+  assert( typeof options.token === 'string', 'Requires a `token` key in the options object that is a string of the Fastly API token.' )
+  assert( typeof options.service_id === 'string', 'Requires a `service_id` key in the options object that is a string of the id of the Fastly service.' )
 
-  this.token = options.token;
+  var token = options.token;
 
   // the one service that handles all traffic
   this._service_id = options.service_id;
-  // the current version for that one service
-  this._version;
+  // the current version for that one service, starts as false
+  this._version = false;
   // version is active starts as true.
   // only made false base internally updating the state
   this._version_is_active = true;
 
-  this.request = Fastly( token ).request;
-  this.jsonRequest = configFastlyJsonRequest( token );
+  var fastly = Fastly( token )
+  this.request = fastly.request.bind( fastly )
+  this.jsonRequest = configFastlyJsonRequest( token )
 }
 
 
 FastlyWebhookService.prototype.version = getSetVersion;
 FastlyWebhookService.prototype.initialize = initializeService;
-FastlyWebhookService.prototype.domain = addDomains
+FastlyWebhookService.prototype.domain = addDomains;
 FastlyWebhookService.prototype.dictionaryRedirects = setDictionaryRedirects;
+FastlyWebhookService.prototype.activate = function activator ( complete ) {
+  if ( this._version_is_active === true ) return complete()
+  var self = this;
+  var options = {
+    request: this.request,
+    service_id: this._service_id,
+    version: this.version(),
+  }
+  return activateVersion( options, function ( error, version ) {
+    if ( error ) return complete( error )
+    self._version_is_active = true;
+    return complete( null, version )
+  } )
+}
 
 /**
  * Initialize the service. Given a service_id, ensure the service
@@ -44,15 +64,18 @@ FastlyWebhookService.prototype.dictionaryRedirects = setDictionaryRedirects;
  * 
  * @param  {string} service_id  The `service_id` to initialize
  * @param  {function} complete  Called when the service has been initialized.
+ *                              Returns ( error, ServiceVersion )
  */
 function initializeService ( service_id, complete ) {
-  if ( typeof service_id === string ) this._service_id = service_id;
+  if ( typeof service_id === 'string' ) this._service_id = service_id;
+  if ( typeof service_id === 'function' ) complete = service_id;
+
   var self = this;
   
   // if any errors occur, bail and complete early
   var ifSuccess = handleError( complete )
   
-  return getService( service_id, ifSuccess( handleService( configureService( ifSuccess( complete ) ) ) ) )
+  return getService( this._service_id, ifSuccess( handleService( configureService( self.activate.bind( self, complete ) ) ) ) )
 
   function handleService ( continuation ) {
     return serviceHandler;
@@ -71,8 +94,10 @@ function initializeService ( service_id, complete ) {
       var updator = serviceConfigurationUpdater.apply( self )
 
       var getOrCreateTasks = [
-          dictionaryArguments( REDIRECT_ONE_TO_ONE_URLS ),
-          snippetArguments( SNIPPET_RECV_REDIRECT ),
+          dictionaryArguments( DICTIONARY_REDIRECT_HOSTS ),
+          dictionaryArguments( DICTIONARY_REDIRECT_URLS ),
+          snippetArguments( SNIPPET_RECV_REDIRECT_URLS ),
+          snippetArguments( SNIPPET_RECV_REDIRECT_HOSTS ),
           snippetArguments( SNIPPET_ERROR_REDIRECT ),
           snippetArguments( SNIPPET_RECV_TRAILING_SLASH ),
         ]
@@ -88,15 +113,38 @@ function initializeService ( service_id, complete ) {
 }
 
 /**
+ * Activate the version using the service id and API request function.
+ * Callback with the result of the API call
+ * 
+ * @param  {object} options
+ * @param  {function} options.request   The API function to call
+ * @param  {string} options.service_id  The service to call the activate API function on 
+ * @param  {string} options.version     The version to call the activate API function on
+ * @param  {function} complete Callback ( error, version : { number : number, service_id : string } )
+ */
+function activateVersion ( options, complete ) {
+  var request = options.request;
+  var service_id = options.service_id;
+  var version = options.version;
+  var url = [ '/service', service_id, 'version', version, 'activate' ].join( '/' )
+  return request( 'PUT', url, complete );
+}
+
+/**
  * Add domain configuration for the supplied domains.
+ * Add domain to host redirect table if it is a `www` subdomain or root domain.
+ * The key will be opposite domain, with the value being the domain configured.
+ * 
  * @param {string|[string]} domains  String of domains to configure. Can be a single string, comman separated string, or array of strings representing domain names.
- * @param {[type]} complete [description]
+ * @param {function} complete  Called when the domain has been added.
+ *                             Returns ( error, [ ServiceConfiguration ] )
  */
 function addDomains ( domains, complete ) {
   if ( typeof domains === 'string' ) domains = domains.split( ',' )
-  var updator = serviceConfigurationUpdater.apply( this );
+  var self = this;
+  var updator = serviceConfigurationUpdater.apply( this )
   var domainTasks = domains.map( domainArguments ).map( updator.mapTask )
-  return async.series( domainTasks, complete )
+  return async.series( domainTasks, handleErrorThenSuccess( complete )( self.activate.bind( self, complete ) ) )
 }
 
 /**
@@ -113,7 +161,7 @@ function setDictionaryRedirects ( redirects, complete ) {
 
   var ifSuccess = handleError( complete )
 
-  dictionaryOfName( REDIRECT_ONE_TO_ONE_URLS, ifSuccess( getItems( ifSuccess(  ) ) ) )
+  dictionaryOfName( DICTIONARY_REDIRECT_URLS, ifSuccess( getItems( ifSuccess(  ) ) ) )
 
   function dictionaryOfName ( name, continuation ) {
     var dictionaryNameUrl = [ '/service', self._service_id, 'version', self.version(), 'dictionary', name ].join( '/' )
@@ -137,44 +185,47 @@ function serviceConfigurationUpdater () {
   function mapTask ( args ) {
     return function task ( taskComplete ) {
       var ifError = handleSuccess( taskComplete )
-      getRequest( args, ifError( callFnWithArgs( postRequest ) ) ) )
+      getRequest( args, ifError( callFnWithArgs( postRequest.bind( self, args, taskComplete ) ) ) )
     }
   }
 
   function getRequest ( args, complete ) {
-    var url = [ '/service', service_id, 'version', self.version(), args.type, args.get.name ].join( '/' )
+    var apiRequest = self.request;
+    var service_id = self._service_id;
+    var version = self.version()
 
-    apiRequest( 'GET', url, function ( error, value ) {
-      if ( error ) return complete.apply( null, [ args, complete ] )
-      complete()
-    } )
+    var url = [ '/service', service_id, 'version', version, args.type, args.get.name ].join( '/' )
+
+    apiRequest( 'GET', url, complete )
   }
 
   function postRequest ( args, complete ) {
+    var apiRequest = self.request;
+    var service_id = self._service_id;
+    var version = self.version()
 
-    var url = [ '/service', service_id, 'version', self.version(), args.type  ].join( '/' )
-    var postApiRequest = apiRequest.bind( null, 'POST', url, args.post, complete  );
-    
+    var url = [ '/service', service_id, 'version', version, args.type  ].join( '/' )
+
     if ( self._version_is_active ) {
       // if version is active, create a new one that isn't
-      var createVersionArgs = {
-        method: 'POST',
-        url: [ '/service', service_id, 'version' ].join( '/' ),
+      var cloneVersionArgs = {
+        method: 'PUT',
+        url: [ '/service', service_id, 'version', version, 'clone' ].join( '/' ),
       }
-      return apiRequest( createVersionArgs.method, createVersionArgs.url,
-        handleErrorThenSuccess( complete )( ifSuccessSetDevelopmentVersionThen( postApiRequest ) ) )
+      return apiRequest( cloneVersionArgs.method, cloneVersionArgs.url,
+        handleErrorThenSuccess( complete )( ifSuccessSetDevelopmentVersionThen( postRequest.bind( self, args, complete ) ) ) )
 
     } 
     else {
       // already an inactive version to work off of
-      return postApiRequest()
+      return apiRequest.apply( self, [ 'POST', url, args.post, complete ] )
     }
   }
 
   function ifSuccessSetDevelopmentVersionThen ( continuation ) {
     return function setter ( createVersionResponse ) {
       self.version( createVersionResponse.number )
-      continuation( createVersionResponse )
+      continuation()
     }
   }
 
@@ -210,31 +261,64 @@ function snippetOptionsForName ( name ) {
 
 function baseSnippets () {
   return [
+    { name: SNIPPET_RECV_REDIRECT_HOSTS,
+      dynamic: 1,
+      type: 'recv',
+      priority: 98,
+      content: `if ( table.lookup( ${ DICTIONARY_REDIRECT_HOSTS }, req.http.host ) ) {
+        set req.http.x-redirect-location = "http://" table.lookup( ${ DICTIONARY_REDIRECT_HOSTS }, req.http.host ) req.url;
+        error 301;
+      }`,
+    },
     { name: SNIPPET_RECV_TRAILING_SLASH,
       dynamic: 1,
       type: 'recv',
       priority: 99,
-      content: 'if ( req.url !~ {"(?x)\n\t (?:/$) # last character isn\'t a slash\n\t | # or \n\t (?:/\\?) # query string isn\'t immediately preceded by a slash\n\t "} &&\n\t req.url ~ {"(?x)\n\t (?:/[^./]+$) # last path segment doesn\'t contain a . no query string\n\t | # or\n\t (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string\n\t "} ) {\n\t  set req.http.x-redirect-location = req.url "/";\n\terror 301;\n}',
+      content: `if ( req.url !~ {"(?x)
+          (?:/$) # last character isn\'t a slash
+          | # or
+          (?:/\\?) # query string isn\'t immediately preceded by a slash
+        "} &&
+        req.url ~ {"(?x)
+          (?:/[^./]+$) # last path segment doesn\'t contain a . no query string
+          | # or
+          (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string
+        "} ) {
+        set req.http.x-redirect-location = req.url "/";
+        error 301;
+      }`,
     },
-    { name: SNIPPET_RECV_REDIRECT,
+    { name: SNIPPET_RECV_REDIRECT_URLS,
       dynamic: 1,
       type: 'recv',
       priority: 100,
-      content: 'if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ) {\n  if ( table.lookup( redirect_one_to_one_urls, req.url.path ) ~ "^(http)?"  ) {\n    set req.http.x-redirect-location = table.lookup( redirect_one_to_one_urls, req.url.path );\n  } else {\n    set req.http.x-redirect-location = "http://" req.http.host table.lookup( redirect_one_to_one_urls, req.url.path );  \n  }\n  \n  error 301;\n}',
+      content: `if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, req.url.path ) ) {
+        if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, req.url.path ) ~ "^(http)?"  ) {
+          set req.http.x-redirect-location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, req.url.path );
+        } else {
+           set req.http.x-redirect-location = "http://" req.http.host table.lookup( ${ DICTIONARY_REDIRECT_URLS }, req.url.path );
+        }
+        error 301;
+      }`,
     },
     { name: SNIPPET_ERROR_REDIRECT,
       dynamic: 1,
       type: 'error',
       priority: 100,
-      content: 'if (obj.status == 301 && req.http.x-redirect-location) {\n  set obj.http.Location = req.http.x-redirect-location;\n  set obj.response = "Found";\n  synthetic {""};\n  return(deliver);\n}',
+      content: `if (obj.status == 301 && req.http.x-redirect-location) {
+        set obj.http.Location = req.http.x-redirect-location;
+        set obj.response = "Found";
+        synthetic {""};
+        return(deliver);
+      }`,
     },
   ]
 }
 
 function activeVersionIn ( versions ) {
-  var activeVersion = versions.filter( function isActive ( version ) { return version.active } )
-  if ( activeVersion.length === 1 ) {
-    return activeVersion[ 0 ].number;
+  var activeVersions = versions.filter( function isActive ( version ) { return version.active } )
+  if ( activeVersions.length === 1 ) {
+    return activeVersions[ 0 ].number;
   } else {
     return false;
   }
@@ -247,8 +331,11 @@ function activeVersionIn ( versions ) {
 function getSetVersion ( version ) {
   if ( ! arguments.length ) return this._version;
   if ( this._version !== version ) {
+    if ( typeof this._version === 'number' ) {
+      // only set this if the _version has already been set
+      this._version_is_active = false;
+    }
     this._version = version;
-    this._version_is_active = false;
   }
   return this;
 }
