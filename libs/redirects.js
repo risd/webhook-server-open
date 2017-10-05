@@ -599,6 +599,7 @@ function serviceForDomain ( fastly ) {
     return domain.endsWith( 'risd.edu' )
       || ( domain.startsWith( 'stage.' ) && domain.endsWith( 'risd.systems' ) )
       || ( domain.endsWith( 'risdweekend.com' ) )
+      || ( domain.endsWith( 'www.cd-cf.org' ) )
   }
 
   function existingService () {
