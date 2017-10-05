@@ -303,7 +303,7 @@ function cdcfMaster () {
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
-      { branch: 'master', bucket: 'cd-cf.org' },
+      { branch: 'master', bucket: 'www.cd-cf.org' },
     ]
   }
   var identifier = "critical-futures,1risd,1systems_master"
