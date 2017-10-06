@@ -1,0 +1,105 @@
+#!/usr/bin/env node
+
+// gather employees
+// per employee
+// - if there is a `.cv` attribute, remove that file from the cdn bucket & edu bucket
+// - delete the `.cv` attribute
+// - remove the `.cv` attribute
+// - save the employee without their .cv
+
+
+require('dotenv').config()
+
+var miss = require( 'mississippi' )
+var Firebase = require( 'firebase' )
+var cloudStorage = require( '../libs/cloudStorage.js' )
+var usingArguments = require( '../libs/utils.js' ).usingArguments
+var sink = require( '../libs/utils.js' ).sink
+
+var employeesPath = 'buckets/edu,1risd,1systems/57daae1c-915b-4684-a4ae-544f01cdcc01/dev/data/employees';
+var employeesRoot = new Firebase( 'https://' + process.env.FIREBASE + '.firebaseio.com/' + employeesPath )
+
+miss.pipe(
+  usingArguments( { firebaseSecret: process.env.FIREBASE_KEY } ),
+  authFirebase( employeesRoot ),
+  feedEmployees(),
+  deleteCVFiles(),
+  saveEmployee(),
+  sink(),
+  function onComplete ( error ) {
+    if ( error ) console.log( error )
+    process.exit()
+  } )
+
+function authFirebase ( fbRef ) {
+  return miss.through.obj( function ( args, enc, next ) {
+    fbRef.auth( args.firebaseSecret, function ( error ) {
+      if ( error ) return next( error )
+      next( null, {} )
+    } )
+  } )
+}
+
+function feedEmployees () {
+  return miss.through.obj( function ( args, enc, next ) {
+    var stream = this;
+
+    employeesRoot.once( 'value', onData, onError )
+
+    function onData ( snapshot ) {
+      var employeeValuesByKey = snapshot.val();
+      Object.keys( employeeValuesByKey ).forEach( function ( employeeKey ) {
+        if (  hasCv( employeeValuesByKey[ employeeKey ] ) ) {
+          stream.push( {
+            employee: employeeValuesByKey[ employeeKey ],
+            employeeKey: employeeKey
+          } )  
+        }
+      } )
+      next();
+    }
+
+    function onError ( error ) {
+      next( error )
+    }
+
+    function hasCv ( employee ) {
+      return employee.hasOwnProperty( 'cv' ) && typeof employee.cv === 'object'
+    }
+  } )
+}
+
+function deleteCVFiles () {
+  // delete the CV files associated with 
+  return miss.through.obj( function ( args, enc, next ) {
+    try {
+      var cvPath = args.employee.cv.url.split( 'risd.systems/' )[1];
+    } catch ( error ) {
+      console.log( 'cv-path-error:' )
+      console.log( error )
+      return next()
+    }
+    
+    cloudStorage.objects.del( 'edu.risd.systems', cvPath, function ( error ) {
+      cloudStorage.objects.del( 'cdn.risd.systems', cvPath, function ( error ) {
+        console.log( 'deleted:' + cvPath )
+        var employee = Object.assign( {}, args.employee )
+        delete employee.cv;
+        args.employee = employee;
+        next( null, args );
+      } )
+    } )
+  } )
+}
+
+function saveEmployee () {
+  return miss.through.obj( function ( args, enc, next ) {
+    employeesRoot.child( args.employeeKey ).set( args.employee, onSet )
+
+    function onSet ( error ) {
+      console.log( 'save-error:' )
+      console.log( error )
+      next( null, args );
+    }
+  } )
+}

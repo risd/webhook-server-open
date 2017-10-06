@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+
+require('dotenv').config({ silent: true });
+var grunt = require( 'grunt' );
+var Firebase = require( 'firebase' )
+var webhookTasks = require( '../Gruntfile.js' );
+var redirects = require( '../libs/redirects.js' );
+
+webhookTasks( grunt );
+
+// merge this config in order to run just the builder command
+grunt.config.merge( {
+  suppressJobQueue: true
+} )
+
+var redirector = redirects.start( grunt.config, grunt.log )
+
+var owners = {
+  "rrodrigu@risd,1edu": "rrodrigu@risd.edu"
+}
+
+var identifier = 'id'
+
+var data = {
+  "sitename": "edu,1risd,1systems",
+  "userid": "rrodrigu@risd.edu",
+}
+
+var payload = {
+  "identifier": identifier,
+  "payload": data,
+}
+
+var mockClient = {
+  put: function (first, second, third, fourth, jobExecuter) {
+    jobExecuter()
+  }
+}
+
+var jobCallback = function ( error ) {
+  if ( error ) console.log( error )
+  process.exit( error ? 1 : 0 )
+}
+
+redirector( payload, identifier, data, mockClient, jobCallback  )
