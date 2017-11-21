@@ -66,7 +66,7 @@ module.exports.start = function (config, logger) {
   var setupBucketOptions = {
     cloudStorage: cloudStorage,
     cloudflare: config.get( 'cloudflare' ),
-    fastlyToken: config.get( 'fastly' ).token,
+    fastly: config.get( 'fastly' ),
   }
 
 

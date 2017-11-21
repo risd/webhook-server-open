@@ -160,8 +160,8 @@ module.exports.start = function (config, logger) {
         createBucket(),
         updateAcls(),
         updateIndex(),
+        ensureCdn( config.get( 'fastly' ) ),
         ensureCname( config.get( 'cloudflare' ) ),
-        ensureCdn( config.get( 'fastly' ).token ),
         generateKey(),
         sink(),
         function onEnd ( error ) {
@@ -187,7 +187,10 @@ module.exports.createCnameRecord = createCnameRecord;
  * @param  {object}   options.cloudflare.client
  * @param  {string}   options.cloudflare.client.key
  * @param  {string}   options.cloudflare.client.email
- * @param  {string}   options.fastlyToken
+ * @param  {object}   options.fastly
+ * @param  {string}   options.fastly.token
+ * @param  {string}   options.fastly.service_id
+ * @param  {string}   options.fastly.ignoreDomain
  * @param  {Function} callback
  * @return {Function}
  */
@@ -206,7 +209,7 @@ function setupBucket ( options, callback ) {
     createBucket(),
     updateAcls(),
     updateIndex(),
-    ensureCdn( options.fastlyToken ),
+    ensureCdn( options.fastly ),
     ensureCname( options.cloudflare ),
     sink(),
     function ( error ) {
@@ -316,15 +319,13 @@ function updateIndex () {
  */
 function ensureCname ( options ) {
 
-  // should be part of options, and configuration based
-
   return miss.through.obj( function ( row, enc, next ) {
 
     if ( row.ensureCname ) {
       console.log( 'site-setup:ensure-cname:' + row.siteBucket )
 
       var cnameOptions = Object.assign( {
-        usesFastly: row.cdn.usesFastly,
+        usesFastly: row.cdn,
         siteBucket: row.siteBucket,
       }, options )
 
@@ -351,7 +352,7 @@ function ensureCname ( options ) {
  * @param  {string} options.client.email
  * @param  {string} options.client.key
  * @param  {string} options.siteBucket
- * @param  {string} options.usesFastly
+ * @param  {object?} options.usesFastly
  * @param  {Function} onComplete ( Error|null, Boolean|CnameRecord )
  */
 function createCnameRecord ( options, callback ) {
@@ -525,40 +526,17 @@ function createCnameRecord ( options, callback ) {
   }
 }
 
-function ensureCdn ( fastlyToken ) {
+function ensureCdn ( fastlyOptions ) {
+  var cdn = require( './fastly' )( fastlyOptions )
+
   return miss.through.obj( function ( row, enc, next ) {
     console.log( 'ensure-cdn:' + row.siteBucket );
 
-    var fastlyOptions = { domain: row.siteBucket, fastlyToken: fastlyToken }
-    fastlyServiceForDomain( fastlyOptions, function ( error, service ) {
+    cdn.domain( row.siteBucket, function ( error, service ) {
       if ( error ) { error.step = 'ensureCdn'; return next( error ) }
-
-      console.log( 'ensure-cdn:done' );
       row.cdn = service;
+      console.log( 'ensure-cdn:done' );
       return next( null, row )
     } )
   } )
-}
-
-function fastlyServiceForDomain ( options, callback ) {
-  if ( !options ) return callback( new Error( 'Requires { fastlyToken, domain }.' ) )
-  var fastlyToken = options.fastlyToken;
-  var domain = options.domain;
-
-  var fastly = require( 'fastly' )( fastlyToken )
-  var serviceForDomain = require( './redirects.js' ).serviceForDomain;
-
-  var service = { usesFastly: false };
-
-  miss.pipe(
-    usingArguments( { domain: domain } ),
-    serviceForDomain( fastly ),
-    sink( function ( row ) {
-      // row = { service_id, dictionary_id, active_version }
-      Object.assign( service, row, { usesFastly: true } )
-    } ),
-    function onComplete ( error ) {
-      if ( error ) { error.step = 'fastlyServiceForDomain'; return callback( error ) }
-      return callback( null, service )
-    } )
 }
