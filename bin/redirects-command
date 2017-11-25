@@ -1,35 +1,38 @@
 #!/usr/bin/env node
 
-require('dotenv').config({ silent: true });
+require('dotenv').config()
+
+var siteCmdOptions = {
+  edu: edu,
+  edutest: eduTest,
+  'risd-undergraduate-welcome': undergrad,
+  'risd-graduate-welcome': grad,
+  'risd-identity-research': risdIdentity,
+  'risd-policies': risdPolicies,
+  'risd-weekend': risdWeekend,
+  cdcf: cdcf,
+  info: info,
+  commencement: commencement,
+  'liberal-arts-ma': liberalArtsMa,
+  'nature-lab': natureLab,
+  'risd-sei': sei,
+}
+
+var cmd = parseArgs( process.argv.slice( 2 ) )
+if ( ! cmd ) return printHelp()
+
 var grunt = require( 'grunt' );
-var Firebase = require( 'firebase' )
 var webhookTasks = require( '../Gruntfile.js' );
-var redirects = require( '../libs/redirects.js' );
+var redirector = require( '../libs/redirects.js' );
 
 webhookTasks( grunt );
 
-// merge this config in order to run just the builder command
+// merge this config in order to run just the redirect command
 grunt.config.merge( {
-  suppressJobQueue: true
+  suppressJobQueue: true,
 } )
 
-var redirector = redirects.start( grunt.config, grunt.log )
-
-var owners = {
-  "rrodrigu@risd,1edu": "rrodrigu@risd.edu"
-}
-
-var identifier = 'id'
-
-var data = {
-  "sitename": "edu,1risd,1systems",
-  "userid": "rrodrigu@risd.edu",
-}
-
-var payload = {
-  "identifier": identifier,
-  "payload": data,
-}
+var redirects = redirector.start( grunt.config, grunt.log )
 
 var mockClient = {
   put: function (first, second, third, fourth, jobExecuter) {
@@ -39,7 +42,272 @@ var mockClient = {
 
 var jobCallback = function ( error ) {
   if ( error ) console.log( error )
+  else console.log( arguments )
   process.exit( error ? 1 : 0 )
 }
 
-redirector( payload, identifier, data, mockClient, jobCallback  )
+redirects( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
+
+// [] -> { siteName, branch } | false
+function parseArgs ( args ) {
+  var cmd = false;
+  var site = args[ 0 ]
+  if ( site in siteCmdOptions ) cmd = siteCmdOptions[ site ]();
+  return cmd;
+}
+
+function printHelp () {
+  var msg = `redirects-command {site-name} \nPossible values include: \n\t${ possibleCmds().map( cmdList ).join( '\n\t' ) }`
+  console.log( msg )
+
+  function cmdList ( cmd ) {
+    return `${ cmd.site }`
+  }
+}
+
+function possibleCmds () {
+  return Object.keys( siteCmdOptions )
+    .map( siteCmds )
+
+    function siteCmds ( site ) {
+      return { site: site }
+    }
+}
+
+function edu () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"edu,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "edu,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function eduTest () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"edutest,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "edutest,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function undergrad () {
+
+  var identifier = "risd-undergraduate-welcome,1risd,1systems_develop"
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-undergraduate-welcome,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var payload = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return payload;
+}
+
+function grad () {
+
+  var identifier = "risd-graduate-welcome,1risd,1systems_develop"
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-graduate-welcome,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var payload = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return payload;
+}
+
+function uniqueCliTest () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"unique-cli-test,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "unique-cli-test,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function risdIdentity () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-identity-research,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-identity-research,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function risdPolicies () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-policies,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-policies,1risd,1systems_develop"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function risdWeekend () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-weekend,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-weekend,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function cdcf () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"critical-futures,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "critical-futures,1risd,1systems_develope"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function info () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"info,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "info,1risd,1systems_develop"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function commencement () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"commencement,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "commencement,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function liberalArtsMa () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-liberal-arts-ma,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-liberal-arts-ma,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function natureLab () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-nature-lab,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-nature-lab,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function sei () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-sei,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-sei,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
