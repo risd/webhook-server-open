@@ -6,11 +6,16 @@ var siteCmdOptions = {
   edu: edu,
   edutest: eduTest,
   'risd-undergraduate-welcome': undergrad,
+  'risd-graduate-welcome': grad,
   'risd-identity-research': risdIdentity,
   'risd-policies': risdPolicies,
   'risd-weekend': risdWeekend,
   cdcf: cdcf,
   info: info,
+  commencement: commencement,
+  'liberal-arts-ma': liberalArtsMa,
+  'nature-lab': natureLab,
+  'risd-sei': sei,
 }
 
 var cmd = parseArgs( process.argv.slice( 2 ) )
@@ -18,16 +23,16 @@ if ( ! cmd ) return printHelp()
 
 var grunt = require( 'grunt' );
 var webhookTasks = require( '../Gruntfile.js' );
-var builder = require( '../libs/redirects.js' );
+var redirector = require( '../libs/redirects.js' );
 
 webhookTasks( grunt );
 
-// merge this config in order to run just the builder command
+// merge this config in order to run just the redirect command
 grunt.config.merge( {
   suppressJobQueue: true,
 } )
 
-var redirects = builder.start( grunt.config, grunt.log )
+var redirects = redirector.start( grunt.config, grunt.log )
 
 var mockClient = {
   put: function (first, second, third, fourth, jobExecuter) {
@@ -47,8 +52,8 @@ redirects( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
 function parseArgs ( args ) {
   var cmd = false;
   var site = args[ 0 ]
-  if ( site in siteCmdOptions ) cmd = siteCmdOptions[ site ];
-  return cmd();
+  if ( site in siteCmdOptions ) cmd = siteCmdOptions[ site ]();
+  return cmd;
 }
 
 function printHelp () {
@@ -110,6 +115,23 @@ function undergrad () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"risd-undergraduate-welcome,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var payload = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return payload;
+}
+
+function grad () {
+
+  var identifier = "risd-graduate-welcome,1risd,1systems_develop"
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-graduate-welcome,1risd,1systems",
     "userid":"rrodrigu@risd.edu",
   }
   var payload = {
@@ -212,7 +234,75 @@ function info () {
     "sitename":"info,1risd,1systems",
     "userid":"rrodrigu@risd.edu",
   }
-  var identifier = "info,1risd,1systems_develope"
+  var identifier = "info,1risd,1systems_develop"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function commencement () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"commencement,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "commencement,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function liberalArtsMa () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-liberal-arts-ma,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-liberal-arts-ma,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function natureLab () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-nature-lab,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-nature-lab,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function sei () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-sei,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "risd-sei,1risd,1systems_master"
 
   var cmd = {
     "identifier": identifier,
