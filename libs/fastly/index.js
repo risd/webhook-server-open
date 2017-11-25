@@ -166,7 +166,8 @@ function ensureDevelopmentVersion ( complete ) {
     self._activeVersion( taskComplete )
   }
 
-  function cloneActiveVersion ( taskComplete ) {
+  function cloneActiveVersion ( serviceMetadata, taskComplete ) {
+    if ( typeof serviceMetadata === 'function' ) taskComplete = serviceMetadata;
     var service_id = self._service_id;
     var version = self.version();
     var url = [ '/service', service_id, 'version', version, 'clone' ].join( '/' )
@@ -175,7 +176,7 @@ function ensureDevelopmentVersion ( complete ) {
     self.request.apply( self, args )
 
     function setVersion ( error, clonedVersion ) {
-      if ( error ) taskComplete( error )
+      if ( error ) return taskComplete( error )
       // set the version number, this will set the version to internally
       self.version( clonedVersion.number )
       taskComplete( null, result() )
@@ -574,7 +575,11 @@ function setDictionaryRedirects ( options, complete ) {
 
     function prefix ( prefixStr ) {
       return function prefixer ( objToPrefix ) {
-        Object.keys( objToPrefix ).forEach( function ( key ) { objToPrefix[ key ] = [ prefixStr, objToPrefix[ key ] ].join( '' ) } )
+        Object.keys( objToPrefix ).forEach( function ( key ) {
+          if ( objToPrefix[ key ].startsWith( '/' ) ) {
+            objToPrefix[ key ] = [ prefixStr, objToPrefix[ key ] ].join( '' )
+          }
+        } )
         return objToPrefix;
       }
     }
@@ -642,7 +647,6 @@ function setSnippetRedirects ( options, complete ) {
     return operationsMaker;
 
     function operationsMaker ( cdnSnippets, taskComplete ) {
-      console.log( 'operations-maker' )
       var hostRedirects = cdnSnippets.filter( isHostRedirect )
 
       var cdnOperations = redirects.map( createOperations( hostRedirects ) ).filter( isNotFalse )
@@ -854,13 +858,32 @@ function serviceConfigurationUpdater () {
 
         if ( itemOperations.length === 0 ) return taskComplete( null, null )
 
-        var patchBody = {}
-        patchBody[ args.property ] = itemOperations;
+        // account for itemOperations > 1000. split into thousands
+        var maxOperations = 1000;
+        var patchRequests = Math.ceil( itemOperations.length / maxOperations )
 
-        self.jsonRequest( 'PATCH', url, patchBody, function ( error, status ) {
-          if ( error ) return taskComplete( error )
-          taskComplete( null, status )
-        } )
+        var patchTasks = []
+        for (var i = patchRequests - 1; i >= 0; i--) {
+          var startSubset = i * maxOperations;
+          var endSubset = ( i + 1 ) * maxOperations;
+          var operationsSubset = itemOperations.slice( startSubset, endSubset )
+          patchTasks = patchTasks.concat( [ patchOperations( operationsSubset ) ] )
+        }
+
+        if ( patchTasks.length === 1 ) return patchTasks[ 0 ]( taskComplete )
+
+        return async.series( patchTasks, taskComplete )
+
+        function patchOperations( operations ) {
+          var patchBody = {}
+          patchBody[ args.property ] = operations;
+          return function patchTask ( subTaskComplete ) {
+            self.jsonRequest( 'PATCH', url, patchBody, function ( error, status ) {
+              if ( error ) return subTaskComplete( error )
+              subTaskComplete( null, status )
+            } )
+          }
+        }
       } )
     }
   }
@@ -1074,11 +1097,34 @@ function baseSnippets ( name ) {
       name: SNIPPET_RECV_REDIRECT_HOSTS,
       dynamic: 1,
       type: 'recv',
-      priority: 98,
+      priority: 97,
       content: `if ( table.lookup( ${ DICTIONARY_REDIRECT_HOSTS }, req.http.host ) ) {
         set req.http.x-redirect-location = "http://" table.lookup( ${ DICTIONARY_REDIRECT_HOSTS }, req.http.host ) req.url;
         error 301;
       }`,
+    }
+  }
+  snippets[ SNIPPET_RECV_REDIRECT_URLS ] = function () {
+    return {
+      name: SNIPPET_RECV_REDIRECT_URLS,
+      dynamic: 1,
+      type: 'recv',
+      priority: 98,
+      content: `
+      declare local var.host_path STRING;
+      set var.host_path = req.http.host req.url.path;
+      if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ) ) {
+        declare local var.redirect_location STRING;
+        set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path );
+
+        if ( ! var.redirect_location ~ "^http" ) {
+          set var.redirect_location = "http://" var.redirect_location;
+        }
+
+        set req.http.x-redirect-location = var.redirect_location;
+
+        error 301;
+      }`.trim(),
     }
   }
   snippets[ SNIPPET_RECV_TRAILING_SLASH ] = function () {
@@ -1100,29 +1146,6 @@ function baseSnippets ( name ) {
         set req.http.x-redirect-location = req.url "/";
         error 301;
       }`,
-    }
-  }
-  snippets[ SNIPPET_RECV_REDIRECT_URLS ] = function () {
-    return {
-      name: SNIPPET_RECV_REDIRECT_URLS,
-      dynamic: 1,
-      type: 'recv',
-      priority: 100,
-      content: `
-      declare local var.host_path STRING;
-      set var.host_path = req.http.host req.url.path;
-      if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ) ) {
-        declare local var.redirect_location STRING;
-        set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path );
-
-        if ( ! var.redirect_location ~ "^http" ) {
-          set var.redirect_location = "http://" var.redirect_location;
-        }
-
-        set req.http.x-redirect-location = var.redirect_location;
-
-        error 301;
-      }`.trim(),
     }
   }
   snippets[ SNIPPET_ERROR_REDIRECT ] = function () {
