@@ -246,7 +246,7 @@ function addDomains ( domains, complete ) {
 
   var updator = serviceConfigurationUpdater.apply( this )
 
-  var addDomainTasks = domains.map( addDomainArguments ).map( updator.mapVersionedTask )
+  var addDomainTasks = addRootAndWwwDomains( domains ).map( addDomainArguments ).map( updator.mapVersionedTask )
   tasks = tasks.concat( addDomainTasks )
 
   tasks = tasks.concat( redirectHostOperationsFor( domains ) )
@@ -324,6 +324,19 @@ function isRootDomain ( domain ) {
   return ( parts.length === 2 )
 }
 
+function addRootAndWwwDomains ( domains ) {
+  var additionalDomains = []
+  for (var i = domains.length - 1; i >= 0; i--) {
+    if ( isWwwDomain( domains[ i ] ) ) {
+      additionalDomains = additionalDomains.concat( [ domains[ i ].slice( 4 ) ] )
+    }
+    else if ( isRootDomain( domains[ i ] ) ) {
+      additionalDomains = additionalDomains.concat( [ ( 'www.' + domains[ i ] ) ] )
+    }
+  }
+  return domains.concat( additionalDomains )
+}
+
 function redirectRootArguments ( domain ) {
   var redirectDomain = domain.slice( 4 )
   return { item_key: redirectDomain, item_value: domain }
@@ -352,7 +365,7 @@ function removeDomains ( domains, complete ) {
   // remove the redirects
   var tasks = [];
   if ( this.unknownVersion() ) tasks = tasks.concat( [ activeVersionTask ] )
-  tasks = tasks.concat( domains.map( mapDomainsToRemoveTask ) )
+  tasks = tasks.concat( addRootAndWwwDomains( domains ).map( mapDomainsToRemoveTask ) )
     .concat( domains.map( mapPathRedirectsRemoveTask ) )
     .concat( domains.map( mapHostRedirectsRemoveTask ) )
 
