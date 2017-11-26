@@ -534,7 +534,12 @@ function ensureCdn ( fastlyOptions ) {
 
     cdn.domain( row.siteBucket, function ( error, service ) {
       if ( error ) { error.step = 'ensureCdn'; return next( error ) }
-      row.cdn = service;
+      else if ( typeof service === 'object' && service.hasOwnProperty( 'service_id' ) ) {
+        row.cdn = service;  
+      }
+      else {
+        row.cdn = false;
+      }
       console.log( 'ensure-cdn:done' );
       return next( null, row )
     } )
