@@ -382,8 +382,6 @@ function infoMaster () {
 
   return cmd;
 }
-<<<<<<< HEAD
-=======
 
 function testMaster () {
   var data = {
@@ -405,4 +403,3 @@ function testMaster () {
 
   return cmd;  
 }
->>>>>>> feature/fastly-refactor
