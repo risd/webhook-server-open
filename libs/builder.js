@@ -192,6 +192,7 @@ module.exports.start = function (config, logger) {
         // Only admin or the site owners can trigger a build
         if(_(siteValues.owners).has(escapeUserId(userid)) || _(siteValues.users).has(escapeUserId(userid)) || userid === 'admin')
         {
+          console.log( 'setup-pipeline' )
           // If build time is defined, we build it now, then put in a job back to beanstalk with a delay
           // to build it later as well.
           var now = Date.now();
@@ -246,6 +247,7 @@ module.exports.start = function (config, logger) {
 
           function queueDelayedJob () {
             return miss.through.obj( function ( args, enc, next ) {
+              console.log( 'queue-delayed-job' )
               if ( args.buildDiff > 0 && !args.noDelay ) {
                 // push job back into beanstalk, then upload
                 args.buildJobData[ 'noDelay' ] = true;
@@ -268,7 +270,8 @@ module.exports.start = function (config, logger) {
            */
           function installDependencies () {
             return miss.through.obj( function ( args, enc, next ) {
-              runInDir( 'npm', args.buildFolder, [ 'install' ], function ( error ) {
+              console.log( 'install-dependencies' )
+              runInDir( 'npm', args.buildFolder, [ 'install', '--production' ], function ( error ) {
                 if ( error ) {
                   console.log( error );
                   error.reportStatus = {
@@ -1091,7 +1094,6 @@ function runInDir(command, cwd, args, callback) {
   });
 
   spawnedCommand.on('close', function(exit, signal) {
-
     if(exit === 0) {
       callback(null);
     } else {
