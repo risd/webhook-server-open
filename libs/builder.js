@@ -1017,6 +1017,7 @@ module.exports.start = function (config, logger) {
       domainInstance.on('error', function(err) { 
         console.log('domain-instance:error');
         console.log(err);
+        console.log(err.stack);
         var deployingToBuckets = deploys.filter( isDeployForBranch( branch ) ).map( function bucketForDeploy ( deploy ) { return deploy.bucket; } )
         reportStatus(siteName, 'Failed to build, errors encountered in build process of ' + deployingToBuckets.join(', '), 1);
         jobCallback();
