@@ -188,7 +188,7 @@ module.exports.start = function ( config, logger ) {
       function streamToCommandArgs ( streamArgs ) {
         var individualTemplate = path.join( 'templates', streamArgs.contentType, 'individual.html' )
         return [ 'grunt',
-          [ 'build-template', '--inFile=' + individualTemplate, '--itemKey=' + streamArgs.itemKey, '--emitter' ],
+          [ 'build-template', '--inFile=' + individualTemplate, '--itemKey=' + streamArgs.itemKey, '--production=true', '--emitter' ],
           {
             stdio: 'pipe',
             cwd: streamArgs.buildFolder
