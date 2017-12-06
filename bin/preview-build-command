@@ -42,8 +42,7 @@ function eduTest () {
     "contentType": "employee",
     "itemKey": "-KKrlLnwu3uGNKo5SI7x",
     "deploys": [
-      { branch: 'develop', bucket: 'www.risd.edu' },
-      { branch: 'develop', bucket: 'stage.edu.risd.systems' },
+      { branch: 'master', bucket: 'www.risd.edu' },
       { branch: 'develop', bucket: 'edu.risd.systems' }
     ]
   }
