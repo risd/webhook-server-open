@@ -117,7 +117,7 @@ module.exports.start = function (config, logger) {
     	}
 
 	    function onDownload ( err, data ) {
-	    	if ( err ) callback( err )
+	    	if ( err ) return callback( err )
 	    	console.log( 'download-site-zip:err' )
 	      console.log( err )
 
