@@ -39,10 +39,10 @@ function eduTest () {
     "sitename":"edu,1risd,1systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
-    "contentType": "employee",
+    "contentType": "employees",
     "itemKey": "-KKrlLnwu3uGNKo5SI7x",
+    "siteBucket": "edu.risd.systems",
     "deploys": [
-      { branch: 'master', bucket: 'www.risd.edu' },
       { branch: 'develop', bucket: 'edu.risd.systems' }
     ]
   }

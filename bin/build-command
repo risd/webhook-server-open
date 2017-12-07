@@ -110,10 +110,10 @@ function eduMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"edu,1risd,1systems",
+    "siteBucket": "www.risd.edu",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
-      { branch: 'develop', bucket: 'edu.risd.systems' },
       { branch: 'master', bucket: 'www.risd.edu' },
     ]
   }
@@ -132,11 +132,11 @@ function eduDevelop () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"edu,1risd,1systems",
+    "siteBucket": "edu.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
     "deploys": [
       { branch: 'develop', bucket: 'edu.risd.systems' },
-      { branch: 'master', bucket: 'www.risd.edu' },
     ]
   }
   var identifier = "edu,1risd,1systems_develop"
@@ -154,11 +154,10 @@ function eduTestMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"edutest,1risd,1systems",
+    "siteBucket": "edutest.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
-      { branch: 'master', bucket: 'testwww.risd.edu' },
-      { branch: 'master', bucket: 'www.risd.edu' },
       { branch: 'master', bucket: 'edutest.risd.systems' },
     ]
   }
@@ -179,11 +178,11 @@ function undergradMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"risd-undergraduate-welcome,1risd,1systems",
+    "siteBucket": "congratulations.risd.edu",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
       { branch: 'master', bucket: 'congratulations.risd.edu' },
-      { branch: 'develop', bucket: 'risd-undergraduate-welcome.risd.systems' }
     ]
   }
   var payload = {
@@ -201,10 +200,10 @@ function undergradDevelop () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"risd-undergraduate-welcome,1risd,1systems",
+    "siteBucket": "risd-undergraduate-welcome.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
     "deploys": [
-      { branch: 'master', bucket: 'congratulations.risd.edu' },
       { branch: 'develop', bucket: 'risd-undergraduate-welcome.risd.systems' }
     ]
   }
@@ -221,6 +220,7 @@ function uniqueCliTestMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"unique-cli-test,1risd,1systems",
+    "siteBucket": "unique-cli-test.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
@@ -242,6 +242,7 @@ function risdIdentityMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"risd-identity-research,1risd,1systems",
+    "siteBucket": "risd-identity-research.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
@@ -263,11 +264,11 @@ function risdPoliciesDevelop () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"risd-policies,1risd,1systems",
+    "siteBucket": "risd-policies.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
     "deploys": [
       { branch: 'develop', bucket: 'risd-policies.risd.systems' },
-      { branch: 'develop', bucket: 'policies.risd.edu' },
     ]
   }
   var identifier = "risd-policies,1risd,1systems_develop"
@@ -285,6 +286,7 @@ function risdWeekendMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"risd-weekend,1risd,1systems",
+    "siteBucket": "risdweekend.com",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
@@ -306,6 +308,7 @@ function cdcfDevelop () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"critical-futures,1risd,1systems",
+    "siteBucket": "critical-futures.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
     "deploys": [
@@ -326,6 +329,7 @@ function cdcfMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"critical-futures,1risd,1systems",
+    "siteBucket": "www.cd-cf.org",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
@@ -347,6 +351,7 @@ function infoDevelop () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"info,1risd,1systems",
+    "siteBucket": "info.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
     "deploys": [
@@ -368,6 +373,7 @@ function infoMaster () {
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"info,1risd,1systems",
     "userid":"rrodrigu@risd.edu",
+    "siteBucket": "info.risd.edu",
     "branch":"master",
     "deploys": [
       { branch: 'master', bucket: 'info.risd.edu' },
@@ -388,6 +394,7 @@ function testMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"unique-cli-test,1risd,1systems",
+    "siteBucket": "www.perpetualhappiness.com",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [

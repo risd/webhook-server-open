@@ -30,13 +30,9 @@ var buildPayload = {
   "sitename": "edu,1risd,1systems",
   "userid": "mgdevelopers@risd.edu",
   "branch": "develop",
-  "deploys": [ {
-    "branch":"develop",
-    "bucket":"edu.risd.systems"
-  }, {
-    "branch":"develop",
-    "bucket":"www.risd.edu"
-  } ]
+  "deploys": [
+    { "branch":"develop", "bucket":"edu.risd.systems" },
+  ]
 }
 
 var commandData = {
