@@ -15,6 +15,7 @@ module.exports = {
   uploadIfDifferent: uploadIfDifferent,
   redirectTemplateForDestination: redirectTemplateForDestination,
   cachePurge: cachePurge,
+  protocolForDomain: protocolForDomain,
 }
 
 // Read stream that passes in initialze arguments
@@ -216,11 +217,26 @@ function cachePurge ( options ) {
     var requestOptions = { method: 'PURGE', url: purgeUrl }
     if ( purgeProxy ) requestOptions.proxy = purgeProxy;
 
-    request( requestOptions, function ( error, response, body ) {
-      console.log( 'purge:' + purgeUrl )
-      next( null, args )
-    } )
+    try {
+      request( requestOptions, function ( error, response, body ) {
+        console.log( 'purge:' + purgeUrl )
+        next( null, args )
+      } )  
+    }
+    catch ( error ) {
+      console.log( 'cache-purge-error:on:' + purgeUrl )
+      console.log( error.message )
+      console.log( error.stack )
+      next( null, args)
+    }
+    
   } )
+}
+
+function protocolForDomain ( domain ) {
+  return domain.startsWith( 'http' )
+    ? domain
+    : [ '//', domain ].join( '' )
 }
 
 function redirectTemplateForDestination ( destination ) {

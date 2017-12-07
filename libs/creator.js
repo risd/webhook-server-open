@@ -369,6 +369,7 @@ function createCnameRecord ( options, callback ) {
     getZoneId(),                // adds { zoneId }
     getOrCreateCname(),         // if { zoneId }, adds { cname }
     sink( function ( row ) {
+      console.log( 'create-cname-record:sink' )
       cname = row.cname;
     } ),
     function onComplete ( error ) {
@@ -379,6 +380,7 @@ function createCnameRecord ( options, callback ) {
   function getZoneId () {
 
     return miss.through.obj( function ( row, enc, next ) {
+      console.log( 'create-cname-record:get-zone-id' )
       var domain = domainForBucket( row.siteBucket )
       getZoneFn( domain, function ( error, zone ) {
         if ( error ) return next( error )
@@ -419,6 +421,7 @@ function createCnameRecord ( options, callback ) {
     var fastlyRecordContent =  { content: 'nonssl.global.fastly.net', };
 
     return miss.through.obj( function ( row, enc, next ) {
+      console.log( 'create-cname-record:get-or-create' )
       if ( !row.zoneId ) {
         row.cname = false;
         next( null, row )

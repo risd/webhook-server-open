@@ -18,6 +18,7 @@ var usingArguments = utils.usingArguments;
 var sink = utils.sink;
 var uploadIfDifferent = utils.uploadIfDifferent;
 var redirectTemplateForDestination = utils.redirectTemplateForDestination;
+var protocolForDomain = utils.protocolForDomain;
 
 var unescapeSite = function(site) {
   return site.replace(/,1/g, '.');
@@ -46,7 +47,7 @@ module.exports.start = function ( config, logger ) {
 
     var userid = data.userid;
     var site = data.sitename;
-    var deploys = data.deploys;
+    var siteBucket = data.siteBucket;
     var contentType = data.contentType;
     var itemKey = data.itemKey;
 
@@ -54,82 +55,37 @@ module.exports.start = function ( config, logger ) {
     Outline of the process & args at each stage of the stream
     
     Using args
-    { site: '', deploys: [], contentType: '', itemKey }
-    Feed Builds
-    { buildFolder, contentType, itemKey, branch  }
+    { site: '', contentType: '', itemKey, siteBucket  }
     Run Build Emitter ( streamtoCommandArgs )
-    { builtFile, builtFilePath, branch }
-    Feed Buckets For Branch
     { builtFile, builtFilePath, bucket }
     Upload if different(  )
 
     */
-    
+   
+    var buildFolderName = Deploys.utilities.nameForSiteBranch( site, siteBucket )
+    var buildFolder = path.join( buildFolderRoot, buildFolderName )
+
     var previewBuildArgs = {
       siteName: site,
-      deploys: deploys,
+      siteBucket: siteBucket,
       contentType: contentType,
       itemKey: itemKey,
-      buildFolderRoot: buildFolderRoot,
-    }
-
-    var buildOptions = {
-      branches: deploys.map( function ( deploy ) { return deploy.branch } )
+      buildFolder: buildFolder,
     }
 
     var runBuildEmitterOptions = {
       maxParallel: 2,
     }
 
-    var feedBucketOptions = {
-      bucketsForBranch: function ( branch ) {
-        return deploys
-          .filter( function ( deploy ) { return deploy.branch === branch } )
-          .map( function ( deploy ) { return deploy.bucket } )
-      }
-    }
-
     return miss.pipe(
       usingArguments( previewBuildArgs ),
-      feedBranchBuilds( buildOptions ),
       runBuildEmitter( runBuildEmitterOptions ),
-      feedBuckets( feedBucketOptions ),
       uploadIfDifferent(),
       sink(),
       function onComplete ( error ) {
         if ( error ) return jobCallback( error )
         jobCallback()
       } )
-
-    function feedBranchBuilds ( options ) {
-      var branches = options.branches;
-      
-      return miss.through.obj( function ( args, enc, next ) {
-        var stream = this;
-
-        console.log( 'feed-branch-builds:start' )
-
-        branches.forEach( function ( branch ) {
-
-          var branchFileName = Deploys.utilities.fileForSiteBranch( args.siteName, branch )
-          var branchFileFolder = branchFileName.slice( 0, ( branchFileName.length - '.zip'.length ) )
-          var buildEmitterArgs = {
-            buildFolder: path.join( args.buildFolderRoot, branchFileFolder ),
-            contentType: args.contentType,
-            itemKey: args.itemKey,
-            branch: branch,
-          }
-
-          stream.push( buildEmitterArgs )
-
-        } )
-
-        console.log( 'feed-branch-builds:end' )
-
-        next()
-
-      } )
-    }
 
     function runBuildEmitter ( options ) {
       var maxParallel = options.maxParallel;
@@ -158,7 +114,7 @@ module.exports.start = function ( config, logger ) {
               var builtFile = str.trim().slice( buildEvent.length )
               var builtFilePath = path.join( builtFolder, builtFile )
               console.log( 'build-event:' + builtFile )
-              stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, branch: args.branch } )
+              stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, bucket: args.siteBucket } )
             } )
 
           var endEvent = ':end:';
@@ -188,7 +144,7 @@ module.exports.start = function ( config, logger ) {
       function streamToCommandArgs ( streamArgs ) {
         var individualTemplate = path.join( 'templates', streamArgs.contentType, 'individual.html' )
         return [ 'grunt',
-          [ 'build-template', '--inFile=' + individualTemplate, '--itemKey=' + streamArgs.itemKey, '--production=true', '--emitter' ],
+          [ 'build-template', '--inFile=' + individualTemplate, '--itemKey=' + streamArgs.itemKey, '--settings={"site_url":"'+ protocolForDomain( streamArgs.siteBucket ) +'"}', '--data=.build/data.json', '--production=true', '--emitter' ],
           {
             stdio: 'pipe',
             cwd: streamArgs.buildFolder
@@ -196,35 +152,6 @@ module.exports.start = function ( config, logger ) {
         ]
       }
 
-    }
-
-    function feedBuckets ( options ) {
-      var bucketsForBranch = options.bucketsForBranch;
-      return miss.through.obj( function ( args, enc, next ) {
-        
-        console.log( 'feed-buckets:start' )
-
-        var buckets = bucketsForBranch( args.branch )
-
-        var stream = this;
-
-        buckets.forEach( function ( bucket ) {
-          
-          var uploadArgs = {
-            bucket: bucket,
-            builtFile: args.builtFile,
-            builtFilePath: args.builtFilePath,
-          }
-          console.log( uploadArgs )
-          stream.push( uploadArgs )
-
-        } )
-
-        console.log( 'feed-buckets:end' )
-
-        next()
-
-      } )
     }
 
   }

@@ -214,7 +214,8 @@ function CommandDelegator (config, logger) {
       var identifier = commandData.identifier;
 
       var lockId = payload.id || 'noneya';
-      var memcaheLockId = item.lock + '_' + lockId + '_queued';
+      var memcacheLockId = item.lock + '_' + lockId + '_queued';
+
       if ( item.tube === 'build' ) {
         // lock id should be site name and site branch
         // since the branch is linked to the zip file that
@@ -227,73 +228,84 @@ function CommandDelegator (config, logger) {
             return;
           }
 
-          if ( payload.branch ) {
-            var branches = [ payload.branch ]
-          } else {
-            var branches = configuration.deploys.map( function ( deploy ) { return deploy.branch; } )
+          if ( payload.siteBucket ) {
+            var siteBuckets = [ payload.siteBucket ]
           }
+          else {
+            var siteBuckets = configuration.deploys.map( function ( deploy ) { return deploy.bucket } )
+          }
+          siteBuckets = _.uniq( siteBuckets )
 
-          branches = _.uniq( branches );
+          return siteBuckets.map( toBuildCommandArgs ).forEach( queueCommandForArgs )
 
-          var buildCommandsArgs = branches.map( function ( branch ) {
-            var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, branch )
-            payload.branch = branch;
-            payload.deploys = configuration.deploys;
+          function toBuildCommandArgs ( siteBucket ) {
+            var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, siteBucket )
+            var memcacheLockId = [ item.lock, identifier, 'queued' ].join( '_' )
+            var deploys = configuration.deploys.filter( function ( deploy ) { return deploy.bucket === siteBucket } )
+            var branches = deploys.map( function ( deploy ) { return deploy.branch } )
+            var payloadBase = {
+              deploys: deploys,
+              siteBucket: siteBucket,
+              branch: branches[ 0 ],
+            }
             return {
               identifier: identifier,
-              memcaheLockId: [ item.lock, identifier, 'queued' ].join( '_' ),
-              payload: Object.assign( {}, payload ),
+              payload: Object.assign( {}, payloadBase, payload ),
             }
-          } )
-
-          buildCommandsArgs.forEach( queueCommandForArgs )          
-
+          }
         } )
 
       } else if ( item.tube ==='previewBuild' ) {
 
-        deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
-          if ( error ) {
-            console.log( error )
-            return;
-          }
-
-          // preview builds piggy back on regular build signals
-          if ( payload.contentType && payload.itemKey ) {
-            var previewIdentifier = [ payload.sitename, payload.contentType, payload.itemKey ].join( '_' )
-            var previewBuildCommandArgs = {
-              identifier: previewIdentifier,
-              memcaheLockId: [ 'previewBuild', identifier, 'queued' ].join( '_' ),
-              payload: Object.assign( { deploys: configuration.deploys }, payload ),
+        // preview builds piggy back on regular build signals
+        if ( payload.contentType && payload.itemKey ) {
+          deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
+            if ( error ) {
+              console.log( error )
+              return;
             }
-            queueCommandForArgs( previewBuildCommandArgs )
-          }
-        } )
 
+            var siteBuckets = configuration.deploys.map( function ( deploy ) { return deploy.bucket } )
+            siteBuckets = _.uniq( siteBuckets )
+            
+            return siteBuckets.map( toPreviewBuildArgs ).forEach( queueCommandForArgs )
+
+            function toPreviewBuildArgs ( siteBucket ) {
+              var previewIdentifier = [ payload.sitename, siteBucket, payload.contentType, payload.itemKey ].join( '_' )
+              var memcacheLockId = [ 'previewBuild', identifier, 'queued' ].join( '_' )
+              return {
+                identifier: previewIdentifier,
+                memcacheLockId: memcacheLockId,
+                payload: Object.assign( { siteBucket: siteBucket }, payload )
+              }
+            }
+
+          } )
+        }
       } else {
-        var queueCommandArgs = { identifier: identifier, memcaheLockId: memcaheLockId, payload: payload }
-        queueCommandForArgs( queueCommandArgs )
+        var queueCommandArgs = { identifier: identifier, memcacheLockId: memcacheLockId, payload: payload }
+        return queueCommandForArgs( queueCommandArgs )
       }
 
       function queueCommandForArgs ( args ) {
         var identifier = args.identifier;
-        var memcaheLockId = args.memcaheLockId;
+        var memcacheLockId = args.memcacheLockId;
         var payload = args.payload;
 
-        console.log('memcaheLockId');
-        console.log(memcaheLockId);
+        console.log('memcacheLockId');
+        console.log(memcacheLockId);
 
         console.log('handlingCommand')
         console.log(identifier)
         console.log(lockId)
-        console.log(memcaheLockId)
+        console.log(memcacheLockId)
         console.log(JSON.stringify(payload))
 
         console.log('queueing task');
 
         handlingCommand = handlingCommand + 1;
 
-        queueCommand(client, item, identifier, memcaheLockId, payload, onQueueComplete);
+        queueCommand(client, item, identifier, memcacheLockId, payload, onQueueComplete);
 
         function onQueueComplete (error) {
           if (error) {
@@ -302,8 +314,8 @@ function CommandDelegator (config, logger) {
             console.log('command queued')
           }
 
-          memcached.del(memcaheLockId, function () {
-            console.log('memcached:del:', memcaheLockId)
+          memcached.del(memcacheLockId, function () {
+            console.log('memcached:del:', memcacheLockId)
             handlingCommand = handlingCommand - 1;
             maybeDie()
           })
@@ -325,3 +337,5 @@ function CommandDelegator (config, logger) {
 }
 
 util.inherits( CommandDelegator, events.EventEmitter )
+
+function isNotFalse ( datum ) { return datum !== false }

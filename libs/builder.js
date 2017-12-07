@@ -24,6 +24,8 @@ var glob = require( 'glob' )
 var setupBucket = require('./creator.js').setupBucket;
 var utils = require('./utils.js');
 
+// Util functions
+var protocolForDomain = utils.protocolForDomain;
 // Util streams
 var usingArguments = utils.usingArguments;
 var sink = utils.sink;
@@ -158,6 +160,7 @@ module.exports.start = function (config, logger) {
 
     var userid = data.userid;
     var site = data.sitename;
+    var siteBucket = data.siteBucket;
     var branch = data.branch;
     var deploys = data.deploys;
     var noDelay = data.noDelay || false;
@@ -178,7 +181,7 @@ module.exports.start = function (config, logger) {
 
       var siteName = siteData.name();
       var buildFolderRoot = '../build-folders';
-      var buildFolder = buildFolderRoot + '/' + Deploys.utilities.nameForSiteBranch( site, branch );
+      var buildFolder = buildFolderRoot + '/' + Deploys.utilities.nameForSiteBranch( site, siteBucket );
 
       /**
        * Do the site build.
@@ -199,12 +202,13 @@ module.exports.start = function (config, logger) {
           var buildtime = data.build_time ? Date.parse(data.build_time) : now;
           var buildDiff = Math.floor((buildtime - now)/1000);
           
-          var deploysToConsider = deploys.filter( isDeployForBranch( branch ) )
+          var deploysToConsider = deploys.slice( 0 )
           var maxParallel = config.get( 'builder' ).maxParallel;
           var purgeProxy = config.get( 'fastly' ).ip;
 
           var pipelineArgs = {
             siteName: siteName,
+            siteBucket: siteBucket,
             siteKey: siteValues.key,
             // queueDelayedJob args
             buildJobIdentifier: identifier,
@@ -355,7 +359,7 @@ module.exports.start = function (config, logger) {
               }
               
               miss.pipe(
-                usingArguments( { buildFolder: args.buildFolder } ),
+                usingArguments( { buildFolder: args.buildFolder, siteBuckets: [ args.siteBucket ] } ),
                 removeBuild(),
                 cacheData(),                  // adds { cachedData }
                 getBuildOrder(),              // adds { buildOrder }
@@ -536,7 +540,7 @@ module.exports.start = function (config, logger) {
             }
 
             // Transform stream expecting `args` object with shape.
-            // { buildFolder : String, buildOrder: [buildFiles], cachedData : String }
+            // { buildFolder : String, buildOrder: [buildFiles], cachedData : String, siteBuckets: [String] }
             // for each build order item, push { buildFolder, command, commandArgs }
             function feedBuilds () {
               return miss.through.obj( function ( args, enc, next ) {
@@ -545,10 +549,10 @@ module.exports.start = function (config, logger) {
 
                 var stream = this;
                 args.buildOrder
-                  .map( makeBuildCommandArguments )
+                  .map( makeBuildCommandArguments( args.siteBuckets ) ) // returns array of arrays for each site to build agains
+                  .reduce( function concat ( previous, current ) { return previous.concat( current ) }, [] ) // flattens into a single series of arrays to build
                   .concat( [ copyStaticCommandArgs() ] )
                   .forEach( function ( buildCommandArgs ) {
-
                     stream.push( buildCommandArgs )
                   } )
 
@@ -556,11 +560,15 @@ module.exports.start = function (config, logger) {
 
                 next()
 
-                function makeBuildCommandArguments ( buildFile ) {
-                  return {
-                    buildFolder: args.buildFolder,
-                    command: 'grunt',
-                    commandArgs: buildCommandForFile( buildFile ).concat( buildFlagsForFile( buildFile ) ) ,
+                function makeBuildCommandArguments ( siteBuckets ) {
+                  return function forFile ( buildFile ) {
+                    return siteBuckets.map( function ( siteBucket ) {
+                      return {
+                        buildFolder: args.buildFolder,
+                        command: 'grunt',
+                        commandArgs: buildCommandForFile( buildFile ).concat( buildFlagsForFile( siteBucket, buildFile ) ) ,
+                      }
+                    } )
                   }
                 }
 
@@ -579,8 +587,9 @@ module.exports.start = function (config, logger) {
               }
 
               function buildFlags ( cachedData ) {
-                return function buildFlagsForFile ( file ) {
-                  return [ '--inFile=' + file, '--data=' + cachedData, '--production=true', '--emitter' ]
+                return function buildFlagsForFile ( siteBucket, file ) {
+                  siteBucket = siteBucket.startsWith( 'http' ) ? siteBucket : '//' + siteBucket
+                  return [ '--inFile=' + file, '--data=' + cachedData, '--production=true', '--settings={"site_url":"'+ protocolForDomain( siteBucket ) +'"}', '--emitter' ]
                 }
               }
             }            
@@ -1018,7 +1027,7 @@ module.exports.start = function (config, logger) {
         console.log('domain-instance:error');
         console.log(err);
         console.log(err.stack);
-        var deployingToBuckets = deploys.filter( isDeployForBranch( branch ) ).map( function bucketForDeploy ( deploy ) { return deploy.bucket; } )
+        var deployingToBuckets = deploys.map( function bucketForDeploy ( deploy ) { return deploy.bucket; } )
         reportStatus(siteName, 'Failed to build, errors encountered in build process of ' + deployingToBuckets.join(', '), 1);
         jobCallback();
       });
