@@ -210,6 +210,10 @@ function CommandDelegator (config, logger) {
     }
 
     function handleCommandData ( commandData ) {
+      console.log( 'commandData:start' )
+      console.log( commandData )
+      console.log( 'commandData:end' )
+
       var payload = commandData.payload;
       var identifier = commandData.identifier;
 
@@ -236,6 +240,9 @@ function CommandDelegator (config, logger) {
           }
           siteBuckets = _.uniq( siteBuckets )
 
+          console.log( 'to-build' )
+          console.log( siteBuckets.map( toBuildCommandArgs ) )
+
           return siteBuckets.map( toBuildCommandArgs ).forEach( queueCommandForArgs )
 
           function toBuildCommandArgs ( siteBucket ) {
@@ -250,6 +257,7 @@ function CommandDelegator (config, logger) {
             }
             return {
               identifier: identifier,
+              memcacheLockId: memcacheLockId,
               payload: Object.assign( {}, payloadBase, payload ),
             }
           }
