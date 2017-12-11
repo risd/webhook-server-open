@@ -18,65 +18,113 @@ var commandDelegator = require( '../libs/commandDelegator.js' );
 
 webhookTasks( grunt );
 
+var siteCmdOptions = {
+  build: {
+    edu: eduBuildData,
+    eduTest: eduTestBuildData,
+  },
+  previewBuild: {
+    edu: eduBuildData,
+  },
+  siteSearchReindex: {
+    edu: eduIndexData
+  }
+}
+
+var cmd = parseArgs( process.argv.slice( 2 ) )
+if ( ! cmd ) return printHelp()
+
 var commandor = commandDelegator.start( grunt.config, grunt.log )
 
-var timeoutPayload = {
-  "id":"1505343488488d6a0f192f9f34ad1b7cf43bd43e916f1",
-  "userid":"rrodrigu@risd.edu",
-}
-
-var buildPayload = {
-  "id": "150535463822552ff3ac6153b4bf1beaba927d2b36522",
-  "sitename": "edu,1risd,1systems",
-  "userid": "mgdevelopers@risd.edu",
-  "branch": "develop",
-  "deploys": [
-    { "branch":"develop", "bucket":"edu.risd.systems" },
-  ]
-}
-
-var commandData = {
-  "identifier": "risd-sei,1risd,1systems_develop",
-  "payload": buildPayload,
-}
-
-var coordinator = createInstances()
-  .base( commandData )
-  .instances( 20 );
-
-// when the command delegator is ready, it emits its
-// command handlers. These are the functions that are
-// connected to firebase command trees. Allowing you to
-// call the command delegator from outside of firebase,
-// and still use the 
 commandor.on( 'ready', function ( commandHandlers ) {
-  coordinator.runFn( commandHandlers.bind( null, 'build' ) )
+  console.log( 'commandHandlers' )
+  console.log( commandHandlers )
+  if ( Array.isArray( cmd ) ) {
+    cmd.forEach( handleCmd  )
+  }
+  else if ( typeof cmd === 'object') {
+    handleCmd( cmd )
+  }
+
+  function handleCmd ( cmdArgs ) {
+    commandHandlers( cmdArgs.cmdType, cmdArgs.data() )
+  }
+
 } )
 
-function createInstances () {
-  var self = this;
-  var instanceBase;
-  var numberOfInstances = 1;
-
-  this.base = function (x) {
-    if ( !arguments.length ) return instanceBase;
-    instanceBase = x;
-    return self;
-  }
-
-  this.instances = function (x) {
-    if ( !arguments.length ) return numberOfInstances;
-    numberOfInstances = x;
-    return self;
-  }
-
-  this.runFn = function ( fn ) {
-    for (var i = 0; i < numberOfInstances; i++) {
-      var payload = Object.assign( { instance: i }, instanceBase.payload )
-      var data = Object.assign( { payload: payload }, instanceBase )
-      fn( data )
+function parseArgs ( args ) {
+  var cmd = false;
+  var cmdType = args[ 0 ]
+  if ( cmdType in siteCmdOptions ) {
+    var site = args[ 1 ].split( '=' )[ 1 ]
+    if ( site in siteCmdOptions[ cmdType ] ) {
+      var data = siteCmdOptions[ cmdType ][ site ]
+      cmd = { cmdType: cmdType, data: data }
     }
   }
+  return cmd;
+}
 
-  return this;
+function printHelp () {
+  var msg = `command-delegator-push {cmd-type} --site={site-name}\nPossible values include:\n\t${ possibleCmds().map( cmdList ).join( '\n\t' ) }`
+  return console.log( msg )
+
+  function cmdList( cmd ) {
+    return `${ cmd.cmdType } --site=${ cmd.site }`
+  }
+
+  function possibleCmds () {
+    return Object.keys( siteCmdOptions )
+      .map( cmdNestedSitesCmds )
+      .reduce( concatSites, [] )
+    
+    function cmdNestedSitesCmds ( cmdType ) {
+      return { cmdType: cmdType, sites: Object.keys( siteCmdOptions[ cmdType ] ) }
+    }
+
+    function concatSites ( previous, current ) {
+      return previous.concat( current.sites.map( flattenSites ) )
+
+      function flattenSites ( site ) {
+        return { cmdType: current.cmdType, site: site }
+      }
+    }
+  }
+}
+
+function eduBuildData () {
+  return {
+    payload: {
+      contentType: '404',
+      id: '151268050854333240875eb644fc49e5329d947dd6e5c',
+      itemKey: '404',
+      sitename: 'edu,1risd,1systems',
+      userid: 'rrodrigu@risd.edu'
+    },
+    identifier: 'edu,1risd,1systems',
+  }
+}
+
+function eduTestBuildData () {
+  return {
+    payload: {
+      contentType: '404',
+      id: '151268050854333240875eb644fc49e5329d947dd6e5c',
+      itemKey: '404',
+      sitename: 'edutest,1risd,1systems',
+      userid: 'rrodrigu@risd.edu'
+    },
+    identifier: 'edutest,1risd,1systems',
+  }
+}
+
+function eduIndexData () {
+  return {
+    payload: {
+      id: '1512680753439863aed1ecde744e697e585110e664d32',
+      sitename: 'edu,1risd,1systems',
+      userid: 'rrodrigu@risd.edu'
+    },
+    identifier: 'edu,1risd,1systems',
+  }
 }
