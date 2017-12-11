@@ -240,9 +240,6 @@ function CommandDelegator (config, logger) {
           }
           siteBuckets = _.uniq( siteBuckets )
 
-          console.log( 'to-build' )
-          console.log( siteBuckets.map( toBuildCommandArgs ) )
-
           return siteBuckets.map( toBuildCommandArgs ).forEach( queueCommandForArgs )
 
           function toBuildCommandArgs ( siteBucket ) {
