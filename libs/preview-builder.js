@@ -198,7 +198,6 @@ module.exports.start = function ( config, logger ) {
 
         var commonArgs = [
           '--settings={"site_url":"'+ protocolForDomain( streamArgs.siteBucket ) +'"}',
-          '--data=.build/data.json',
           '--production=true',
           '--emitter'
         ]
