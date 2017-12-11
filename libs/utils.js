@@ -158,28 +158,35 @@ function uploadIfDifferent ( options ) {
       retryableUpload( retryableUploadOptions )
 
       function retryableUpload ( uploadOptions ) {
-
-        cloudStorage.objects.uploadCompressed( uploadOptions, function ( error, uploadResponse ) {
-          if ( error ) {
-            console.log( 'conditional-upload:error' )
-            console.log( error )
-            if ( uploadOptions.retry < 5 && ( error === 429 || error.toString().startsWith( 5 ) ) ) {
-              uploadOptions.retry = uploadOptions.retry + 1;
-              setTimeout( function () {
-                console.log( 'conditional-upload:retry:' + uploadOptions.retry )
-                retryableUpload( uploadOptions )
-              }, exponentialBackoff( uploadOptions.retry ) )
-            } else {
-              args.fileUploaded = false;
+        try {
+          cloudStorage.objects.uploadCompressed( uploadOptions, function ( error, uploadResponse ) {
+            if ( error ) {
+              console.log( 'conditional-upload:error' )
+              console.log( error )
+              if ( uploadOptions.retry < 5 && ( error === 429 || error.toString().startsWith( 5 ) ) ) {
+                uploadOptions.retry = uploadOptions.retry + 1;
+                setTimeout( function () {
+                  console.log( 'conditional-upload:retry:' + uploadOptions.retry )
+                  retryableUpload( uploadOptions )
+                }, exponentialBackoff( uploadOptions.retry ) )
+              } else {
+                args.fileUploaded = false;
+                next( null, args )
+              }
+            }
+            else {
+              args.fileUploaded = true;
               next( null, args )
             }
-          }
-          else {
-            args.fileUploaded = true;
-            next( null, args )
-          }
-          
-        } )
+            
+          } )
+
+        } catch ( error ) {
+          console.log( 'retryable-upload-error' )
+          console.log( error.message )
+          console.log( error.stack )
+          next( null, args )
+        }
 
       }
 
