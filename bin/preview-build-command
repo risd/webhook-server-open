@@ -36,14 +36,14 @@ function eduTest () {
   var data = {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"edu,1risd,1systems",
+    "sitename":"edutest,1risd,1systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
-    "contentType": "employees",
-    "itemKey": "-KKrlLnwu3uGNKo5SI7x",
-    "siteBucket": "edu.risd.systems",
+    "contentType": "homepage",
+    "itemKey": "homepage",
+    "siteBucket": "dev.edutest.risd.systems",
     "deploys": [
-      { branch: 'develop', bucket: 'edu.risd.systems' }
+      { branch: 'develop', bucket: 'dev.edutest.risd.systems' }
     ]
   }
   var identifier = "previewBuild_edu,1risd,1systems-employee---KKrlLnwu3uGNKo5SI7x"

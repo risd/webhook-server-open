@@ -12,6 +12,7 @@ var throughConcurrent = require( 'through2-concurrent' )
 var Deploys = require( 'webhook-deploy-configuration' )
 var utils = require( './utils.js' )
 var path = require( 'path' )
+var fs = require( 'fs' )
 
 // Util streams
 var usingArguments = utils.usingArguments;
@@ -79,6 +80,7 @@ module.exports.start = function ( config, logger ) {
 
     return miss.pipe(
       usingArguments( previewBuildArgs ),
+      oneOffTransform(),
       runBuildEmitter( runBuildEmitterOptions ),
       uploadIfDifferent(),
       sink(),
@@ -87,10 +89,56 @@ module.exports.start = function ( config, logger ) {
         jobCallback()
       } )
 
+    function oneOffTransform () {
+      return miss.through.obj( function ( row, enc, next ) {
+        miss.pipe(
+          usingArguments( row ),
+          oneOffPath(),   // adds { oneOffPath? } custom URL if one exists
+          sink( function ( subrow ) {
+            row = Object.assign( {}, subrow ) 
+          } ),
+          function ( error ) {
+            if ( error ) return next( error )
+            next( null, row )
+          } )
+      } )
+
+      function oneOffPath () {
+        return miss.through.obj( function ( row, enc, next ) {
+          if ( row.contentType !== row.itemKey ) return next( null, row )
+          try {
+            fs.readFile( path.join( row.buildFolder, '.build', 'data.json' ), function ( error, dataBuffer ) {
+              if ( error ) return next( error )
+              var data = JSON.parse( dataBuffer.toString() )
+              
+              if ( isOneOff() && customUrl() ) {
+                return next( null, Object.assign( { oneOffPath: customUrl() }, row ) )
+              } else {
+                return next( null, Object.assign( { oneOffPath: false }, row ) )
+              }
+
+              function isOneOff () { return data.typeInfo[ row.contentType ].oneOff; }
+              function customUrl () {
+                try {
+                  return data.typeInfo[ row.contentType ].customUrls.listUrl  
+                } catch ( error ) {
+                  return false;
+                }
+              }
+
+            } )  
+          } catch( error ) {
+            next( error )
+          }
+        } )
+      }
+    }
+
     function runBuildEmitter ( options ) {
       var maxParallel = options.maxParallel;
 
-      // grunt build-template --inFile=templates/{content-type}/individual.html --itemKey={itemKey}
+      // multiple - grunt build-template --inFile=templates/{content-type}/individual.html --itemKey={itemKey}
+      // one off  - grunt build-page --inFile=pages/{one-off-path}
       
       return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
 
@@ -99,6 +147,7 @@ module.exports.start = function ( config, logger ) {
         console.log( 'run-build-emitter:start' )
 
         var cmdArgs = streamToCommandArgs( args )
+
         var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
 
         var errored = false;
@@ -142,14 +191,21 @@ module.exports.start = function ( config, logger ) {
       } )
 
       function streamToCommandArgs ( streamArgs ) {
-        var individualTemplate = path.join( 'templates', streamArgs.contentType, 'individual.html' )
-        return [ 'grunt',
-          [ 'build-template', '--inFile=' + individualTemplate, '--itemKey=' + streamArgs.itemKey, '--settings={"site_url":"'+ protocolForDomain( streamArgs.siteBucket ) +'"}', '--data=.build/data.json', '--production=true', '--emitter' ],
-          {
-            stdio: 'pipe',
-            cwd: streamArgs.buildFolder
-          }
+
+        var cmdArgs = streamArgs.oneOffPath
+          ? [ 'build-page', '--inFile=' + path.join( 'pages', streamArgs.oneOffPath ) ]
+          : [ 'build-template', '--inFile=' + path.join( 'templates', streamArgs.contentType, 'individual.html' ), '--itemKey=' + streamArgs.itemKey, ]
+
+        var commonArgs = [
+          '--settings={"site_url":"'+ protocolForDomain( streamArgs.siteBucket ) +'"}',
+          '--data=.build/data.json',
+          '--production=true',
+          '--emitter'
         ]
+
+        cmdArgs = cmdArgs.concat( commonArgs )
+
+        return [ 'grunt', cmdArgs, { stdio: 'pipe', cwd: streamArgs.buildFolder, } ]
       }
 
     }

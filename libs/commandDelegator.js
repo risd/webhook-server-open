@@ -277,7 +277,7 @@ function CommandDelegator (config, logger) {
 
             function toPreviewBuildArgs ( siteBucket ) {
               var previewIdentifier = [ payload.sitename, siteBucket, payload.contentType, payload.itemKey ].join( '_' )
-              var memcacheLockId = [ 'previewBuild', identifier, 'queued' ].join( '_' )
+              var memcacheLockId = [ 'previewBuild', previewIdentifier, 'queued' ].join( '_' )
               return {
                 identifier: previewIdentifier,
                 memcacheLockId: memcacheLockId,
