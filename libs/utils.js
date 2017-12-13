@@ -243,7 +243,9 @@ function cachePurge ( options ) {
 function protocolForDomain ( domain ) {
   return domain.startsWith( 'http' )
     ? domain
-    : [ '//', domain ].join( '' )
+    : domain.startsWith( '//' )
+      ? domain
+      : [ '//', domain ].join( '' )
 }
 
 function redirectTemplateForDestination ( destination ) {
