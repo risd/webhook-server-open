@@ -38,8 +38,7 @@ if ( ! cmd ) return printHelp()
 var commandor = commandDelegator.start( grunt.config, grunt.log )
 
 commandor.on( 'ready', function ( commandHandlers ) {
-  console.log( 'commandHandlers' )
-  console.log( commandHandlers )
+  
   if ( Array.isArray( cmd ) ) {
     cmd.forEach( handleCmd  )
   }

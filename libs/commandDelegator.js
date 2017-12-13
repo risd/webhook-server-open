@@ -245,10 +245,10 @@ function CommandDelegator (config, logger) {
           function toBuildCommandArgs ( siteBucket ) {
             var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, siteBucket )
             var memcacheLockId = [ item.lock, identifier, 'queued' ].join( '_' )
-            var deploys = configuration.deploys.filter( function ( deploy ) { return deploy.bucket === siteBucket } )
-            var branches = deploys.map( function ( deploy ) { return deploy.branch } )
+            var deploysForBuild = configuration.deploys.filter( function ( deploy ) { return deploy.bucket === siteBucket } )
+            var branches = deploysForBuild.map( function ( deploy ) { return deploy.branch } )
             var payloadBase = {
-              deploys: deploys,
+              deploys: deploysForBuild,
               siteBucket: siteBucket,
               branch: branches[ 0 ],
             }
