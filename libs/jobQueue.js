@@ -61,7 +61,8 @@ module.exports.init = function (config) {
     client.connect(config.get('beanstalkServer'), function(err, conn) {
       if(err) {
         console.log( 'connect-error' )
-        console.log('Error: ' + err);
+        console.log('Error: ' + err.message);
+        console.log(err.stack);
         process.exit(1);
       }
 
@@ -134,6 +135,73 @@ module.exports.init = function (config) {
         process.exit(1);
     });
   };
+
+
+  self.destroyJobs = function ( options, callback ) {
+    var tube = options.tube;
+    var client = new beanstalkd.Client();
+
+    client.connect( config.get( 'beanstalkServer' ), function ( error, conn ) {
+      if ( error ) {
+        logError( 'connect-error', error )
+        return callback( error )
+      }
+
+      conn.use( tube, function ( error, tubename ) {
+        if ( error ) {
+          logError( 'tube-error', error )
+          return callback( error )
+        }
+
+        conn.watch( tube, function ( error, tubename ) {
+          if ( error ) {
+            logError( 'watch-error', error )
+            return callback( error )
+          }
+
+          // destroy all jobs in tube
+          var expired = false;
+          // set timer
+          var expiration = setTimeout( function () {
+            expired = true;
+          }, 5000 )
+
+          return async.whilst( hasNotExpired, popJobs, callback )
+
+          function hasNotExpired () {
+            return expired === false;
+          }
+
+          function popJobs ( done ) {
+            expiration = setTimeout( function () {
+              expired = true;
+              done()
+            }, 5000 )
+
+            conn.reserve( function ( error, id, payload ) {
+            
+              clearTimeout( expiration )
+            
+              if ( error ) {
+                logError( 'reserve-error', error )
+                return callback()
+              }
+
+              console.log( 'destroying:reserve-id-' + id + ':' + JSON.parse(payload).identifier)
+              conn.destroy( id, done )
+            } )
+          }
+        } )
+
+      } )
+    } )
+
+    function logError( name, error ) {
+      console.log( name )
+      console.log( 'Error: ', error.message )
+      console.log( error.stack )
+    }
+  }
 
   /*
   * Unlocks a job on the given lock

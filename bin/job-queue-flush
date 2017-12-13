@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+
+/**
+ * The purpose of this module is to flush the beanstalk
+ * queue of all of its queued jobs.
+ *
+ * Expects a list of arguments of the tube names to flush.
+ *
+ * For example:
+ *
+ * ./bin/job-queue-flush build
+ *
+ * will remove all build jobs that are queued in beanstalk.
+ */
+
+var grunt = require( 'grunt' )
+var async = require( 'async' )
+var webhookTasks = require( '../Gruntfile.js' )
+webhookTasks( grunt )
+
+var jobQueue = require( '../libs/jobQueue.js' ).init( grunt.config )
+
+var tubes = process.argv.slice( 2 )
+
+var destroyTubeJobs = function ( tube ) {
+  return function task ( taskComplete ) {
+    jobQueue.destroyJobs( { tube: tube }, taskComplete )
+  }
+}
+
+async.series( tubes.map( destroyTubeJobs ), onComplete )
+
+function onComplete () {
+  process.exit( 0 )
+}
