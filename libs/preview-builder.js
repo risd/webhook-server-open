@@ -148,6 +148,8 @@ module.exports.start = function ( config, logger ) {
 
         var cmdArgs = streamToCommandArgs( args )
 
+        console.log( cmdArgs[ 1 ] )
+
         var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
 
         var errored = false;
@@ -193,7 +195,9 @@ module.exports.start = function ( config, logger ) {
       function streamToCommandArgs ( streamArgs ) {
 
         var cmdArgs = streamArgs.oneOffPath
-          ? [ 'build-page', '--inFile=' + path.join( 'pages', streamArgs.oneOffPath ) ]
+          ? streamArgs.oneOffPath.startsWith( 'pages' )
+            ? [ 'build-page', '--inFile=' + streamArgs.oneOffPath ]
+            : [ 'build-template', '--inFile=' + streamArgs.oneOffPath ]
           : [ 'build-template', '--inFile=' + path.join( 'templates', streamArgs.contentType, 'individual.html' ), '--itemKey=' + streamArgs.itemKey, ]
 
         var commonArgs = [
