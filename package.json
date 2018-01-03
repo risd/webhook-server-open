@@ -18,6 +18,10 @@
     "extract-key": "grunt extractKey",
     "dev": "nf start --procfile=Procfile.dev"
   },
+  "engines": {
+    "node": "^6.12.3",
+    "npm": "^5.6.0"
+  },
   "dependencies": {
     "adm-zip": "~0.4.3",
     "archiver": "~0.10.0-alpha",
