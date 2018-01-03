@@ -1,4 +1,5 @@
 table host_backends_map {
+  "perpetualhappiness.com": "0001.test.risd.systems",
   "test.risd.systems": "0001.test.risd.systems"
 }
 
