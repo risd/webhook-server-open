@@ -3,6 +3,7 @@
 // Requires
 var fs = require('fs');
 var url = require( 'url' )
+var assert = require( 'assert' )
 var firebase = require('firebase');
 var colors = require('colors');
 var _ = require('lodash');
@@ -110,30 +111,24 @@ module.exports.start = function (config, logger) {
    */
   var downloadSiteZip = function(buildFolders, sitename, branch, callback) {
   	var branchFileName = Deploys.utilities.fileForSiteBranch( sitename, branch )
-    cloudStorage.objects.get(config.get('sitesBucket'), branchFileName, function(err, data) {
-    	if ( err ) {
-    		var defaultFileName = sitename + '.zip'
-    		cloudStorage.objects.get(config.get('sitesBucket'), defaultFileName, onDownload)
-    	} else {
-    		onDownload( err, data )
-    	}
-
-	    function onDownload ( err, data ) {
-	    	if ( err ) return callback( err )
-	    	console.log( 'download-site-zip:err' )
-	      console.log( err )
-
-	      if(fs.existsSync(buildFolders + '/' + branchFileName )) {
-	        fs.unlinkSync(buildFolders + '/' + branchFileName);
-	      }
-
-	      fs.writeFileSync(buildFolders + '/' + branchFileName, data);
-
-	      callback( null, branchFileName );
-	    }
-	  })
+    
+    cloudStorage.objects.get(config.get('sitesBucket'), branchFileName, onDownload)
 
 	  return branchFileName.slice( 0, branchFileName.indexOf( '.zip' ) )
+
+    function onDownload ( err, data ) {
+      if ( err ) return callback( err )
+      console.log( 'download-site-zip:err' )
+      console.log( err )
+
+      if(fs.existsSync(buildFolders + '/' + branchFileName )) {
+        fs.unlinkSync(buildFolders + '/' + branchFileName);
+      }
+
+      fs.writeFileSync(buildFolders + '/' + branchFileName, data);
+
+      callback( null, branchFileName );
+    }
   }
 
   self.root.auth(config.get('firebaseSecret'), function(err) {
@@ -588,7 +583,6 @@ module.exports.start = function (config, logger) {
 
               function buildFlags ( cachedData ) {
                 return function buildFlagsForFile ( siteBucket, file ) {
-                  siteBucket = siteBucket.startsWith( 'http' ) ? siteBucket : '//' + siteBucket
                   return [ '--inFile=' + file, '--data=' + cachedData, '--production=true', '--settings={"site_url":"'+ protocolForDomain( siteBucket ) +'"}', '--emitter' ]
                 }
               }
@@ -1041,6 +1035,9 @@ module.exports.start = function (config, logger) {
         if(!fs.existsSync(buildFolder + '/.fb_version' + siteValues.version)) {
 
           console.log('download-zip:start')
+          if ( site === 'edu,1risd,1systems' && siteBucket === 'www.risd.edu' ) {
+            assert( branch === 'master', 'This should be the master branch' )
+          }
           downloadSiteZip(buildFolderRoot, site, branch, function( downloadError, downloadedFile ) {
             if ( downloadError ) throw downloadError;
 

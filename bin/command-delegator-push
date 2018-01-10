@@ -95,9 +95,9 @@ function printHelp () {
 function eduBuildData () {
   return {
     payload: {
-      contentType: '404',
+      contentType: 'homepage',
       id: '151268050854333240875eb644fc49e5329d947dd6e5c',
-      itemKey: '404',
+      itemKey: 'homepage',
       sitename: 'edu,1risd,1systems',
       userid: 'rrodrigu@risd.edu'
     },

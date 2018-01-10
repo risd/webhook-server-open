@@ -246,16 +246,15 @@ function CommandDelegator (config, logger) {
             var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, siteBucket )
             var memcacheLockId = [ item.lock, identifier, 'queued' ].join( '_' )
             var deploysForBuild = configuration.deploys.filter( function ( deploy ) { return deploy.bucket === siteBucket } )
-            var branches = deploysForBuild.map( function ( deploy ) { return deploy.branch } )
-            var payloadBase = {
-              deploys: deploysForBuild,
+            var payloadArgs = {
               siteBucket: siteBucket,
-              branch: branches[ 0 ],
+              deploys: deploysForBuild,
+              branch: deploysForBuild[ 0 ].branch,
             }
             return {
               identifier: identifier,
               memcacheLockId: memcacheLockId,
-              payload: Object.assign( {}, payloadBase, payload ),
+              payload: Object.assign( {}, payload, payloadArgs ),
             }
           }
         } )
