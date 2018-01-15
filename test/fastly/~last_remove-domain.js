@@ -16,5 +16,4 @@ test( 'remove-domain', function ( t ) {
     t.ok( error === null, 'The error should be undefined.' )
     t.ok( typeof service === 'object', 'The service should be represented by an object.' )
   } )
-
 } )
