@@ -25,6 +25,7 @@ var delegator = require('./libs/commandDelegator.js');
 var backup = require('./libs/backup.js');
 var extractKey = require('./libs/extractKey.js');
 var previewBuilder = require('./libs/preview-builder.js');
+var domainMapper = require('./libs/domain-mapper.js');
 var timeoutWorker = require('./libs/timeout-worker.js');
 
 require('dotenv').config({ silent: true });
@@ -88,6 +89,11 @@ module.exports = function(grunt) {
     var done = this.async();
     previewBuilder.start( grunt.config, grunt.log );
   });
+
+  grunt.registerTask('domainMapper', 'Worker that updates domain mappings within fastly.', function () {
+    var done = this.async();
+    domainMapper.start( grunt.config, grunt.log );
+  } )
 
   grunt.registerTask('siteIndexWorker', 'Worker that handles synchronizing a site Firebase data with its Elastic Search index.', function() {
     var done = this.async();

@@ -10,6 +10,7 @@
     "invite-worker": "grunt inviteWorker",
     "create-worker": "grunt createWorker",
     "build-worker": "grunt buildWorker",
+    "domain-mapper": "grunt domainMapper",
     "site-index-worker": "grunt siteIndexWorker",
     "redirects-worker": "grunt redirectsWorker",
     "preview-build-worker": "grunt previewBuildWorker",

@@ -8,9 +8,12 @@ var async = require( 'async' )
 // base configuration of the service
 var DICTIONARY_REDIRECT_HOSTS = 'dictionary_redirect_hosts';
 var DICTIONARY_REDIRECT_URLS = 'dictionary_redirect_urls';
+var DICTIONARY_HOST_BACKENDS = 'dictionary_host_backends'
 var SNIPPET_RECV_REDIRECT_URLS = 'recv_redirect_urls';
 var SNIPPET_RECV_REDIRECT_HOSTS = 'recv_redirect_hosts';
 var SNIPPET_RECV_TRAILING_SLASH = 'recv_trailing_slash';
+var SNIPPET_RECV_BACKEND_MAPPING = 'recv_backend_mapping';
+var SNIPPET_FETCH_RESTORE_ORIGINAL_HOST = 'fetch_restore_original_host';
 var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
 
 module.exports = FastlyWebhookService;
@@ -52,6 +55,8 @@ FastlyWebhookService.prototype.isNotIgnoredDomain = isNotIgnoredDomain;
 FastlyWebhookService.prototype.domain = addDomains;
 FastlyWebhookService.prototype.removeDomain = removeDomains;
 FastlyWebhookService.prototype.redirects = setRedirects;
+FastlyWebhookService.prototype.mapDomain = mapDomain;
+FastlyWebhookService.prototype.removeMapDomain = removeMapDomain;
 FastlyWebhookService.prototype.activate = function activator ( complete ) {
   var serviceOptions = {
     service_id: this._service_id,
@@ -101,10 +106,13 @@ function initializeService ( service_id, complete ) {
       var getOrCreateTasks = [
           dictionaryArguments( DICTIONARY_REDIRECT_HOSTS ),
           dictionaryArguments( DICTIONARY_REDIRECT_URLS ),
+          dictionaryArguments( DICTIONARY_HOST_BACKENDS ),
           snippetArguments( SNIPPET_RECV_REDIRECT_URLS ),
           snippetArguments( SNIPPET_RECV_REDIRECT_HOSTS ),
           snippetArguments( SNIPPET_ERROR_REDIRECT ),
           snippetArguments( SNIPPET_RECV_TRAILING_SLASH ),
+          snippetArguments( SNIPPET_RECV_BACKEND_MAPPING ),
+          snippetArguments( SNIPPET_FETCH_RESTORE_ORIGINAL_HOST ),
         ]
         .map( updator.mapVersionedTask )
 
@@ -308,6 +316,155 @@ function addDomains ( domains, complete ) {
       }
       
       return ops;
+    }
+  }
+}
+
+/**
+ * Ensure the dictionary_host_backends table includes
+ * the maskDomain as a key, and the content domain as
+ * its value.
+ * 
+ * @param  {object|array} options[]
+ * @param  {string} options[].maskDomain
+ * @param  {string} options[].contentDomain
+ * @param  {function} complete The callback function to call upon completion
+ */
+function mapDomain ( options, complete ) {
+  var self = this;
+  if ( ! Array.isArray( options ) && typeof options === 'object' ) options =  [ options ]
+
+  var mapDomainOptions = options.map( toMapDomainOptions )
+
+  // This function performs a series of tasks that update this object
+  // which represents the arguments for a series of functions that will
+  // update the appropriate table in Fastly
+  var mapDomainItemArguments = { operations: mapDomainOperationsFor( mapDomainOptions ) }
+
+  var tasks = [ dictionaryIdForName( DICTIONARY_HOST_BACKENDS  ), mapDomainDictionaryUpdateFor( mapDomainItemArguments ) ];
+
+  return async.series( tasks, function ( error, taskResults ) {
+    if ( error ) return complete ( error )
+    complete( null, taskResults[ taskResults.length - 1 ] )
+  } )
+
+  function toMapDomainOptions ( domainPair ) {
+    return { item_key: domainPair.maskDomain, item_value: domainPair.contentDomain }
+  }
+
+  function mapDomainOperationsFor ( mapDomains ) {
+    return function mapDomainOperations ( hostBackendTable ) {
+      var ops = []
+
+      for (var i = 0; i < mapDomains.length; i++) {
+        var op = 'create';
+        var baseOperation = mapDomains[ i ];
+
+        for (var j = 0; j < hostBackendTable.length; j++) {
+          if ( hostBackendTable[ j ].item_key === baseOperation.item_key ) {
+            if ( hostBackendTable[ j ].item_value === baseOperation.item_value ) {
+              // key & value pair already exists, do nothing
+              op = false;
+            }
+            else {
+              // key exists with another value, patch the value
+              op = 'update'
+            }
+          }
+        }
+
+        if ( op ) ops = ops.concat( [ Object.assign( { op: op }, baseOperation ) ] )
+      }
+
+      return ops;
+    }
+  }
+
+  function dictionaryIdForName ( dictionaryName ) {
+    return function addDictionaryId ( taskComplete ) {
+      self.dictionaryId( dictionaryName, function ( error, dictionaryId ) {
+        if ( error ) return taskComplete( error )
+        mapDomainItemArguments.id = dictionaryId;
+        taskComplete()
+      } )
+    }
+  }
+
+  function mapDomainDictionaryUpdateFor ( dictionaryItemArguments ) {
+    return function mapDomainDictionaryUpdate ( taskComplete ) {
+      serviceConfigurationUpdater.apply( self )
+        .mapVersionlessTask( apiDictionaryItemArguments( dictionaryItemArguments ) )( taskComplete )
+
+    }
+  }
+}
+
+/**
+ * Ensure the dictionary_host_backends table does not include
+ * the maskDomain as a key.
+ * 
+ * @param  {object|array} options[]
+ * @param  {string} options[].maskDomain
+ * @param  {function} complete The callback function to call upon completion
+ */
+function removeMapDomain ( options, complete ) {
+  var self = this;
+  if ( ! Array.isArray( options ) && typeof options === 'object' ) options = [ options ]
+
+  var removeMapDomainOptions = options.map( toRemoveMapDomainOptions )
+
+  // This function is a series of tasks that update this object
+  // which represents the arguments for a series of functions that will
+  // update the appropriate table in fastly
+  var removeMapDomainItemArguments = { operations: removeMapDomainOperationsFor( removeMapDomainOptions ) }
+
+  var tasks = [ dictionaryIdForName( DICTIONARY_HOST_BACKENDS ), mapDomainDictionaryUpdateFor( removeMapDomainItemArguments )  ]
+
+  return async.series( tasks, function ( error, taskResults ) {
+    if ( error ) return complete ( error )
+    complete( null, taskResults[ taskResults.length - 1 ] )
+  } )
+
+  function toRemoveMapDomainOptions( domainSingle ) {
+    return { item_key: domainSingle.maskDomain }
+  }
+
+  function removeMapDomainOperationsFor ( removeMapDomains ) {
+    return function removeMapDomainOperations( hostBackendTable ) {
+      var ops = [];
+
+      for (var i = 0; i < removeMapDomains.length; i++) {
+        var baseOperation = removeMapDomains[ i ];
+        var op = false;  // do nothing by default
+
+        for (var j = 0; j < hostBackendTable.length; j++) {
+          if ( hostBackendTable[ j ].item_key === baseOperation.item_key ) {
+            op = 'delete' // there is a matching key, lets remove it
+          }
+        }
+
+        if ( op ) ops = ops.concat( [ Object.assign( { op: op }, baseOperation ) ] )
+      }
+
+      return ops;
+    }
+  }
+
+  function dictionaryIdForName ( dictionaryName ) {
+    return function addDictionaryId ( taskComplete ) {
+      self.dictionaryId( dictionaryName, function ( error, dictionaryId ) {
+        if ( error ) return taskComplete( error )
+        removeMapDomainItemArguments.id = dictionaryId;
+        taskComplete()
+      } )
+    }
+  }
+
+  function mapDomainDictionaryUpdateFor ( dictionaryItemArguments ) {
+    return function mapDomainDictionaryUpdate ( taskComplete ) {
+      serviceConfigurationUpdater.apply( self )
+        .mapVersionlessTask( apiDictionaryItemArguments( dictionaryItemArguments ) )( taskComplete )
+
     }
   }
 }
@@ -963,16 +1120,16 @@ function serviceConfigurationUpdater () {
             service_id: service_id,
             snippet_id: snippet_id,
           } )
-
+          
           return subTaskComplete( null, updateArgs )  
         }
         catch ( error ) {
-          return subTaskComplete( error )
+          return subTaskComplete()
         }
       }
 
       function ifUpdateEnsureDevelopementVersion ( updateArgs, subTaskComplete ) {
-        if ( ! updateArgs ) return subTaskComplete()
+        if ( typeof updateArgs === 'function' ) return updateArgs()
         return self._ensureDevelopmentVersion( onVersion )
 
         function onVersion ( error ) {
@@ -984,6 +1141,7 @@ function serviceConfigurationUpdater () {
       }
 
       function putUpdate ( updateArgs, subTaskComplete ) {
+        if ( typeof updateArgs === 'function' ) return updateArgs()
         return apiRequest.apply( self, updateArgs.concat( [ subTaskComplete ] ) )
       }
     }
@@ -1159,6 +1317,29 @@ function baseSnippets ( name ) {
         set req.http.x-redirect-location = req.url "/";
         error 301;
       }`,
+    }
+  }
+  snippets[ SNIPPET_RECV_BACKEND_MAPPING ] = function () {
+    return {
+      name: SNIPPET_RECV_BACKEND_MAPPING,
+      dynamic: 1,
+      type: 'recv',
+      priority: 105,
+      content: `if ( table.lookup( dictionary_host_backends, req.http.host ) ) {
+        set req.http.requseted-host = req.http.host;
+        set req.http.host = table.lookup( dictionary_host_backends, req.http.host );
+      }`
+    }
+  }
+  snippets[ SNIPPET_FETCH_RESTORE_ORIGINAL_HOST ] = function () {
+    return {
+      name: SNIPPET_FETCH_RESTORE_ORIGINAL_HOST,
+      dynamic: 1,
+      type: 'fetch',
+      priority: 105,
+      content: `if ( req.http.requseted-host ) {
+        set req.http.host = req.http.requseted-host;
+      }`
     }
   }
   snippets[ SNIPPET_ERROR_REDIRECT ] = function () {

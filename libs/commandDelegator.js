@@ -70,6 +70,7 @@ function CommandDelegator (config, logger) {
     { commands: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
     { commands: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
     { commands: 'management/commands/redirects/', lock: 'redirects', tube: 'redirects' },
+    { commands: 'management/commands/domainMap/', lock: 'domainMap', tube: 'domainMap' },
   ];
 
   var commandHandlersStore = commandHandlersInterface();
