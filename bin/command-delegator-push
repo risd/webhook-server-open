@@ -28,8 +28,11 @@ var siteCmdOptions = {
     eduTest: eduTestPreviewBuildData,
   },
   siteSearchReindex: {
-    edu: eduIndexData
-  }
+    edu: eduIndexData,
+  },
+  domainMap: {
+    uniquecli: uniqueCliDomainMap,
+  },
 }
 
 var cmd = parseArgs( process.argv.slice( 2 ) )
@@ -130,5 +133,18 @@ function eduIndexData () {
       userid: 'rrodrigu@risd.edu'
     },
     identifier: 'edu,1risd,1systems',
+  }
+}
+
+function uniqueCliDomainMap () {
+  return {
+    payload: {
+      id: '12307adjhaf0923',
+      sitename: 'unique-cli-test,1risd,1systems',
+      userid: 'rrodrigu@risd.edu',
+      maskDomain: 'test.risd.systems',
+      contentDomain: '0002.test.risd.systems',
+    },
+    identifier: 'unique-cli-test,1risd,1systems',
   }
 }

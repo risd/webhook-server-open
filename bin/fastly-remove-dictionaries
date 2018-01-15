@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+require('dotenv').config()
+
+var async = require( 'async' )
+var grunt = require( 'grunt' )
+var webhookTasks = require( '../Gruntfile.js' )
+var fastly = require( '../libs/fastly' )
+
+webhookTasks( grunt )
+var cdn = fastly( grunt.config().fastly )
+
+var dictionaires = process.argv.slice( 2 ).split( ' ' )
+
+var tasks = [ getDevelopmentVersion ]
+  .concat( dictionaires.map( deleteDictionaries ) )
+  .concat( [ activateVersion ] )
+
+
+async.waterfall( tasks, function ( error, result ) {
+  if ( error ) return console.log( error )
+  console.log( `Done. Version: ${ cdn.version() }` )
+} )
+
+function getDevelopmentVersion ( taskComplete ) {
+  cdn._ensureDevelopmentVersion( taskComplete )
+}
+
+function deleteDictionaries ( dictionaryName ) {
+  return function deleteDictionary ( options, taskComplete ) {
+    var url = `/service/${ cdn._service_id }/version/${ cdn.version() }/dictionary/${ dictionaryName }`
+    cdn.request( 'DELETE', url, function ( error, result ) {
+      if ( error ) return taskComplete( error )
+      console.log( 'delete-dictionary' )
+      console.log( result )
+      taskComplete( null, options )
+    } )
+  }
+}
+
+function activateVersion ( taskComplete ) {
+  cdn.activate( taskComplete )
+}
