@@ -33,6 +33,7 @@ var sink = utils.sink;
 var uploadIfDifferent = utils.uploadIfDifferent;
 var redirectTemplateForDestination = utils.redirectTemplateForDestination;
 var cachePurge = utils.cachePurge;
+var addMaskDomain = utils.addMaskDomain;
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -197,7 +198,6 @@ module.exports.start = function (config, logger) {
           var buildtime = data.build_time ? Date.parse(data.build_time) : now;
           var buildDiff = Math.floor((buildtime - now)/1000);
           
-          var deploysToConsider = deploys.slice( 0 )
           var maxParallel = config.get( 'builder' ).maxParallel;
           var purgeProxy = config.get( 'fastly' ).ip;
 
@@ -210,11 +210,10 @@ module.exports.start = function (config, logger) {
             buildJobData: data,
             buildDiff: buildDiff,
             noDelay: noDelay,
-            // make deploy buckets
-            deploys: deploysToConsider,
             // buildSite args
             buildFolder: buildFolder,
             builtFolder: path.join( buildFolder, '.build' ),
+            maskDomain: undefined,
           }
 
           miss.pipe(
@@ -222,6 +221,7 @@ module.exports.start = function (config, logger) {
             queueDelayedJob(),
             installDependencies(),
             makeDeployBuckets(),
+            addMaskDomain( config.get( 'fastly' ) ),
             buildUploadSite( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
             deleteRemoteFilesNotInBuild( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
             sink(),
@@ -237,8 +237,7 @@ module.exports.start = function (config, logger) {
                 console.log( error.reportStatus.message );
               }
             } else {
-              var buckets = deploysToConsider.map( function ( deploy) { return deploy.bucket } )
-              reportStatus( siteName, 'Built and uploaded to ' + buckets.join(', ') + '.', 0 )
+              reportStatus( siteName, 'Built and uploaded to ' + siteBucket + '.', 0 )
             }
 
             processSiteCallback( error )
@@ -288,7 +287,7 @@ module.exports.start = function (config, logger) {
           function makeDeployBuckets () {
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'make-deploy-buckets:start' )
-              var setupBucketTasks = args.deploys.map( makeDeployBucketTask )
+              var setupBucketTasks = [ args.siteBucket ].map( makeDeployBucketTask )
               async.parallel( setupBucketTasks, function ( error ) {
                 if ( error ) {
                   console.log( error )
@@ -300,9 +299,9 @@ module.exports.start = function (config, logger) {
               
             } )
 
-            function makeDeployBucketTask ( deploy ) {
+            function makeDeployBucketTask ( siteBucket ) {
               return function makeBucketTask ( makeBucketTaskComplete ) {
-                setupBucket( Object.assign( setupBucketOptions, { siteBucket: deploy.bucket } ), function ( error, bucketSetupResults ) {
+                setupBucket( Object.assign( setupBucketOptions, { siteBucket: siteBucket } ), function ( error, bucketSetupResults ) {
                   if ( error ) return makeBucketTaskComplete( error )
                   makeBucketTaskComplete()
                 } )
@@ -312,7 +311,7 @@ module.exports.start = function (config, logger) {
 
           /**
            * buildUploadSite is a transform stream that expects an object `args` with
-           * keys { buildFolder }.
+           * keys { buildFolder, siteBucket, maskDomain? }.
            *
            * Using the build folder, a build-order is determined, and then executed.
            * As files are written by the build processes, they are passed into a
@@ -331,7 +330,7 @@ module.exports.start = function (config, logger) {
 
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'build-upload-site:start' )
-              var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
+              var buckets = [ { contentDomain: args.siteBucket, maskDomain: args.maskDomain } ]
               var buildEmitterOptions = {
                 maxParallel: maxParallel,
                 errorReportStatus: {
@@ -348,13 +347,12 @@ module.exports.start = function (config, logger) {
               var robotsTxtOptions = Object.assign( { buildFolder: args.buildFolder }, siteMapOptions );
 
               var uploadOptions = {
-                buckets: buckets,
                 maxParallel: maxParallel,
                 purgeProxy: options.purgeProxy,
               }
               
               miss.pipe(
-                usingArguments( { buildFolder: args.buildFolder, siteBuckets: [ args.siteBucket ] } ),
+                usingArguments( { buildFolder: args.buildFolder, siteBuckets: buckets } ),
                 removeBuild(),
                 cacheData(),                  // adds { cachedData }
                 getBuildOrder(),              // adds { buildOrder }
@@ -536,7 +534,7 @@ module.exports.start = function (config, logger) {
 
             // Transform stream expecting `args` object with shape.
             // { buildFolder : String, buildOrder: [buildFiles], cachedData : String, siteBuckets: [String] }
-            // for each build order item, push { buildFolder, command, commandArgs }
+            // for each build order item, push { buildFolder, command, commandArgs, bucket : { maskDomain, contentDomain } }
             function feedBuilds () {
               return miss.through.obj( function ( args, enc, next ) {
                 console.log( 'build-upload-site:feed-builds:start' )
@@ -558,10 +556,12 @@ module.exports.start = function (config, logger) {
                 function makeBuildCommandArguments ( siteBuckets ) {
                   return function forFile ( buildFile ) {
                     return siteBuckets.map( function ( siteBucket ) {
+                      var bucket = siteBucket.maskDomain ? siteBucket.maskDomain : siteBucket.contentDomain
                       return {
                         buildFolder: args.buildFolder,
                         command: 'grunt',
-                        commandArgs: buildCommandForFile( buildFile ).concat( buildFlagsForFile( siteBucket, buildFile ) ) ,
+                        commandArgs: buildCommandForFile( buildFile ).concat( buildFlagsForFile( bucket, buildFile ) ),
+                        bucket: siteBucket,
                       }
                     } )
                   }
@@ -595,7 +595,7 @@ module.exports.start = function (config, logger) {
              * Expects objects that have shape { buildFolder, ... }
              * Where { buildFolder, ... } are passed into streamToCommandArgs and expected 
              * to produce an array of arguments for running a build command.
-             * Pushes objects that have shape  { builtFile, builtFilePath }
+             * Pushes objects that have shape  { builtFile, builtFilePath, bucket: { contentDomain, maskDomain } }
              *
              * If any of the build emitters produces an error, the stream is closed and the
              * error is propogated up, including the `errorReportStatus` as the
@@ -616,6 +616,7 @@ module.exports.start = function (config, logger) {
                 var stream = this;
 
                 var cmdArgs = streamToCommandArgs( args )
+                var bucket = args.bucket;
                 var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
 
                 console.log( 'run-build-emitter:start:' + cmdArgs[1][1] )
@@ -639,13 +640,14 @@ module.exports.start = function (config, logger) {
                         builtFile = htmlAsIndexFile( builtFile )
                       }
 
-                      stream.push( { builtFile: builtFile, builtFilePath: builtFilePath } ) 
+                      stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, bucket: bucket } ) 
 
                       // non trailing slash redirect
                       if ( builtFile.endsWith( '/index.html' ) ) {
                         stream.push( {
                           builtFile: builtFile.replace( '/index.html', '' ),
                           builtFilePath: redirectTemplateForDestination( '/' + builtFile.replace( 'index.html', '' ) ),
+                          bucket: bucket,
                         } )
                       }
                     } )
@@ -696,8 +698,10 @@ module.exports.start = function (config, logger) {
              * Site maps are written at {bucket}-sitemap.xml
              * 
              * @param  {object} options
-             * @param  {number} options.buckets         The domains to write the urls for.
-             * @param  {number} options.builtFolder     The folder to write site maps to.
+             * @param  {string[]} options.buckets[]
+             * @param  {string} options.buckets[].contentDomain  The domains to write the urls for.
+             * @param  {string} options.buckets[].maskDomain?    The domains to write the urls for if exists
+             * @param  {string} options.builtFolder     The folder to write site maps to.
              * @return {[type]} [description]
              */
             function buildSitemap ( options ) {
@@ -735,9 +739,11 @@ module.exports.start = function (config, logger) {
 
               function createSiteMapTask ( bucket ) {
                 return function siteMapTask ( taskComplete ) {
-                  var siteMapFile = siteMapName( bucket );
+                  var siteMapDomain = bucket.maskDomain ? bucket.maskDomain : bucket.contentDomain;
+                  
+                  var siteMapFile = siteMapName( siteMapDomain );
                   var siteMapPath = path.join( builtFolder, siteMapFile )
-                  var siteMapContent = siteMapFor( bucket, urls )
+                  var siteMapContent = siteMapFor( siteMapDomain, urls )
                   fs.writeFile( siteMapPath, siteMapContent, function ( error ) {
                     if ( error ) {
                       console.log( 'site-map:error' )
@@ -747,6 +753,7 @@ module.exports.start = function (config, logger) {
                     var uploadArgs = {
                       builtFile: siteMapFile,
                       builtFilePath: siteMapPath,
+                      bucket: bucket,
                     }
                     taskComplete( null, uploadArgs )
                   } )
@@ -775,7 +782,7 @@ module.exports.start = function (config, logger) {
             }
 
             function hostWithProtocol( host ) {
-              var protocol = host.endsWith( 'risd.systems' ) ? 'https' : 'http';
+              var protocol = 'http';
               return [ protocol, host ].join( '://' )
             }
 
@@ -855,13 +862,14 @@ module.exports.start = function (config, logger) {
               }
 
               function buildDataForBucket ( bucket ) {
+                var siteMapDomain = bucket.maskDomain ? bucket.maskDomain : bucket.contentDomain
                 var buildData = {
                   contentType: {},
                   data: {},
                   settings: {
                     general: {
-                      site_url: bucket,
-                      site_map: url.resolve( hostWithProtocol( bucket ), siteMapName( bucket ) )
+                      site_url: siteMapDomain,
+                      site_map: url.resolve( hostWithProtocol( siteMapDomain ), siteMapName( siteMapDomain ) )
                     }
                   }
                 }
@@ -895,7 +903,7 @@ module.exports.start = function (config, logger) {
               
               console.log( 'delete-remote-files-not-in-build:start' )
 
-              var buckets = args.deploys.map( function ( deploy ) { return deploy.bucket; } )
+              var buckets = [ { contentDomain: args.siteBucket, maskDomain: args.maskDomain } ]
 
               miss.pipe(
                 usingArguments( { builtFolder: args.builtFolder } ),
@@ -929,7 +937,7 @@ module.exports.start = function (config, logger) {
                     function pushList ( pageToken ) {
                       var listOpts = {}
                       if ( pageToken ) listOpts.pageToken = pageToken;
-                      cloudStorage.objects.list( bucket, listOpts, function ( error, listResult ) {
+                      cloudStorage.objects.list( bucket.contentDomain, listOpts, function ( error, listResult ) {
                         if ( error ) return taskComplete( error )
                         if ( !listResult.items ) return taskComplete( error )
 
@@ -999,7 +1007,7 @@ module.exports.start = function (config, logger) {
               var maxParallel = options.maxParallel || 1;
 
               return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
-                console.log( 'deleting:' + [args.bucket, args.builtFile].join('/') )
+                console.log( 'deleting:' + [args.bucket.contentDomain, args.builtFile].join('/') )
                 cloudStorage.objects.del( args.bucket, args.builtFile, function ( error ) {
                   args.remoteDeleted = true;
                   next( null, args );
@@ -1021,8 +1029,7 @@ module.exports.start = function (config, logger) {
         console.log('domain-instance:error');
         console.log(err);
         console.log(err.stack);
-        var deployingToBuckets = deploys.map( function bucketForDeploy ( deploy ) { return deploy.bucket; } )
-        reportStatus(siteName, 'Failed to build, errors encountered in build process of ' + deployingToBuckets.join(', '), 1);
+        reportStatus(siteName, 'Failed to build, errors encountered in build process of ' + siteBucket , 1);
         jobCallback();
       });
 
@@ -1035,9 +1042,6 @@ module.exports.start = function (config, logger) {
         if(!fs.existsSync(buildFolder + '/.fb_version' + siteValues.version)) {
 
           console.log('download-zip:start')
-          if ( site === 'edu,1risd,1systems' && siteBucket === 'www.risd.edu' ) {
-            assert( branch === 'master', 'This should be the master branch' )
-          }
           downloadSiteZip(buildFolderRoot, site, branch, function( downloadError, downloadedFile ) {
             if ( downloadError ) throw downloadError;
 

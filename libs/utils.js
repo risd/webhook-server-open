@@ -16,6 +16,7 @@ module.exports = {
   redirectTemplateForDestination: redirectTemplateForDestination,
   cachePurge: cachePurge,
   protocolForDomain: protocolForDomain,
+  addMaskDomain: addMaskDomain,
 }
 
 // Read stream that passes in initialze arguments
@@ -32,6 +33,26 @@ function sink ( fn ) {
   return miss.through.obj( function ( args, enc, next ) {
     fn( args )
     next()
+  } )
+}
+
+/**
+ * Populate the `args.maskDomain` key with the `maskDomain` if the 
+ * current bucket is a `contentDomain` for a Fastly defined `maskDomain`.
+ *
+ * Expects { siteBucket, ... }
+ * Pushes { siteBucket, maskDomain, ... }
+ *
+ * @return {object} stream Transform stream that handles the incoming & outgoing arguments.
+ */
+function addMaskDomain ( config ) {
+  var cdn = require( './fastly/index.js' )( config )
+  return miss.through.obj( function ( args, enc, next ) {
+    cdn.maskForContentDomain( args.siteBucket, function ( error, maskDomain ) {
+      if ( error ) return next( error )
+      args.maskDomain = maskDomain;
+      next( null, args )
+    } )
   } )
 }
 
@@ -140,7 +161,7 @@ function uploadIfDifferent ( options ) {
   function remoteFileMd5 () {
     return miss.through.obj( function ( args, enc, next ) {
 
-      cloudStorage.objects.getMeta( args.bucket, args.builtFile, function ( error, remoteFileMeta ) {
+      cloudStorage.objects.getMeta( args.bucket.contentDomain, args.builtFile, function ( error, remoteFileMeta ) {
         if ( error ) args.remoteFileMd5 = false;
         else args.remoteFileMd5 = remoteFileMeta.md5Hash;
         next( null, args )
@@ -199,7 +220,7 @@ function uploadIfDifferent ( options ) {
 
   function streamArgsToUploadOptions ( args ) {
     return {
-      bucket: args.bucket,
+      bucket: args.bucket.contentDomain,
       local: args.builtFilePath,
       remote: args.builtFile,
       cacheControl: 'no-cache',
@@ -216,7 +237,9 @@ function cachePurge ( options ) {
 
   return miss.through.obj( function ( args, enc, next ) {
     
-    var purgeUrl = url.resolve( 'http://' + args.bucket, args.builtFile )
+    var bucket = args.bucket.maskDomain ? args.bucket.maskDomain : args.bucket.contentDomain;
+
+    var purgeUrl = url.resolve( 'http://' + bucket, args.builtFile )
     if ( purgeUrl.endsWith( '/index.html' ) ) {
       purgeUrl = purgeUrl.replace( '/index.html', '/' )
     }

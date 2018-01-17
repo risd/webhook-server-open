@@ -57,7 +57,16 @@ FastlyWebhookService.prototype.removeDomain = removeDomains;
 FastlyWebhookService.prototype.redirects = setRedirects;
 FastlyWebhookService.prototype.mapDomain = mapDomain;
 FastlyWebhookService.prototype.removeMapDomain = removeMapDomain;
-FastlyWebhookService.prototype.activate = function activator ( complete ) {
+FastlyWebhookService.prototype.maskForContentDomain = maskForContentDomain;
+FastlyWebhookService.prototype.activate =activator;
+
+/**
+ * Activate the current service_id & version if it is not
+ * currently active.
+ * 
+ * @param  {function} complete The callback function to invoke when complete.
+ */
+function activator ( complete ) {
   var serviceOptions = {
     service_id: this._service_id,
     version: this.version(),
@@ -71,7 +80,7 @@ FastlyWebhookService.prototype.activate = function activator ( complete ) {
   return activateVersion( activateOptions, function ( error, version ) {
     if ( error ) return complete( error )
     self._version_is_active = true;
-  console.log( 'activated:' + self.version() )
+  
     return complete( null, serviceOptions )
   } )
 }
@@ -121,7 +130,17 @@ function initializeService ( service_id, complete ) {
   }
 }
 
-// service_id => callback => { service_id, version }
+/**
+ * Get the current servie and active version number from Fastly
+ * and set the variables that internally represent those values
+ * within our abstraction.
+ *
+ * service_id : string? => complete : function => { service_id : string, version : string }
+ * 
+ * @param  {string?} service_id Optionally pass in a service_id
+ * @param  {function} complete  The callback function to invoke with the
+ *                              current service_id &. version
+ */
 function getServiceActiveVersion ( service_id, complete ) {
   if ( typeof service_id === 'string' ) this._service_id = service_id;
   if ( typeof service_id === 'function' ) complete = service_id;
@@ -150,7 +169,19 @@ function getServiceActiveVersion ( service_id, complete ) {
   }
 }
 
-// complete : function? => ( taskFn => { service_id, version } | undefined )
+/**
+ * Ensure's the version for the service_id is a cloned version
+ * of the previously active version. Only cloned versions can be
+ * developed on.
+ *
+ * If a current version is not set, acquire it, and clone it for
+ * more development to occur on the newly cloned version.
+ * 
+ * complete : function? => ( taskFn => { service_id, version } | undefined )
+ * 
+ * @param  {[type]} complete [description]
+ * @return {[type]}          [description]
+ */
 function ensureDevelopmentVersion ( complete ) {
   var self = this;
 
@@ -465,6 +496,53 @@ function removeMapDomain ( options, complete ) {
       serviceConfigurationUpdater.apply( self )
         .mapVersionlessTask( apiDictionaryItemArguments( dictionaryItemArguments ) )( taskComplete )
 
+    }
+  }
+}
+
+
+/**
+ * Retrieves the mask domain for the specified content domain.
+ * If there is no mask domain, return undefined.
+ *
+ * ( contentDomain : string, complete ) => ( error, maskDomain : string | undefined )
+ * 
+ * @param  {string} contentDomain The value to find in the dictionary_host_backends table
+ * @param  {function} complete    The function to invoke with the maskDomain value.
+ */
+function maskForContentDomain ( contentDomain, complete ) {
+  assert( typeof contentDomain === 'string', 'Content domain is a string.')
+  assert( typeof complete === 'function', 'Complete callback is a function.' )
+  var self = this;
+
+  var tasks = [ getDictionaryId( DICTIONARY_HOST_BACKENDS ), getDictionaryItems ]
+
+  async.waterfall( tasks, returnMaskDomainFor( contentDomain, complete ) )
+
+  function getDictionaryId ( dictionaryName ) {
+    return function task ( taskComplete ) {
+      self.dictionaryId( dictionaryName, taskComplete )
+    }
+  }
+
+  function getDictionaryItems ( dictionaryId, taskComplete ) {
+    var dictionaryItemsUrl = [ '/service', self._service_id, 'dictionary', dictionaryId, 'items' ].join( '/' )
+    self.request( 'GET', dictionaryItemsUrl, taskComplete)
+  }
+
+  function returnMaskDomainFor ( contentDomain, taskComplete ) {
+    return function withDictionaryItems ( error, dictionaryItems ) {
+      if ( error ) return taskComplete( error )
+
+      var maskDomain = undefined;
+      var hasContentDomain = dictionaryItems.filter( valueIsContentDomain )
+      if ( hasContentDomain.length === 1 ) maskDomain = hasContentDomain[ 0 ].item_key;
+
+      return taskComplete( null, maskDomain )
+
+      function valueIsContentDomain ( dictionaryItem ) {
+        return dictionaryItem.item_value === contentDomain;
+      }
     }
   }
 }

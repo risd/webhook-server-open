@@ -249,7 +249,6 @@ function CommandDelegator (config, logger) {
             var deploysForBuild = configuration.deploys.filter( function ( deploy ) { return deploy.bucket === siteBucket } )
             var payloadArgs = {
               siteBucket: siteBucket,
-              deploys: deploysForBuild,
               branch: deploysForBuild[ 0 ].branch,
             }
             return {

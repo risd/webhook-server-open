@@ -20,6 +20,7 @@ var sink = utils.sink;
 var uploadIfDifferent = utils.uploadIfDifferent;
 var redirectTemplateForDestination = utils.redirectTemplateForDestination;
 var protocolForDomain = utils.protocolForDomain;
+var addMaskDomain = utils.addMaskDomain;
 
 var unescapeSite = function(site) {
   return site.replace(/,1/g, '.');
@@ -81,6 +82,7 @@ module.exports.start = function ( config, logger ) {
     return miss.pipe(
       usingArguments( previewBuildArgs ),
       oneOffTransform(),
+      addMaskDomain( config.get( 'fastly' ) ),
       runBuildEmitter( runBuildEmitterOptions ),
       uploadIfDifferent(),
       sink(),
@@ -153,6 +155,7 @@ module.exports.start = function ( config, logger ) {
         var builtFolder = path.join( cmdArgs[2].cwd, '.build' )
 
         var errored = false;
+        var bucket = { contentDomain: args.siteBucket, maskDomain: args.maskDomain }
         var builder = winSpawn.apply( null, cmdArgs )
 
         builder.stdout.on( 'data', function readOutput ( buf ) {
@@ -165,7 +168,10 @@ module.exports.start = function ( config, logger ) {
               var builtFile = str.trim().slice( buildEvent.length )
               var builtFilePath = path.join( builtFolder, builtFile )
               console.log( 'build-event:' + builtFile )
-              stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, bucket: args.siteBucket } )
+              stream.push( {
+                builtFile: builtFile,
+                builtFilePath: builtFilePath,
+                bucket: bucket } )
             } )
 
           var endEvent = ':end:';
@@ -193,6 +199,7 @@ module.exports.start = function ( config, logger ) {
       } )
 
       function streamToCommandArgs ( streamArgs ) {
+        var domain = streamArgs.maskDomain ? streamArgs.maskDomain : streamArgs.siteBucket
 
         var cmdArgs = streamArgs.oneOffPath
           ? streamArgs.oneOffPath.startsWith( 'pages' )
@@ -201,7 +208,7 @@ module.exports.start = function ( config, logger ) {
           : [ 'build-template', '--inFile=' + path.join( 'templates', streamArgs.contentType, 'individual.html' ), '--itemKey=' + streamArgs.itemKey, ]
 
         var commonArgs = [
-          '--settings={"site_url":"'+ protocolForDomain( streamArgs.siteBucket ) +'"}',
+          '--settings={"site_url":"'+ protocolForDomain( domain ) +'"}',
           '--production=true',
           '--emitter'
         ]

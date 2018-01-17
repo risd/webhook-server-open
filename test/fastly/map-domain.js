@@ -7,19 +7,32 @@ var fastlyWebhook = require( '../../libs/fastly/index.js' )
 
 webhookTasks( grunt )
 
-test( 'map-domain', function ( t ) {
-  t.plan( 4 )
+var cdn = fastlyWebhook( grunt.config().fastly )
+var mapOptions = { maskDomain: process.env.FASTLY_MAP_DOMAIN_KEY, contentDomain: process.env.FASTLY_MAP_DOMAIN_VALUE }
 
-  var cdn = fastlyWebhook( grunt.config().fastly )
-  var mapOptions = { maskDomain: process.env.FASTLY_MAP_DOMAIN_KEY, contentDomain: process.env.FASTLY_MAP_DOMAIN_VALUE }
+test( 'map-domain', function ( t ) {
+  t.plan( 2 )
 
   cdn.mapDomain( mapOptions, function ( error, status ) {
-    t.ok( error === null, 'The add error should be undefined.' )
+    t.ok( error === null, 'The add error should be null.' )
     t.ok( typeof status === 'object', 'The add status should be represented by an object.' )
+  } )
+} )
 
-    cdn.removeMapDomain( mapOptions, function ( error, status ) {
-      t.ok( error === null, 'The remove error should be undefined.' )
-      t.ok( typeof status === 'object', 'The remove status should be represented by an object.' )
-    } )
+test( 'get-mask-domain-for-content-domain', function ( t ) {
+  t.plan( 2 )
+
+  cdn.maskForContentDomain( mapOptions.contentDomain, function ( error, maskDomain ) {
+    t.ok( error === null, 'The mask domain getter error should be null.' )
+    t.ok( maskDomain === mapOptions.maskDomain, 'The maskDomain should be equal to its input.' )
+  } )
+} )
+
+test( 'remove-map-domain', function ( t ) {
+  t.plan( 2 )
+
+  cdn.removeMapDomain( mapOptions, function ( error, status ) {
+    t.ok( error === null, 'The remove error should be null.' )
+    t.ok( typeof status === 'object', 'The remove status should be represented by an object.' )
   } )
 } )
