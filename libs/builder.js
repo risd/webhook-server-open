@@ -533,7 +533,7 @@ module.exports.start = function (config, logger) {
             }
 
             // Transform stream expecting `args` object with shape.
-            // { buildFolder : String, buildOrder: [buildFiles], cachedData : String, siteBuckets: [String] }
+            // { buildFolder : String, buildOrder: [buildFiles], cachedData : String, siteBuckets: [{ maskDomain, contentDomain }] }
             // for each build order item, push { buildFolder, command, commandArgs, bucket : { maskDomain, contentDomain } }
             function feedBuilds () {
               return miss.through.obj( function ( args, enc, next ) {
@@ -544,7 +544,7 @@ module.exports.start = function (config, logger) {
                 args.buildOrder
                   .map( makeBuildCommandArguments( args.siteBuckets ) ) // returns array of arrays for each site to build agains
                   .reduce( function concat ( previous, current ) { return previous.concat( current ) }, [] ) // flattens into a single series of arrays to build
-                  .concat( [ copyStaticCommandArgs() ] )
+                  .concat( [ copyStaticCommandArgs( args.siteBuckets[ 0 ] ) ] )
                   .forEach( function ( buildCommandArgs ) {
                     stream.push( buildCommandArgs )
                   } )
@@ -567,11 +567,12 @@ module.exports.start = function (config, logger) {
                   }
                 }
 
-                function copyStaticCommandArgs () {
+                function copyStaticCommandArgs ( siteBucket ) {
                   return {
                     buildFolder: args.buildFolder,
                     command: 'grunt',
                     commandArgs: [ 'build-static', '--production=true', '--emitter' ],
+                    bucket: siteBucket
                   }
                 }
 
