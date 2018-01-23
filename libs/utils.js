@@ -239,7 +239,7 @@ function cachePurge ( options ) {
     
     var bucket = args.bucket.maskDomain ? args.bucket.maskDomain : args.bucket.contentDomain;
 
-    var purgeUrl = url.resolve( 'http://' + bucket, args.builtFile )
+    var purgeUrl = url.resolve( 'http://' + bucket, urlEncode( args.builtFile ) )
     if ( purgeUrl.endsWith( '/index.html' ) ) {
       purgeUrl = purgeUrl.replace( '/index.html', '/' )
     }
@@ -261,6 +261,10 @@ function cachePurge ( options ) {
     }
     
   } )
+}
+
+function urlEncode ( path ) {
+  return path.split( '/' ).map( encodeURIComponent ).join( '/' )
 }
 
 function protocolForDomain ( domain ) {
