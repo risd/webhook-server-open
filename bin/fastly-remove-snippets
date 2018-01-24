@@ -9,7 +9,7 @@ var fastly = require( '../libs/fastly' )
 webhookTasks( grunt )
 var cdn = fastly( grunt.config().fastly )
 
-var snippets = process.argv.slice( 2 ).split( ' ' )
+var snippets = process.argv.slice( 2 )
 
 var tasks = [ getDevelopmentVersion ]
   .concat( snippets.map( deleteSnippets ) )
@@ -35,6 +35,6 @@ function deleteSnippets ( snippetName ) {
   }
 }
 
-function activateVersion ( taskComplete ) {
+function activateVersion ( options, taskComplete ) {
   cdn.activate( taskComplete )
 }

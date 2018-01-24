@@ -9,7 +9,7 @@ var fastly = require( '../libs/fastly' )
 webhookTasks( grunt )
 var cdn = fastly( grunt.config().fastly )
 
-var dictionaires = process.argv.slice( 2 ).split( ' ' )
+var dictionaires = process.argv.slice( 2 )
 
 var tasks = [ getDevelopmentVersion ]
   .concat( dictionaires.map( deleteDictionaries ) )
@@ -37,6 +37,6 @@ function deleteDictionaries ( dictionaryName ) {
   }
 }
 
-function activateVersion ( taskComplete ) {
+function activateVersion ( options, taskComplete ) {
   cdn.activate( taskComplete )
 }
