@@ -100,22 +100,52 @@ module.exports.start = function ( config, logger ) {
 
     function domainsToConfingure ( siteName, callback ) {
 
+      // { bucket, branch } => bucket
       var domainForDeploy = function ( deploy ) {
         return deploy.bucket;
       }
 
+      // { domain } => boolean
       var isNotDevelopmentDomain = function ( domain ) {
         return ! domain.endsWith( developmentDomain )
       }
 
-      deploys.get( { siteName: siteName }, function ( error, configuration ) {
-        if ( error ) {
-          console.log( error )
-          return;
+      // siteName, taskComplete => taskComplete( error | null, domains : string[] | undefined )
+      var getDeployBuckets = function ( siteName, taskComplete ) {
+        deploys.get( { siteName: siteName }, function ( error, configuration ) {
+          if ( error ) {
+            console.log( error )
+            return taskComplete( error );
+          }
+          var domains = configuration.deploys.map( domainForDeploy )
+          taskComplete( null, domains )
+        } )
+      }
+
+      var replaceMaskDomains = function ( taskComplete ) {
+        return function replace ( error, domains ) {
+          if ( error ) return taskComplete( error )
+
+          var replaceTasks = domains.map( toReplaceTask )
+
+          return async.parallel( replaceTasks, function ( error, updatedDomains ) {
+            if ( error ) return taskComplete( error )
+            taskComplete( null, updatedDomains.filter( isNotDevelopmentDomain ) )
+          } )
+
+          function toReplaceTask ( domain ) {
+            return function replaceTask ( replaceComplete ) {
+              fastly.maskForContentDomain( domain, function ( error, maskDomain ) {
+                if ( error ) return replaceComplete( error )
+                if ( typeof maskDomain === 'string' ) return replaceComplete( null, maskDomain )
+                else return replaceComplete( null, domain )
+              } )
+            }
+          }
         }
-        var domains = configuration.deploys.map( domainForDeploy ).filter( isNotDevelopmentDomain )
-        callback( null, domains )
-      } )
+      }
+
+      return getDeployBuckets( siteName, replaceMaskDomains( callback ) )
     }
 
     function addDomains ( domains ) {
