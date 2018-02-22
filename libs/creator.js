@@ -163,6 +163,7 @@ module.exports.start = function (config, logger) {
         ensureCdn( config.get( 'fastly' ) ),
         ensureCname( config.get( 'cloudflare' ) ),
         generateKey(),
+        createData(),
         sink(),
         function onEnd ( error ) {
           if ( error ) return callback( error )
@@ -172,6 +173,23 @@ module.exports.start = function (config, logger) {
   }
 
   return createSite;
+
+  function createData() {
+    return miss.through.obj( function ( row, enc, next ) {
+      var data = {}
+      data[ row.siteKey ] = {
+        dev: {
+          data: {},
+          contentType: {},
+          settings: {},
+        }
+      }
+      self.root.child( 'buckets' ).child( row.siteName ).set( data, function onComplete ( error ) {
+        if ( error ) return next( error )
+        next( null, row )
+      } )
+    } )
+  }
 };
 
 module.exports.setupBucket = setupBucket;
