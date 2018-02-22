@@ -176,6 +176,7 @@ module.exports.start = function (config, logger) {
 
   function createData() {
     return miss.through.obj( function ( row, enc, next ) {
+      console.log( 'create-data:start' )
       var data = {}
       data[ row.siteKey ] = {
         dev: {
@@ -185,6 +186,8 @@ module.exports.start = function (config, logger) {
         }
       }
       self.root.child( 'buckets' ).child( row.siteName ).set( data, function onComplete ( error ) {
+        console.log( 'create-data:end:error' )
+        console.log( error )
         if ( error ) return next( error )
         next( null, row )
       } )
