@@ -14,6 +14,7 @@ var SNIPPET_RECV_REDIRECT_HOSTS = 'recv_redirect_hosts';
 var SNIPPET_RECV_TRAILING_SLASH = 'recv_trailing_slash';
 var SNIPPET_RECV_BACKEND_MAPPING = 'recv_backend_mapping';
 var SNIPPET_FETCH_RESTORE_ORIGINAL_HOST = 'fetch_restore_original_host';
+var SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS = 'host_risddotedu_force_https';
 var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
 
 module.exports = FastlyWebhookService;
@@ -122,6 +123,7 @@ function initializeService ( service_id, complete ) {
           snippetArguments( SNIPPET_RECV_TRAILING_SLASH ),
           snippetArguments( SNIPPET_RECV_BACKEND_MAPPING ),
           snippetArguments( SNIPPET_FETCH_RESTORE_ORIGINAL_HOST ),
+          snippetArguments( SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ),
         ]
         .map( updator.mapVersionedTask )
 
@@ -1417,6 +1419,18 @@ function baseSnippets ( name ) {
       priority: 105,
       content: `if ( req.http.requseted-host ) {
         set req.http.host = req.http.requseted-host;
+      }`
+    }
+  }
+  snippets[ SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ] = function () {
+    return {
+      name: SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS,
+      dynamic: 1,
+      type: 'recv',
+      priority: 107,
+      content: `if ( req.http.host ~ "risd.edu$" && ! req.http.Fastly-SSL ) {
+        set req.http.x-redirect-location = "https://" req.http.host req.url;
+        error 301;
       }`
     }
   }
