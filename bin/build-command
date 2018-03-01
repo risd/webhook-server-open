@@ -33,6 +33,10 @@ var siteBranchCmdOptions = {
     develop: infoDevelop,
     master: infoMaster,
   },
+  'liberal-arts-ma': {
+    master: liberalArtsMaMaster,
+    develop: liberalArtsMaDevelop,
+  },
   'test': {
     master: testMaster,
     develop: testDevelop,
@@ -113,11 +117,11 @@ function eduMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"edu,1risd,1systems",
-    "siteBucket": "r-2.edu.risd.systems",
+    "siteBucket": "r-5.edu.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
-      { branch: 'master', bucket: 'r-2.edu.risd.systems' },
+      { branch: 'master', bucket: 'r-5.edu.risd.systems' },
     ]
   }
   var identifier = "edu,1risd,1systems_master"
@@ -440,6 +444,44 @@ function testDevelop () {
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"unique-cli-test,1risd,1systems",
     "siteBucket": "dev.test.risd.systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+  }
+  var identifier = "unique-cli-test,1risd,1systems_dev.test.risd.systems"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;  
+}
+
+function liberalArtsMaMaster () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-liberal-arts-ma,1risd,1systems",
+    "siteBucket": "liberalartsmasters.risd.edu",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+  }
+  var identifier = "unique-cli-test,1risd,1systems_dev.test.risd.systems"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;  
+}
+
+function liberalArtsMaDevelop () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-liberal-arts-ma,1risd,1systems",
+    "siteBucket": "risd-liberal-arts-ma.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
   }

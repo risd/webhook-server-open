@@ -16,6 +16,7 @@ var siteCmdOptions = {
   'liberal-arts-ma': liberalArtsMa,
   'nature-lab': natureLab,
   'risd-sei': sei,
+  'cli-test': cliTest,
 }
 
 var cmd = parseArgs( process.argv.slice( 2 ) )
@@ -303,6 +304,23 @@ function sei () {
     "userid":"rrodrigu@risd.edu",
   }
   var identifier = "risd-sei,1risd,1systems_master"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function cliTest () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"unique-cli-test,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+  }
+  var identifier = "unique-cli-test,1risd,1systems_develop"
 
   var cmd = {
     "identifier": identifier,
