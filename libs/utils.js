@@ -161,11 +161,17 @@ function uploadIfDifferent ( options ) {
   function remoteFileMd5 () {
     return miss.through.obj( function ( args, enc, next ) {
 
-      cloudStorage.objects.getMeta( args.bucket.contentDomain, args.builtFile, function ( error, remoteFileMeta ) {
-        if ( error ) args.remoteFileMd5 = false;
-        else args.remoteFileMd5 = remoteFileMeta.md5Hash;
+      try {
+        cloudStorage.objects.getMeta( args.bucket.contentDomain, args.builtFile, function ( error, remoteFileMeta ) {
+          if ( error ) args.remoteFileMd5 = false;
+          else args.remoteFileMd5 = remoteFileMeta.md5Hash;
+          next( null, args )
+        } )
+      }
+      catch( error ) {
+        console.log( 'remote-meta-error' )
         next( null, args )
-      } )
+      }
     } ) 
   }
 
@@ -249,6 +255,7 @@ function cachePurge ( options ) {
 
     try {
       request( requestOptions, function ( error, response, body ) {
+        if ( error ) { console.log( 'purge-error:', error ); console.log( error ); }
         console.log( 'purge:' + purgeUrl )
         next( null, args )
       } )  

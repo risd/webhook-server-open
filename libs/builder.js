@@ -1029,6 +1029,7 @@ module.exports.start = function (config, logger) {
       domainInstance.on('error', function(err) { 
         console.log('domain-instance:error');
         console.log(err);
+        console.log(err.message);
         console.log(err.stack);
         reportStatus(siteName, 'Failed to build, errors encountered in build process of ' + siteBucket , 1);
         jobCallback();
@@ -1040,6 +1041,7 @@ module.exports.start = function (config, logger) {
         console.log( buildFolder )
         console.log( 'domain-instance:run:version' )
         console.log( siteValues.version )
+        Error.stackTraceLimit = 100;
         if(!fs.existsSync(buildFolder + '/.fb_version' + siteValues.version)) {
 
           console.log('download-zip:start')
