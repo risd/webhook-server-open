@@ -1399,6 +1399,18 @@ function baseSnippets ( name ) {
       }`,
     }
   }
+  snippets[ SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ] = function () {
+    return {
+      name: SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS,
+      dynamic: 1,
+      type: 'recv',
+      priority: 104,
+      content: `if ( req.http.host ~ "risd.edu$" && ! req.http.Fastly-SSL ) {
+        set req.http.x-redirect-location = "https://" req.http.host req.url;
+        error 301;
+      }`
+    }
+  }
   snippets[ SNIPPET_RECV_BACKEND_MAPPING ] = function () {
     return {
       name: SNIPPET_RECV_BACKEND_MAPPING,
@@ -1419,18 +1431,6 @@ function baseSnippets ( name ) {
       priority: 105,
       content: `if ( req.http.requseted-host ) {
         set req.http.host = req.http.requseted-host;
-      }`
-    }
-  }
-  snippets[ SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ] = function () {
-    return {
-      name: SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS,
-      dynamic: 1,
-      type: 'recv',
-      priority: 107,
-      content: `if ( req.http.host ~ "risd.edu$" && ! req.http.Fastly-SSL ) {
-        set req.http.x-redirect-location = "https://" req.http.host req.url;
-        error 301;
       }`
     }
   }
