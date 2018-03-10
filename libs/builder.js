@@ -1009,7 +1009,7 @@ module.exports.start = function (config, logger) {
 
               return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
                 console.log( 'deleting:' + [args.bucket.contentDomain, args.builtFile].join('/') )
-                cloudStorage.objects.del( args.bucket, args.builtFile, function ( error ) {
+                cloudStorage.objects.del( args.bucket.contentDomain, args.builtFile, function ( error ) {
                   args.remoteDeleted = true;
                   next( null, args );
                 } )
