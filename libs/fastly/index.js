@@ -1186,7 +1186,7 @@ function serviceConfigurationUpdater () {
       
       var tasks = []
       
-      if ( args.type === 'snippet' ) tasks = tasks.concat( getSnippet )
+      if ( args.type === 'snippet' ) tasks = tasks.concat( [ getSnippet ] )
 
       tasks = tasks.concat( [ checkGetForUpdate, ifUpdateEnsureDevelopementVersion, putUpdate ] )
       return async.waterfall( tasks, taskComplete )
@@ -1209,7 +1209,6 @@ function serviceConfigurationUpdater () {
             } )  
           }
           else if ( args.type === 'gzip' ) {
-            console.log( 'set-gzip' )
             var updateArgsFn = args.checkUpdate( getResult )
             var updateArgs = updateArgsFn( {
               service_id: service_id,
@@ -1245,6 +1244,8 @@ function serviceConfigurationUpdater () {
   }
 
   function postRequestVersioned ( args, complete ) {
+    console.log( 'post-args' )
+    console.log( args )
     var apiRequest = self.request;
     var service_id = self._service_id;
     var version = self.version()
@@ -1319,7 +1320,7 @@ function gzipArguments ( name ) {
 
   function checkUpdate ( gzip ) {
     var sameContent = ( gzip.content_types === gzipOptions.content_types ) &&
-      ( gzip.extensions === gzipOptions.content_types  )
+      ( gzip.extensions === gzipOptions.extensions  )
 
     if ( sameContent ) return;
     else {
@@ -1345,7 +1346,7 @@ function gzipArguments ( name ) {
         "application/javascript text/javascript application/json " +
         "application/vnd.ms-fontobject application/x-font-opentype " +
         "application/x-font-truetype application/x-font-ttf application/xml " +
-        "font/eot font/opentype font/otf image/svg+xml image/vnd.microsoft.icon" +
+        "font/eot font/opentype font/otf image/svg+xml image/vnd.microsoft.icon " +
         "text/plain text/xml",
       extensions: "css js html eot ico otf ttf json",
     }
