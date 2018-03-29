@@ -16,6 +16,7 @@ var SNIPPET_RECV_BACKEND_MAPPING = 'recv_backend_mapping';
 var SNIPPET_FETCH_RESTORE_ORIGINAL_HOST = 'fetch_restore_original_host';
 var SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS = 'host_risddotedu_force_https';
 var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
+var GZIP_BASIC = 'gzip_basic';
 
 module.exports = FastlyWebhookService;
 
@@ -124,6 +125,7 @@ function initializeService ( service_id, complete ) {
           snippetArguments( SNIPPET_RECV_BACKEND_MAPPING ),
           snippetArguments( SNIPPET_FETCH_RESTORE_ORIGINAL_HOST ),
           snippetArguments( SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ),
+          gzipArguments( GZIP_BASIC ),
         ]
         .map( updator.mapVersionedTask )
 
@@ -1181,25 +1183,42 @@ function serviceConfigurationUpdater () {
 
     return function getSuccessfulResponse ( error, getResult ) {
       if ( typeof args.checkUpdate !== 'function' ) return taskComplete( null, getResult )
-
-      // update path for snippets.
       
-      var snippet_id = getResult.id;
-      var tasks = [ getSnippet, checkGetForUpdate, ifUpdateEnsureDevelopementVersion, putUpdate ]
+      var tasks = []
+      
+      if ( args.type === 'snippet' ) tasks = tasks.concat( getSnippet )
+
+      tasks = tasks.concat( [ checkGetForUpdate, ifUpdateEnsureDevelopementVersion, putUpdate ] )
       return async.waterfall( tasks, taskComplete )
 
       function getSnippet ( subTaskComplete ) {
-        var getSnippetUrl = [ '/service', service_id, args.type, snippet_id ].join( '/' )
+        var getSnippetUrl = [ '/service', service_id, args.type, getResult.id ].join( '/' )
         return apiRequest( 'GET', getSnippetUrl, subTaskComplete )
       }
 
       function checkGetForUpdate ( cdnSnippet, subTaskComplete ) {
+        // occurs in the case of gzip, where fetching 
+        if ( typeof cdnSnippet === 'function' ) subTaskComplete = cdnSnippet;
+
         try {
-          var updateArgsFn = args.checkUpdate( cdnSnippet )
-          var updateArgs = updateArgsFn( {
-            service_id: service_id,
-            snippet_id: snippet_id,
-          } )
+          if ( args.type === 'snippet' ) {
+            var updateArgsFn = args.checkUpdate( cdnSnippet )
+            var updateArgs = updateArgsFn( {
+              service_id: service_id,
+              snippet_id: getResult.id,
+            } )  
+          }
+          else if ( args.type === 'gzip' ) {
+            console.log( 'set-gzip' )
+            var updateArgsFn = args.checkUpdate( getResult )
+            var updateArgs = updateArgsFn( {
+              service_id: service_id,
+              name: getResult.name,
+            } )
+          }
+          else {
+            throw new Error( `args.type "${ args.type }" not coded for.` )
+          }
           
           return subTaskComplete( null, updateArgs )  
         }
@@ -1209,19 +1228,17 @@ function serviceConfigurationUpdater () {
       }
 
       function ifUpdateEnsureDevelopementVersion ( updateArgs, subTaskComplete ) {
-        if ( typeof updateArgs === 'function' ) return updateArgs()
+        if ( typeof updateArgs === 'function' ) return updateArgs(); // no update case, updateArgs is callback
         return self._ensureDevelopmentVersion( onVersion )
 
         function onVersion ( error ) {
-          console.log( 'ensure-dev' )
-          console.log( updateArgs )
           if ( error ) return subTaskComplete( error )
           return subTaskComplete( null, updateArgs )
         }
       }
 
       function putUpdate ( updateArgs, subTaskComplete ) {
-        if ( typeof updateArgs === 'function' ) return updateArgs()
+        if ( typeof updateArgs === 'function' ) return updateArgs(); // no update case, updateArgs is callback
         return apiRequest.apply( self, updateArgs.concat( [ subTaskComplete ] ) )
       }
     }
@@ -1275,7 +1292,7 @@ function dictionaryArguments ( name ) {
 function addDomainArguments ( name ) {
   return Object.assign( apiArguments( 'domain', name ), {
     checkPut: function domainCheckPut () {
-      // domain never needs to be updated. just a of the name.
+      // domain never needs to be updated.
       return;
     }
   } )
@@ -1291,6 +1308,58 @@ function apiDictionaryItemArguments ( options ) {
   }
 }
 
+// versioned configuration
+function gzipArguments ( name ) {
+  var args = apiArguments( 'gzip', name )
+  Object.assign( args, { checkUpdate: checkUpdate } )
+  var gzipOptions = gzipOptionsForName( name )
+  Object.assign( args.post, gzipOptions )
+
+  return args;
+
+  function checkUpdate ( gzip ) {
+    var sameContent = ( gzip.content_types === gzipOptions.content_types ) &&
+      ( gzip.extensions === gzipOptions.content_types  )
+
+    if ( sameContent ) return;
+    else {
+      // options : { service_id, version }
+      return function putArgsFn ( options ) {
+        var service_id = options.service_id;
+        var version = options.version;
+        var method = 'PUT';
+        var url = [ '/service', service_id, 'version', version, args.type, gzipOptions.name ].join( '/' )
+        var body = Object.assign( {}, gzipOptions )
+        return [ method, url, body ]
+      }
+    }
+  }
+
+  function gzipOptionsForName ( name ) {
+    var gzipConfigurations = {}
+
+    gzipConfigurations[ GZIP_BASIC ] = {
+      name: GZIP_BASIC,
+      cache_condition: "",
+      content_types: "text/html application/x-javascript text/css " +
+        "application/javascript text/javascript application/json " +
+        "application/vnd.ms-fontobject application/x-font-opentype " +
+        "application/x-font-truetype application/x-font-ttf application/xml " +
+        "font/eot font/opentype font/otf image/svg+xml image/vnd.microsoft.icon" +
+        "text/plain text/xml",
+      extensions: "css js html eot ico otf ttf json",
+    }
+
+    try {
+      return gzipConfigurations[ name ]
+    }
+    catch ( error ) {
+      throw new Error( `gzip configuration "${ name }" does not exist.` )
+    }
+  }
+}
+
+// versioned configuration
 function snippetArguments ( name, options ) {
   if ( typeof name === 'object' ) {
     options = Object.assign( {}, name )
@@ -1332,133 +1401,135 @@ function snippetArguments ( name, options ) {
       }
     }
   }
-}
-
-function snippetOptionsForName ( name, options ) {
-  var snippet = baseSnippets( name )
-  assert( typeof snippet === 'function', 'snippetOptionsForName is a mapping. The mapping was not successful.' )
-  return snippet( options );
-}
-
-function baseSnippets ( name ) {
-  var WILDCARD = '*';
-  var snippets =  {}
-  snippets[ SNIPPET_RECV_REDIRECT_HOSTS ] = function () {
-    return {
-      name: SNIPPET_RECV_REDIRECT_HOSTS,
-      dynamic: 1,
-      type: 'recv',
-      priority: 97,
-      content: `if ( table.lookup( ${ DICTIONARY_REDIRECT_HOSTS }, req.http.host ) ) {
-        set req.http.x-redirect-location = "http://" table.lookup( ${ DICTIONARY_REDIRECT_HOSTS }, req.http.host ) req.url;
-        error 301;
-      }`,
-    }
-  }
-  snippets[ SNIPPET_RECV_REDIRECT_URLS ] = function () {
-    return {
-      name: SNIPPET_RECV_REDIRECT_URLS,
-      dynamic: 1,
-      type: 'recv',
-      priority: 98,
-      content: `
-      declare local var.host_path STRING;
-      set var.host_path = req.http.host req.url.path;
-      if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ) ) {
-        declare local var.redirect_location STRING;
-        set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path );
-
-        if ( ! var.redirect_location ~ "^http" ) {
-          set var.redirect_location = "http://" var.redirect_location;
-        }
-
-        set req.http.x-redirect-location = var.redirect_location;
-
-        error 301;
-      }`.trim(),
-    }
-  }
-  snippets[ SNIPPET_RECV_TRAILING_SLASH ] = function () {
-    return {
-      name: SNIPPET_RECV_TRAILING_SLASH,
-      dynamic: 1,
-      type: 'recv',
-      priority: 99,
-      content: `if ( req.url !~ {"(?x)
-          (?:/$) # last character isn\'t a slash
-          | # or
-          (?:/\\?) # query string isn\'t immediately preceded by a slash
-        "} &&
-        req.url ~ {"(?x)
-          (?:/[^./]+$) # last path segment doesn\'t contain a . no query string
-          | # or
-          (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string
-        "} ) {
-        set req.http.x-redirect-location = req.url "/";
-        error 301;
-      }`,
-    }
-  }
-  snippets[ SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ] = function () {
-    return {
-      name: SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS,
-      dynamic: 1,
-      type: 'recv',
-      priority: 104,
-      content: `if ( req.http.host ~ "risd.edu$" && ! req.http.Fastly-SSL ) {
-        set req.http.x-redirect-location = "https://" req.http.host req.url;
-        error 301;
-      }`
-    }
-  }
-  snippets[ SNIPPET_RECV_BACKEND_MAPPING ] = function () {
-    return {
-      name: SNIPPET_RECV_BACKEND_MAPPING,
-      dynamic: 1,
-      type: 'recv',
-      priority: 105,
-      content: `if ( table.lookup( dictionary_host_backends, req.http.host ) ) {
-        set req.http.requseted-host = req.http.host;
-        set req.http.host = table.lookup( dictionary_host_backends, req.http.host );
-      }`
-    }
-  }
-  snippets[ SNIPPET_FETCH_RESTORE_ORIGINAL_HOST ] = function () {
-    return {
-      name: SNIPPET_FETCH_RESTORE_ORIGINAL_HOST,
-      dynamic: 1,
-      type: 'fetch',
-      priority: 105,
-      content: `if ( req.http.requseted-host ) {
-        set req.http.host = req.http.requseted-host;
-      }`
-    }
-  }
-  snippets[ SNIPPET_ERROR_REDIRECT ] = function () {
-    return {
-      name: SNIPPET_ERROR_REDIRECT,
-      dynamic: 1,
-      type: 'error',
-      priority: 100,
-      content: `if (obj.status == 301 && req.http.x-redirect-location) {
-        set obj.http.Location = req.http.x-redirect-location;
-        set obj.response = "Found";
-        synthetic {""};
-        return(deliver);
-      }`,
-    }
-  },
-  snippets[ WILDCARD ] = function ( options ) {
-    return Object.assign( {}, options )
-  }
 
 
-  if ( snippets.hasOwnProperty( name ) ) {
-    return snippets[ name ]
+  function snippetOptionsForName ( name, options ) {
+    var snippet = baseSnippets( name )
+    assert( typeof snippet === 'function', 'snippetOptionsForName is a mapping. The mapping was not successful.' )
+    return snippet( options );
   }
-  else {
-    return snippets[ WILDCARD ];
+
+  function baseSnippets ( name ) {
+    var WILDCARD = '*';
+    var snippets =  {}
+    snippets[ SNIPPET_RECV_REDIRECT_HOSTS ] = function () {
+      return {
+        name: SNIPPET_RECV_REDIRECT_HOSTS,
+        dynamic: 1,
+        type: 'recv',
+        priority: 97,
+        content: `if ( table.lookup( ${ DICTIONARY_REDIRECT_HOSTS }, req.http.host ) ) {
+          set req.http.x-redirect-location = "http://" table.lookup( ${ DICTIONARY_REDIRECT_HOSTS }, req.http.host ) req.url;
+          error 301;
+        }`,
+      }
+    }
+    snippets[ SNIPPET_RECV_REDIRECT_URLS ] = function () {
+      return {
+        name: SNIPPET_RECV_REDIRECT_URLS,
+        dynamic: 1,
+        type: 'recv',
+        priority: 98,
+        content: `
+        declare local var.host_path STRING;
+        set var.host_path = req.http.host req.url.path;
+        if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ) ) {
+          declare local var.redirect_location STRING;
+          set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path );
+
+          if ( ! var.redirect_location ~ "^http" ) {
+            set var.redirect_location = "http://" var.redirect_location;
+          }
+
+          set req.http.x-redirect-location = var.redirect_location;
+
+          error 301;
+        }`.trim(),
+      }
+    }
+    snippets[ SNIPPET_RECV_TRAILING_SLASH ] = function () {
+      return {
+        name: SNIPPET_RECV_TRAILING_SLASH,
+        dynamic: 1,
+        type: 'recv',
+        priority: 99,
+        content: `if ( req.url !~ {"(?x)
+            (?:/$) # last character isn\'t a slash
+            | # or
+            (?:/\\?) # query string isn\'t immediately preceded by a slash
+          "} &&
+          req.url ~ {"(?x)
+            (?:/[^./]+$) # last path segment doesn\'t contain a . no query string
+            | # or
+            (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string
+          "} ) {
+          set req.http.x-redirect-location = req.url "/";
+          error 301;
+        }`,
+      }
+    }
+    snippets[ SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ] = function () {
+      return {
+        name: SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS,
+        dynamic: 1,
+        type: 'recv',
+        priority: 104,
+        content: `if ( req.http.host ~ "risd.edu$" && ! req.http.Fastly-SSL ) {
+          set req.http.x-redirect-location = "https://" req.http.host req.url;
+          error 301;
+        }`
+      }
+    }
+    snippets[ SNIPPET_RECV_BACKEND_MAPPING ] = function () {
+      return {
+        name: SNIPPET_RECV_BACKEND_MAPPING,
+        dynamic: 1,
+        type: 'recv',
+        priority: 105,
+        content: `if ( table.lookup( dictionary_host_backends, req.http.host ) ) {
+          set req.http.requested-host = req.http.host;
+          set req.http.host = table.lookup( dictionary_host_backends, req.http.host );
+        }`
+      }
+    }
+    snippets[ SNIPPET_FETCH_RESTORE_ORIGINAL_HOST ] = function () {
+      return {
+        name: SNIPPET_FETCH_RESTORE_ORIGINAL_HOST,
+        dynamic: 1,
+        type: 'fetch',
+        priority: 105,
+        content: `if ( req.http.requested-host ) {
+          set req.http.host = req.http.requested-host;
+        }`
+      }
+    }
+    snippets[ SNIPPET_ERROR_REDIRECT ] = function () {
+      return {
+        name: SNIPPET_ERROR_REDIRECT,
+        dynamic: 1,
+        type: 'error',
+        priority: 100,
+        content: `if (obj.status == 301 && req.http.x-redirect-location) {
+          set obj.http.Location = req.http.x-redirect-location;
+          set obj.response = "Found";
+          synthetic {""};
+          return(deliver);
+        }`,
+      }
+    },
+    snippets[ WILDCARD ] = function ( options ) {
+      return Object.assign( {}, options )
+    }
+
+
+    if ( snippets.hasOwnProperty( name ) ) {
+      return snippets[ name ]
+    }
+    else {
+      return snippets[ WILDCARD ];
+    }
   }
+
 }
 
 function activeVersionIn ( versions ) {
