@@ -71,6 +71,7 @@ module.exports = function(grunt) {
       ip: process.env.FASTLY_IP,
       service_id: process.env.FASTLY_SERVICE_ID,
       ignoreDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
+      sslDomains: process.env.FASTLY_SSL_DOMAINS,
     }
   });
 

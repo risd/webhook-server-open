@@ -40,6 +40,8 @@ function FastlyWebhookService ( options ) {
   this._version_is_active = true;
   // domain to ignore
   this._ignore_domain = options.ignoreDomain || []
+  // domains to force over ssl
+  this._ssl_domains = options.sslDomains || []
 
   var fastly = Fastly( token )
   this.request = fastly.request.bind( fastly )
