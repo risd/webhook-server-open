@@ -81,9 +81,10 @@ module.exports.start = function (config, logger) {
    *  @param message The Message to send
    *  @param status  The status code to send (same as command line status codes)
    */
-  var reportStatus = function(site, message, status) {
+  var reportStatus = function(site, message, status, code) {
+    if ( ! code ) code = 'BUILT'
     var messagesRef = self.root.root().child('/management/sites/' + site + '/messages/');
-    messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: 'BUILD' }, function() {
+    messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: code }, function() {
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
@@ -330,6 +331,10 @@ module.exports.start = function (config, logger) {
 
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'build-upload-site:start' )
+
+              reportStatus( args.siteName, 'Build started for ' + args.siteBucket, 0, 'BUILDING' )
+
+
               var buckets = [ { contentDomain: args.siteBucket, maskDomain: args.maskDomain } ]
               var buildEmitterOptions = {
                 maxParallel: maxParallel,
