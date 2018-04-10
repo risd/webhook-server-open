@@ -6,7 +6,7 @@ var siteBranchCmdOptions = {
   edu: {
     develop: eduDevelop,
     master: eduMaster,
-    webpack: eduWebpack,
+    lerna: eduLerna,
   },
   edutest: {
     master: eduTestMaster,
@@ -117,11 +117,11 @@ function eduMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"edu,1risd,1systems",
-    "siteBucket": "r-6.edu.risd.systems",
+    "siteBucket": "r-8.edu.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
-      { branch: 'master', bucket: 'r-6.edu.risd.systems' },
+      { branch: 'master', bucket: 'r-8.edu.risd.systems' },
     ]
   }
   var identifier = "edu,1risd,1systems_master"
@@ -156,19 +156,19 @@ function eduDevelop () {
   return cmd;
 }
 
-function eduWebpack () {
+function eduLerna () {
   var data = {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"edu,1risd,1systems",
-    "siteBucket": "sg-webpack.edu.risd.systems",
+    "siteBucket": "feature-lerna.edu.risd.systems",
     "userid":"rrodrigu@risd.edu",
-    "branch":"feature/sg-webpack",
+    "branch":"feature/lerna",
     "deploys": [
-      { branch: 'feature/sg-webpack', bucket: 'sg-webpack.edu.risd.systems' },
+      { branch: 'feature/lerna', bucket: 'feature-lerna.edu.risd.systems' },
     ]
   }
-  var identifier = "edu,1risd,1systems_sg-webpack.edu.risd.systems"
+  var identifier = "edu,1risd,1systems_feature-lerna.edu.risd.systems"
 
   var cmd = {
     "identifier": identifier,
@@ -466,7 +466,7 @@ function liberalArtsMaMaster () {
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
   }
-  var identifier = "unique-cli-test,1risd,1systems_dev.test.risd.systems"
+  var identifier = "risd-liberal-arts-ma,1risd,1systems_dev.test.risd.systems"
 
   var cmd = {
     "identifier": identifier,
@@ -485,7 +485,7 @@ function liberalArtsMaDevelop () {
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
   }
-  var identifier = "unique-cli-test,1risd,1systems_dev.test.risd.systems"
+  var identifier = "risd-liberal-arts-ma,1risd,1systems_dev.test.risd.systems"
 
   var cmd = {
     "identifier": identifier,
