@@ -250,7 +250,7 @@ function cachePurge ( options ) {
       purgeUrl = purgeUrl.replace( '/index.html', '/' )
     }
 
-    var requestOptions = { method: 'PURGE', url: purgeUrl }
+    var requestOptions = { method: 'PURGE', url: purgeUrl, followRedirect: false }
     if ( purgeProxy ) requestOptions.proxy = purgeProxy;
 
     try {
