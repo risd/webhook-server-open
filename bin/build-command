@@ -117,11 +117,11 @@ function eduMaster () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"edu,1risd,1systems",
-    "siteBucket": "r-8.edu.risd.systems",
+    "siteBucket": "r-9.edu.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"master",
     "deploys": [
-      { branch: 'master', bucket: 'r-8.edu.risd.systems' },
+      { branch: 'master', bucket: 'r-9.edu.risd.systems' },
     ]
   }
   var identifier = "edu,1risd,1systems_master"
