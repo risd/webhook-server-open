@@ -1,0 +1,17 @@
+#!/usr/bin/env node
+require('dotenv').config()
+
+var async = require( 'async' )
+var grunt = require( 'grunt' )
+var webhookTasks = require( '../Gruntfile.js' )
+var fastly = require( '../libs/fastly' )
+
+webhookTasks( grunt )
+var cdn = fastly( grunt.config().fastly )
+
+var domains = process.argv.slice( 2 )
+
+cdn.domain( domains, function ( error, service ) {
+  if ( error ) return console.log( error )
+  else console.log(`Fastly service '${ service.service_id }' is running on version ${ service.version }.`)
+} )

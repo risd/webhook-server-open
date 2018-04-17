@@ -1,0 +1,150 @@
+#!/usr/bin/env node
+
+/**
+ * Interact with the command delegator without going through
+ * firebase to propogate command messages to be queued.
+ * Instead, the `commandDelegator` emits `commandHandlers`
+ * on `ready`, which can be used to push messages into the
+ * same memcached / beanstalk queue.
+ *
+ * This relies on having a memcach & beanstalk server running
+ * with the config given by `grunt.config` & any workers
+ * listening on the tubes that you are pushing jobs into.
+ */
+
+var grunt = require( 'grunt' );
+var webhookTasks = require( '../Gruntfile.js' );
+var commandDelegator = require( '../libs/commandDelegator.js' );
+
+webhookTasks( grunt );
+
+var siteCmdOptions = {
+  build: {
+    edu: eduBuildData,
+    eduTest: eduTestBuildData,
+  },
+  previewBuild: {
+    edu: eduBuildData,
+    eduTest: eduTestPreviewBuildData,
+  },
+  siteSearchReindex: {
+    edu: eduIndexData,
+  },
+  domainMap: {
+    uniquecli: uniqueCliDomainMap,
+  },
+}
+
+var cmd = parseArgs( process.argv.slice( 2 ) )
+if ( ! cmd ) return printHelp()
+
+var commandor = commandDelegator.start( grunt.config, grunt.log )
+
+commandor.on( 'ready', function ( commandHandlers ) {
+  
+  if ( Array.isArray( cmd ) ) {
+    cmd.forEach( handleCmd  )
+  }
+  else if ( typeof cmd === 'object') {
+    handleCmd( cmd )
+  }
+
+  function handleCmd ( cmdArgs ) {
+    commandHandlers( cmdArgs.cmdType, cmdArgs.data() )
+  }
+
+} )
+
+function parseArgs ( args ) {
+  var cmd = false;
+  var cmdType = args[ 0 ]
+  if ( cmdType in siteCmdOptions ) {
+    var site = args[ 1 ].split( '=' )[ 1 ]
+    if ( site in siteCmdOptions[ cmdType ] ) {
+      var data = siteCmdOptions[ cmdType ][ site ]
+      cmd = { cmdType: cmdType, data: data }
+    }
+  }
+  return cmd;
+}
+
+function printHelp () {
+  var msg = `command-delegator-push {cmd-type} --site={site-name}\nPossible values include:\n\t${ possibleCmds().map( cmdList ).join( '\n\t' ) }`
+  return console.log( msg )
+
+  function cmdList( cmd ) {
+    return `${ cmd.cmdType } --site=${ cmd.site }`
+  }
+
+  function possibleCmds () {
+    return Object.keys( siteCmdOptions )
+      .map( cmdNestedSitesCmds )
+      .reduce( concatSites, [] )
+    
+    function cmdNestedSitesCmds ( cmdType ) {
+      return { cmdType: cmdType, sites: Object.keys( siteCmdOptions[ cmdType ] ) }
+    }
+
+    function concatSites ( previous, current ) {
+      return previous.concat( current.sites.map( flattenSites ) )
+
+      function flattenSites ( site ) {
+        return { cmdType: current.cmdType, site: site }
+      }
+    }
+  }
+}
+
+function eduBuildData () {
+  return {
+    payload: {
+      contentType: 'homepage',
+      id: '151268050854333240875eb644fc49e5329d947dd6e5c',
+      itemKey: 'homepage',
+      sitename: 'edu,1risd,1systems',
+      userid: 'rrodrigu@risd.edu'
+    },
+    identifier: 'edu,1risd,1systems',
+  }
+}
+
+function eduTestBuildData () {
+  return {
+    payload: {
+      contentType: 'homepage',
+      id: '151268050854333240875eb644fc49e5329d947dd6e5c',
+      itemKey: 'homepage',
+      sitename: 'edutest,1risd,1systems',
+      userid: 'rrodrigu@risd.edu'
+    },
+    identifier: 'edutest,1risd,1systems',
+  }
+}
+
+function eduTestPreviewBuildData () {
+  return eduTestBuildData()
+}
+
+function eduIndexData () {
+  return {
+    payload: {
+      id: '1512680753439863aed1ecde744e697e585110e664d32',
+      sitename: 'edu,1risd,1systems',
+      userid: 'rrodrigu@risd.edu'
+    },
+    identifier: 'edu,1risd,1systems',
+  }
+}
+
+function uniqueCliDomainMap () {
+  return {
+    payload: {
+      id: '12307adjhaf0923',
+      sitename: 'unique-cli-test,1risd,1systems',
+      userid: 'rrodrigu@risd.edu',
+      maskDomain: 'test.risd.systems',
+      contentDomain: '0002.test.risd.systems',
+    },
+    identifier: 'unique-cli-test,1risd,1systems',
+  }
+}

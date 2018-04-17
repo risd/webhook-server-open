@@ -77,7 +77,7 @@ If WebHook gets itself into a bind, it can be helpful to restart the processes. 
 
 ###### Stop all running processes.
 
-```risdweb@webhook-1:~$ sudo supervisorctl stop all```
+```sudo supervisorctl stop all```
 
 
 ###### Ensure the `webhook_server` & `beanstalkd` are no longer bound to their ports (3000 & 11300)
@@ -124,7 +124,7 @@ risdweb@webhook-1:~$
 
 With all processes stopped unbound from their ports, it is safe to start all processes.
 
-```risdweb@webhook-1:~$  sudo supervisorctl start```
+```sudo supervisorctl start all```
 
 
 ##### Ensure status

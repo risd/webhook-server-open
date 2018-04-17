@@ -10,6 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "cheerio": "^0.22.0",
+    "csv-parse": "^1.2.0",
     "traverse": "^0.6.6"
   }
 }

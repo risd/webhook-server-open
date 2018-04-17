@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+
+var grunt = require( 'grunt' );
+var Firebase = require( 'firebase' )
+var webhookTasks = require( '../Gruntfile.js' );
+var siteIndexor = require( '../libs/siteIndex.js' );
+
+webhookTasks( grunt );
+
+// merge this config in order to run just the builder command
+grunt.config.merge( {
+  suppressJobQueue: true
+} )
+
+var siteIndex = siteIndexor.start( grunt.config, grunt.log )
+
+var owners = {
+  "rrodrigu@risd,1edu": "rrodrigu@risd.edu"
+}
+
+var identifier = 'id'
+
+var data = {
+  "sitename": "unique-cli-test,1risd,1systems",
+  "userid": "rrodrigu@risd.edu",
+}
+
+var payload = {
+  "identifier": identifier,
+  "payload": data,
+}
+
+var mockClient = {
+  put: function (first, second, third, fourth, jobExecuter) {
+    jobExecuter()
+  }
+}
+
+var jobCallback = function ( error ) {
+  if ( error ) console.log( error )
+  else console.log( arguments )
+  process.exit( error ? 1 : 0 )
+}
+
+siteIndex( payload, identifier, data, mockClient, jobCallback  )

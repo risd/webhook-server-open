@@ -1,3 +1,4 @@
+.DS_Store
 lib-cov
 *.seed
 *.log
@@ -16,6 +17,7 @@ node_modules
 
 libs/keyfile.key
 service-accounts
-.env*
+.env
+.env.test
 google-compute-engine-id.json
 beanstalk

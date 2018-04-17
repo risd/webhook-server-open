@@ -1,0 +1,53 @@
+#!/usr/bin/env node
+
+require('dotenv').config()
+
+var grunt = require( 'grunt' );
+var webhookTasks = require( '../Gruntfile.js' );
+var previewBuilder = require( '../libs/preview-builder.js' );
+
+webhookTasks( grunt );
+
+// merge this config in order to run just the builder command
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
+var previewBuild = previewBuilder.start( grunt.config, grunt.log )
+
+var mockClient = {
+  put: function (first, second, third, fourth, jobExecuter) {
+    jobExecuter()
+  }
+}
+
+var jobCallback = function ( error ) {
+  if ( error ) console.log( error )
+  else console.log( arguments )
+  process.exit( error ? 1 : 0 )
+}
+
+var cmd = uniqueCliTest()
+
+previewBuild( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
+
+function uniqueCliTest () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"unique-cli-test,1risd,1systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+    "contentType": "pages",
+    "itemKey": "-Kh8b6MT7EJxal8GTQuR",
+    "siteBucket": "0002.test.risd.systems",
+  }
+  var identifier = "previewBuild_edu,1risd,1systems-employee---KKrlLnwu3uGNKo5SI7x"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}

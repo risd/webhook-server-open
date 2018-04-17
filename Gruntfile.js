@@ -17,12 +17,16 @@
 
 var builder = require('./libs/builder.js');
 var siteIndexer = require('./libs/siteIndex.js');
+var redirects = require('./libs/redirects.js');
 var inviter = require('./libs/invite.js');
 var creator = require('./libs/creator.js');
 var server = require('./libs/server.js');
 var delegator = require('./libs/commandDelegator.js');
 var backup = require('./libs/backup.js');
 var extractKey = require('./libs/extractKey.js');
+var previewBuilder = require('./libs/preview-builder.js');
+var domainMapper = require('./libs/domain-mapper.js');
+var timeoutWorker = require('./libs/timeout-worker.js');
 
 require('dotenv').config({ silent: true });
 
@@ -32,6 +36,7 @@ module.exports = function(grunt) {
     firebase: process.env.FIREBASE,                                             // The name of your firebase
     firebaseSecret: process.env.FIREBASE_KEY,                                    // Your firebase's API key
     mailgunKey: process.env.MAILGUN_SECRET_KEY,                                           // The API key from mailgun
+    mailgunDomain: process.env.MAILGUN_DOMAIN,                                           // The domain that uses mailgun
     fromEmail: process.env.FROM_EMAIL,                               // Mailgun will send ALL emails for ALL sites from this email address.
     elasticServer: process.env.ELASTIC_SEARCH_SERVER,                               // The address of your elastic server
     elasticUser: process.env.ELASTIC_SEARCH_USER,                                       // The read/write user on your elastic server
@@ -56,13 +61,24 @@ module.exports = function(grunt) {
         email: process.env.CLOUDFLARE_EMAIL,
         key: process.env.CLOUDFLARE_KEY,
       },
-      zone_id: process.env.CLOUDFLARE_ZONE,
     },
+    builder: {
+      forceWrite: process.env.BUILDER_FORCE_WRITE || false,
+      maxParallel: concurrencyOption( process.env.BUILDER_MAX_PARALLEL ),
+    },
+    fastly: {
+      token: process.env.FASTLY_TOKEN,
+      ip: process.env.FASTLY_IP,
+      service_id: process.env.FASTLY_SERVICE_ID,
+      ignoreDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
+      sslDomains: process.env.FASTLY_SSL_DOMAINS,
+    }
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {
     var done = this.async();
-    delegator.start(grunt.config, grunt.log);
+    var d = delegator.start(grunt.config, grunt.log);
+    d.on('ready', console.log)
   });
 
   grunt.registerTask('buildWorker', 'Worker that handles building sites', function() {
@@ -70,9 +86,24 @@ module.exports = function(grunt) {
     builder.start(grunt.config, grunt.log);
   });
 
-  grunt.registerTask('siteIndexWorker', 'Worker that handles building sites', function() {
+  grunt.registerTask('previewBuildWorker', 'Worker that builds an individual template for the given contentType & itemKey.', function () {
+    var done = this.async();
+    previewBuilder.start( grunt.config, grunt.log );
+  });
+
+  grunt.registerTask('domainMapper', 'Worker that updates domain mappings within fastly.', function () {
+    var done = this.async();
+    domainMapper.start( grunt.config, grunt.log );
+  } )
+
+  grunt.registerTask('siteIndexWorker', 'Worker that handles synchronizing a site Firebase data with its Elastic Search index.', function() {
     var done = this.async();
     siteIndexer.start(grunt.config, grunt.log);
+  });
+
+  grunt.registerTask('redirectsWorker', 'Worker that handles synchronizing a site Firebase redirect settings with its Fastly service.', function() {
+    var done = this.async();
+    redirects.start(grunt.config, grunt.log);
   });
 
   grunt.registerTask('inviteWorker', 'Worker that handles inviting team members', function() {
@@ -100,4 +131,21 @@ module.exports = function(grunt) {
     var file = grunt.option('file');
     extractKey.start(file, grunt.config, grunt.log);
   });
+
+  grunt.registerTask('timeoutWorker', 'Timeout in order to test proper queue management.', function () {
+    var done = this.async();
+    timeoutWorker.start(grunt.config, grunt.log);
+  })
+
+  grunt.registerTask('echoConfig', 'Logs out the current config object.', function () {
+    console.log( grunt.config() )
+  });
+
 };
+
+// concurrency option value defaults to half the available cpus
+function concurrencyOption ( concurrencyOptionValue ) {
+  if ( typeof concurrencyOptionValue === 'number' ) return Math.floor( concurrencyOptionValue )
+  if ( concurrencyOptionValue === 'max' ) return require('os').cpus().length;
+  return require('os').cpus().length / 2;
+}

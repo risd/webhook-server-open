@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+
+require('dotenv').config()
+var fs = require( 'fs' )
+var crypto = require( 'crypto' )
+var zlib = require( 'zlib' )
+var path = require( 'path' )
+var cloudStorage = require( '../libs/cloudStorage.js' );
+
+// uploaded md5 hash: hYAshspjwV9dxJXgN2QiJQ==
+// compressed remote redirect hash: +q/7UOYW17pL6pfvuoinhQ==
+// uploaded remote redirect hash: EKFWjZAax65T52Qo7zCUXQ==
+var filePath = path.join( 'buildings', '123-dyer', 'index.html' )
+var branchSite = 'risd-identity-research,1risd,1systems_master'
+var bucket ='risd-identity-research.risd.systems'
+
+var localFile = {
+  branchSite: branchSite,
+  filePath: filePath
+}
+
+var remoteFile = {
+  bucket: bucket,
+  filePath: filePath
+}
+
+var uploadFile = {
+  bucket: bucket,
+  local: fileInBranchSite( filePath ),
+  remote: filePath,
+}
+
+var writeRedirect = {
+  filePath: fileInBranchSite( filePath + '-redirect' ),
+  content: "<html><head><meta charset=\"utf-8\" /></head><body><script>window.location=\"/buildings/123-dyer/\";</script></body></html>",
+}
+
+var uploadRedirect = {
+  bucket: bucket,
+  local: fileInBranchSite( filePath + '-redirect' ),
+  remote: filePath.slice( 0, filePath.length - '/index.html'.length ),
+  cacheControl: 'no-cache',
+  overrideMimeType: 'text/plain',
+}
+
+
+// writeRedirectFor( writeRedirect, function ( error ) {
+//   console.log( 'wrote:error:' + error )
+//   console.log( 'wrote:' + writeRedirect.filePath )
+// } )
+hashForLocal( Object.assign( {}, localFile, { filePath: filePath + '-redirect' } ), function ( error, hash ) {
+  console.log( 'local-:' + hash )
+} )
+// hashForRemote( Object.assign( {}, remoteFile, { filePath: filePath.slice( 0, filePath.length - '/index.html'.length ) } ), function ( error, hash ) {
+//   console.log( 'remote:' + hash)
+// } )
+
+// hashForLocal( localFile, function ( error, localHash ) {
+//   console.log( 'local-:' + localHash )
+// } )
+
+// hashForRemote( remoteFile, function ( error, remoteHash ) {
+//   console.log( 'remote:' + remoteHash )
+// } )
+
+// upload( uploadFile, function ( error, result ) {
+//   console.log( 'upload:error:' + error )
+//   console.log( 'upload:' + result )
+// } )
+
+upload( uploadRedirect, function ( error, result ) {
+  // console.log( 'upload:error:' + error )
+  console.log( 'upload:' + JSON.parse( result ).md5Hash )
+} )
+
+function fileInBranchSite ( filePath ) {
+  return path.join( process.cwd(), '..', 'build-folders', branchSite, '.build', filePath )
+}
+
+function writeRedirectFor ( options, callback ) {
+  var filePath = options.filePath
+  var content = options.content
+
+  fs.writeFile( filePath, content, callback )
+}
+
+function upload ( options, callback ) {
+  var bucket = options.bucket;
+  var local = options.local;
+  var remote = options.remote;
+  var cacheControl = options.cacheControl || 'no-cache';
+  var overrideMimeType = options.overrideMimeType || 'text/plain';
+  cloudStorage.objects.upload( bucket, local, remote, cacheControl, overrideMimeType, callback )
+}
+
+function uploadCompressed ( options, callback ) {
+  cloudStorage.objects.uploadCompressed( options, callback )
+}
+
+function hashForLocal ( options, callback ) {
+  var filePath = options.filePath
+  var branchSite = options.branchSite
+
+  var encoding = 'utf8'
+
+  var builtFilePath = path.join( process.cwd(), '..', 'build-folders', branchSite, '.build', filePath )
+  fs.readFile( builtFilePath, encoding, function ( error, builtFileContent ) {
+    zlib.gzip( builtFileContent, function ( error, compressedBuiltFileContent ) {
+      if ( error ) return callback( error )
+      var hash = crypto.createHash('md5').update(builtFileContent, encoding).digest('base64');
+      callback( null, hash )
+    } )
+  } )
+}
+
+function hashForRemote( options, callback ) {
+  var bucket = options.bucket;
+  var filePath = options.filePath;
+
+  cloudStorage.objects.getMeta( bucket, filePath, function ( error, meta ) {
+    if ( error ) return callback( error )
+    return callback( null, meta.md5Hash );
+  } )
+}

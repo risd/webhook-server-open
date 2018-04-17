@@ -12,6 +12,13 @@ var Memcached = require('memcached');
 var async = require('async');
 var domain = require('domain');
 
+// 120 minutes, to be safe
+var jobLifetime = 60 * 60 * 2;
+// 60 seconds
+var jobRecheckDelay = 60;
+
+module.exports.jobLifetime = jobLifetime;
+
 module.exports.init = function (config) {
 
   // For testing purposes, we can suppress using this job queue
@@ -54,7 +61,8 @@ module.exports.init = function (config) {
     client.connect(config.get('beanstalkServer'), function(err, conn) {
       if(err) {
         console.log( 'connect-error' )
-        console.log('Error: ' + err);
+        console.log('Error: ' + err.message);
+        console.log(err.stack);
         process.exit(1);
       }
 
@@ -128,6 +136,73 @@ module.exports.init = function (config) {
     });
   };
 
+
+  self.destroyJobs = function ( options, callback ) {
+    var tube = options.tube;
+    var client = new beanstalkd.Client();
+
+    client.connect( config.get( 'beanstalkServer' ), function ( error, conn ) {
+      if ( error ) {
+        logError( 'connect-error', error )
+        return callback( error )
+      }
+
+      conn.use( tube, function ( error, tubename ) {
+        if ( error ) {
+          logError( 'tube-error', error )
+          return callback( error )
+        }
+
+        conn.watch( tube, function ( error, tubename ) {
+          if ( error ) {
+            logError( 'watch-error', error )
+            return callback( error )
+          }
+
+          // destroy all jobs in tube
+          var expired = false;
+          // set timer
+          var expiration = setTimeout( function () {
+            expired = true;
+          }, 5000 )
+
+          return async.whilst( hasNotExpired, popJobs, callback )
+
+          function hasNotExpired () {
+            return expired === false;
+          }
+
+          function popJobs ( done ) {
+            expiration = setTimeout( function () {
+              expired = true;
+              done()
+            }, 5000 )
+
+            conn.reserve( function ( error, id, payload ) {
+            
+              clearTimeout( expiration )
+            
+              if ( error ) {
+                logError( 'reserve-error', error )
+                return callback()
+              }
+
+              console.log( 'destroying:reserve-id-' + id + ':' + JSON.parse(payload).identifier)
+              conn.destroy( id, done )
+            } )
+          }
+        } )
+
+      } )
+    } )
+
+    function logError( name, error ) {
+      console.log( name )
+      console.log( 'Error: ', error.message )
+      console.log( error.stack )
+    }
+  }
+
   /*
   * Unlocks a job on the given lock
   *
@@ -155,10 +230,12 @@ module.exports.init = function (config) {
   * @param complete   Function to call after unlock succeeds
   */
   self.lockJob = function(client, lock, identifier, payload, callback, complete) {
-    memcached.add(lock + '_' + identifier + '_processing', 1, 60 * 3, function(err) {
+    var lockId = lock + '_' + identifier + '_processing';
+    memcached.add(lockId, 1, jobLifetime, function(err) {
       if(err) {
-        console.log('Delayed');
-        client.put(1, 30, (60 * 3), JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
+        console.log('Delayed: ' + identifier);
+        // priority, delay, time to run
+        client.put(1, jobRecheckDelay, jobLifetime, JSON.stringify({ identifier: identifier, payload: payload.payload }), function() { complete(); });
       } else {
         callback(payload, function(done) { self.unlockJob(client, lock, identifier, payload, function() { done(); }); });
       }

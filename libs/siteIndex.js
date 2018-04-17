@@ -1,6 +1,7 @@
 'use strict';
 
 // Requires
+require('colors');
 var fs = require('fs');
 var _ = require('lodash');
 var domain = require('domain');
@@ -44,6 +45,9 @@ module.exports.start = function (config, logger) {
   }
   var search = WebHookElasticSearch( searchOptions )
 
+  console.log( 'searchOptions' )
+  console.log( searchOptions )
+
   var siteDataOptions = {
     firebase: {
       name: config.get('firebase'),
@@ -83,73 +87,86 @@ module.exports.start = function (config, logger) {
     console.log('Waiting for commands'.red);
 
     // Wait for a searhc index job, extract info from payload
-    jobQueue.reserveJob('siteSearchReindex', 'siteSearchReindex', function(payload, identifier, data, client, jobCallback) {
-      console.log('Triggered command!');
-      console.log('payload')
-      console.log(JSON.stringify(payload))
-      console.log('identifier')
-      console.log(identifier)
-      console.log('data')
-      console.log(JSON.stringify(data))
-
-      var userid = data.userid;
-      var site = data.sitename;
-
-      console.log('Processing Command For '.green + site.red);
-
-      self.root.root().child('management/sites/' + site).once('value', function(siteData) {
-        var siteValues = siteData.val();
-
-        // If the site does not exist, may be stale build, should no longer happen
-        if(!siteValues) {
-          jobCallback();
-          return;
-        }
-
-        var siteName = siteData.name();
-
-        // Run a domain so we can survive any errors
-        var domainInstance = domain.create();
-
-        domainInstance.on('error', function(err) { 
-          console.log('domain-instance:error');
-          console.log(err);
-          reportStatus(siteName, 'Failed to re-index, errors encountered in search indexing process', 1);
-          jobCallback();
-        });
-
-        domainInstance.run(function() {
-          
-          search.siteEntries( siteName, function ( error, siteIndex ) {
-            whSiteData.get( { siteName: siteName, key: siteValues.key }, function ( error, retrievedSiteData ) {
-
-              var updateIndexOptions = {
-                siteName: siteName,
-                siteData: { data: retrievedSiteData.data, contentType: retrievedSiteData.contentType },
-                siteIndex: siteIndex,
-              }
-
-              search.updateIndex( updateIndexOptions, function ( error, results ) {
-
-                console.log( 'update-index-results' )
-                console.log( 'error:' + results.error )
-                console.log( 'items-indexed:' + results.items.length )
-                reportStatus(siteName, 'Re-index process complete', 0);
-                jobCallback( error )
-
-              } )
-
-            } )
-          } )
-
-        })
-
-
-      }, function(err) {
-        jobCallback(err);
-      });
-    });
+    jobQueue.reserveJob('siteSearchReindex', 'siteSearchReindex', siteSearchReindexJob);
 
   });
+
+  return siteSearchReindexJob;
+
+  function siteSearchReindexJob (payload, identifier, data, client, jobCallback) {
+    console.log('Triggered command!');
+    console.log('payload')
+    console.log(JSON.stringify(payload))
+    console.log('identifier')
+    console.log(identifier)
+    console.log('data')
+    console.log(JSON.stringify(data))
+
+    var userid = data.userid;
+    var site = data.sitename;
+
+    console.log('Processing Command For '.green + site.red);
+
+    self.root.root().child('management/sites/' + site).once('value', function(siteData) {
+      var siteValues = siteData.val();
+
+      // If the site does not exist, may be stale build, should no longer happen
+      if(!siteValues) {
+        jobCallback();
+        return;
+      }
+
+      var siteName = unescapeSite( siteData.name() );
+
+      // Run a domain so we can survive any errors
+      var domainInstance = domain.create();
+
+      domainInstance.on('error', function(err) { 
+        console.log('domain-instance:error');
+        console.log(err);
+        reportStatus(siteName, 'Failed to re-index, errors encountered in search indexing process', 1);
+        jobCallback();
+      });
+
+      domainInstance.run(function() {
+        
+        search.siteEntries( siteName, function ( error, siteIndex ) {
+          whSiteData.get( { siteName: siteName, key: siteValues.key }, function ( error, retrievedSiteData ) {
+
+            var updateIndexOptions = {
+              siteName: siteName,
+              siteData: { data: retrievedSiteData.data, contentType: retrievedSiteData.contentType },
+              siteIndex: siteIndex,
+            }
+
+            search.updateIndex( updateIndexOptions, function ( error, results ) {
+
+              console.log( 'update-index-results' )
+              if ( error ) {
+                console.log( 'error:' )
+                console.log( error )
+              }
+              if ( results.error ) {
+                console.log( 'indexed-error:' )
+                console.log( results.error )
+              }
+              if ( results.items ) {
+                console.log( 'indexed-items:' + results.items.length )
+              }
+              reportStatus(siteData.name(), 'Re-index process complete', 0);
+              jobCallback( error )
+
+            } )
+
+          } )
+        } )
+
+      })
+
+
+    }, function(err) {
+      jobCallback(err);
+    });
+  }
 
 };

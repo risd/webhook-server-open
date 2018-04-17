@@ -57,13 +57,13 @@ module.exports.start = function (config, logger) {
           request.put(url, function(err, res, body) {
             // We update the list of backups in firebase
             self.root.child('management/backups/').push(backupTs, function() {
-              // Do cleanup of old backups here, delete ones past 7 days ago
+              // Do cleanup of old backups here, delete ones past 30 days ago
               self.root.child('management/backups/').once('value', function(snap) {
                 var data = snap.val();
 
                 var ids = _.keys(data);
 
-                if(ids.length > 7) {
+                if(ids.length > 30) {
                   var oldestId = ids[0];
                   var oldestTimestamp = data[oldestId];
 

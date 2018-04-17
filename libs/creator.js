@@ -16,6 +16,9 @@ var JobQueue = require('./jobQueue.js');
 var request = require('request');
 var miss = require('mississippi');
 
+var utils = require( './utils.js' );
+var usingArguments = utils.usingArguments;
+var sink = utils.sink;
 var cloudStorage = require('./cloudStorage.js');
 
 var escapeUserId = function(userid) {
@@ -157,8 +160,10 @@ module.exports.start = function (config, logger) {
         createBucket(),
         updateAcls(),
         updateIndex(),
+        ensureCdn( config.get( 'fastly' ) ),
         ensureCname( config.get( 'cloudflare' ) ),
         generateKey(),
+        createData(),
         sink(),
         function onEnd ( error ) {
           if ( error ) return callback( error )
@@ -168,6 +173,26 @@ module.exports.start = function (config, logger) {
   }
 
   return createSite;
+
+  function createData() {
+    return miss.through.obj( function ( row, enc, next ) {
+      console.log( 'create-data:start' )
+      var data = {}
+      data[ row.siteKey ] = {
+        dev: {
+          data: {},
+          contentType: {},
+          settings: {},
+        }
+      }
+      self.root.child( 'buckets' ).child( row.siteName ).set( data, function onComplete ( error ) {
+        console.log( 'create-data:end:error' )
+        console.log( error )
+        if ( error ) return next( error )
+        next( null, row )
+      } )
+    } )
+  }
 };
 
 module.exports.setupBucket = setupBucket;
@@ -177,18 +202,24 @@ module.exports.createCnameRecord = createCnameRecord;
 /**
  * @param  {object}   options
  * @param  {string}   options.siteBucket
+ * @param  {boolean}  options.ensureCname
  * @param  {object}   options.cloudStorage
  * @param  {object}   options.cloudflare
  * @param  {object}   options.cloudflare.client
  * @param  {string}   options.cloudflare.client.key
  * @param  {string}   options.cloudflare.client.email
- * @param  {string}   options.cloudflare.zone_id
+ * @param  {object}   options.fastly
+ * @param  {string}   options.fastly.token
+ * @param  {string}   options.fastly.service_id
+ * @param  {string}   options.fastly.ignoreDomain
  * @param  {Function} callback
  * @return {Function}
  */
 function setupBucket ( options, callback ) {
+
   var bucketToSetup = {
     siteBucket:   options.siteBucket,
+    ensureCname:  options.ensureCname || true,
     bucketExists: false,
     createdBucket: false,
     cloudStorage: options.cloudStorage,
@@ -199,6 +230,7 @@ function setupBucket ( options, callback ) {
     createBucket(),
     updateAcls(),
     updateIndex(),
+    ensureCdn( options.fastly ),
     ensureCname( options.cloudflare ),
     sink(),
     function ( error ) {
@@ -292,8 +324,8 @@ function updateIndex () {
     row.cloudStorage.buckets.updateIndex(
       row.siteBucket,
       'index.html', '404.html',
-      function ( err, body ) {
-        if ( err ) return next( err, null )
+      function ( error, body ) {
+        if ( error ) { error.step = 'updateIndex'; return next( error, null ) }
         else next( null, row )
       } )
   });
@@ -304,40 +336,31 @@ function updateIndex () {
  * @param  {object}    options.client
  * @param  {string}    options.client.key
  * @param  {string}    options.client.email
- * @param  {string}    options.zone_id
  * @return {Function}  transform stream
  */
 function ensureCname ( options ) {
 
-  var baseCreateCnameRecordOptions = Object.assign( options, {
-    content: 'c.storage.googleapis.com',
-  } )
-
-  var canCreateCname = function ( site ) {
-    return site.endsWith( 'risd.systems' )
-  }
-
   return miss.through.obj( function ( row, enc, next ) {
 
-    if ( canCreateCname( row.siteBucket ) ) {
-      console.log( 'site-setup:ensure-cname' )
+    if ( row.ensureCname ) {
+      console.log( 'site-setup:ensure-cname:' + row.siteBucket )
 
-      var createCnameRecordOptions = Object.assign( baseCreateCnameRecordOptions, { record: row.siteBucket } )
-      createCnameRecord( createCnameRecordOptions, function ( error, cname ) {
+      var cnameOptions = Object.assign( {
+        usesFastly: row.cdn,
+        siteBucket: row.siteBucket,
+      }, options )
+
+      createCnameRecord( cnameOptions, function ( error, cname ) {
         row.cname = cname;
+        console.log( 'site-setup:ensure-cname:done' )
+        console.log( error )
+        console.log( row )
         next( null, row );
       } )
     } else {
       console.log( 'site-setup:ensure-cname:skipping' )
-      next( null, row )
+      next( null, row ) 
     }
-
-  } )
-}
-
-function sink () {
-  return miss.through.obj( function ( row, enc, next ) {
-    next();
   } )
 }
 
@@ -349,56 +372,156 @@ function sink () {
  * @param  {object} options.client
  * @param  {string} options.client.email
  * @param  {string} options.client.key
- * @param  {string} options.record
- * @param  {string} options.content
- * @param  {string} options.zone_id
+ * @param  {string} options.siteBucket
+ * @param  {object?} options.usesFastly
  * @param  {Function} onComplete ( Error|null, Boolean|CnameRecord )
  */
-function createCnameRecord ( options, onComplete ) {
+function createCnameRecord ( options, callback ) {
+  console.log( 'create-cname-record:start' )
+
   var Cloudflare = require('cloudflare');
 
   var client = new Cloudflare( options.client )
-  var cnameRecord  = options.record
-  var cnameContent = options.content
-  var zone_id = options.zone_id
 
-  var recordCreated = false;
-  
-  var createRecordOptions = { type: 'CNAME', zone_id: zone_id, proxied: true }
+  var cname = false;
 
-  function createRecord ( withRecord ) {
+  return miss.pipe(
+    usingArguments( options ),  // { client, siteBucket, usesFastly }
+    getZoneId(),                // adds { zoneId }
+    getOrCreateCname(),         // if { zoneId }, adds { cname }
+    sink( function ( row ) {
+      console.log( 'create-cname-record:sink' )
+      cname = row.cname;
+    } ),
+    function onComplete ( error ) {
+      if ( error ) return callback( error )
+      callback( null, cname )
+    } )
 
-    var dnsCnameRecord = Cloudflare.DNSRecord.create( Object.assign( createRecordOptions, {
-        name: cnameRecord,
-        content: cnameContent,
-      } ) );
+  function getZoneId () {
+
+    return miss.through.obj( function ( row, enc, next ) {
+      console.log( 'create-cname-record:get-zone-id' )
+      var domain = domainForBucket( row.siteBucket )
+      getZoneFn( domain, function ( error, zone ) {
+        if ( error ) return next( error )
+        if ( zone === false ) {
+          row.zoneId = zone;
+        } else {
+          row.zoneId = zone.id;
+        }
+        next( null, row )
+      } )
+    } )
+
+    function domainForBucket ( bucket ) {
+      return bucket.split( '.' ).slice( -2 ).join( '.' )
+    }
+
+    function getZoneFn ( domain, withZone ) {
+      
+      client.browseZones( { name: domain } )
+        .then( function ( zones ) {
+          var seekingZones = zones.result.filter( function ( zone ) { return zone.name === domain } )
+
+          if ( seekingZones.length === 1 ) {
+            return withZone( null, seekingZones[ 0 ] )
+          } else {
+            return withZone( null, false )
+          }
+        } )
+        .catch( function ( error ) {
+          return withZone( error )
+        } )
+    }
+  }
+
+  function getOrCreateCname () {
+    var baseRecordOptions = { type: 'CNAME', proxied: true }
+    var googleRecordContent =  { content: 'c.storage.googleapis.com', };
+    var fastlyRecordContent =  { content: 'nonssl.global.fastly.net', };
+
+    return miss.through.obj( function ( row, enc, next ) {
+      console.log( 'create-cname-record:get-or-create' )
+      if ( !row.zoneId ) {
+        row.cname = false;
+        next( null, row )
+      }
+      
+      gatherCnames( row.zoneId, function ( error, cnames ) {
+        if ( error ) return next( error )
+
+        var recordValues = Object.assign( {
+            name: row.siteBucket,
+            zone_id: row.zoneId,
+          },
+          baseRecordOptions,
+          row.usesFastly ? fastlyRecordContent : googleRecordContent )
+
+        var existingRecord = valueInArray( cnames, nameKey, row.siteBucket )
+
+        if ( !existingRecord ) {
+          // does not exist, lets make it
+          return createRecord( recordValues, returnCname )
+        }
+        else if ( existingRecord.content !== recordValues.content ) {
+          // exists, but has dated content, lets update it
+          existingRecord.content = recordValues.content;
+          return updateRecord( existingRecord, returnCname )
+        }
+        else return returnCname( null, existingRecord )
+
+        function returnCname ( error, cname ) {
+          row.cname = cname;
+          next( null, row )
+        }
+      } )
+    } )
+
+    function valueInArray ( arr, keyFn, seekingValue ) {
+      var index = arr.map( keyFn ).indexOf( seekingValue )
+      if ( index === -1 ) return undefined;
+      return arr[ index ]
+    }
+
+    function nameKey ( record ) {
+      return record.name;
+    }
+  }
+
+  function createRecord ( recordValues, withRecord ) {
+
+    var dnsCnameRecord = Cloudflare.DNSRecord.create( Object.assign( {}, recordValues ) );
 
     client.addDNS( dnsCnameRecord )
       .then( function ( cname ) {
-        return onComplete( null, cname )
+        return withRecord( null, cname )
       } )
       .catch( function ( error ) {
-        onComplete( error, recordCreated )
+        error.step = 'createCnameRecord:createRecord';
+        withRecord( error )
       } )
-
   }
 
-  return gatherCnames( zone_id, function ( error, cnames ) {
-    if ( error ) return onComplete( error, recordCreated )
+  function updateRecord ( record, withRecord ) {
 
-    if ( cnames.indexOf( cnameRecord ) === -1 ) return createRecord( onComplete )
-    else return onComplete( null, ( recordCreated = true ) )
+    client.editDNS( record )
+      .then( function ( cname ) {
+        return withRecord( null, cname )
+      } )
+      .catch( function ( error ) {
+        error.step = 'createCnameRecord:updateRecord';
+        withRecord( error )
+      } )
+  }
 
-  } )
-
-  function gatherCnames ( zone_id, withCnames ) {
+  function gatherCnames ( zone_id, returnCname ) {
 
     var gatherOptions = { type: 'CNAME' }
     var cnameSources = [];
 
     function pluckCnamesFromRecords ( records ) {
-      cnameSources = cnameSources.concat(
-        records.map( function( record ) { return record.name } ) )
+      cnameSources = cnameSources.concat( records )
     }
 
     function getPageOfCnames ( pageOptions, withPage ) {
@@ -418,13 +541,31 @@ function createCnameRecord ( options, onComplete ) {
     function paginate ( error, pagination ) {
       if ( error ) return withCnames( error )
 
-      if ( pagination.page < pagination.totalPages ) return getPageOfCnames( { page: pagination.page++ }, paginate )
+      if ( pagination.page < pagination.totalPages ) return getPageOfCnames( { page: pagination.page + 1 }, paginate )
 
-      else return withCnames( null, cnameSources )
+      else return returnCname( null, cnameSources )
     }
 
     return getPageOfCnames( { page: 1 }, paginate )
-
   }
+}
 
+function ensureCdn ( fastlyOptions ) {
+  var cdn = require( './fastly' )( fastlyOptions )
+
+  return miss.through.obj( function ( row, enc, next ) {
+    console.log( 'ensure-cdn:' + row.siteBucket );
+
+    cdn.domain( row.siteBucket, function ( error, service ) {
+      if ( error ) { error.step = 'ensureCdn'; return next( error ) }
+      else if ( typeof service === 'object' && service.hasOwnProperty( 'service_id' ) ) {
+        row.cdn = service;  
+      }
+      else {
+        row.cdn = false;
+      }
+      console.log( 'ensure-cdn:done' );
+      return next( null, row )
+    } )
+  } )
 }

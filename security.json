@@ -172,6 +172,41 @@
                 "id": {
                  ".validate": true
                 },
+                "contentType": {
+                 ".validate": true
+                },
+                "itemKey": {
+                 ".validate": true
+                },
+                "$other": {
+                 ".validate": false
+                }
+              }
+            },
+            "previewBuild" : {
+              "$command" : {
+                ".read": "data.child('userid').val() == auth.email",
+                ".write": "true",
+                // Users can submit a command per site, and makes sure the commands email is the same as the auth
+                ".validate": "newData.hasChildren(['userid', 'sitename']) && newData.child('userid').val() == auth.email",
+                "userid": {
+                 ".validate": "newData.isString()"
+                },
+                "sitename": {
+                 ".validate": "newData.isString()"
+                },
+                "build_time" : {
+                 ".validate": true
+                },
+                "id": {
+                 ".validate": true
+                },
+                "contentType": {
+                 ".validate": true
+                },
+                "itemKey": {
+                 ".validate": true
+                },
                 "$other": {
                  ".validate": false
                 }
@@ -199,7 +234,56 @@
                  ".validate": false
                 }
               }
-            }
+            },
+            "redirects" : {
+              "$command" : {
+                ".read": "data.child('userid').val() == auth.email",
+                ".write": "true",
+                // Users can submit a command per site, and makes sure the commands email is the same as the auth
+                ".validate": "newData.hasChildren(['userid', 'sitename']) && newData.child('userid').val() == auth.email",
+                "userid": {
+                 ".validate": "newData.isString()"
+                },
+                "sitename": {
+                 ".validate": "newData.isString()"
+                },
+                "redirect_time" : {
+                 ".validate": true
+                },
+                "id": {
+                 ".validate": true
+                },
+                "$other": {
+                 ".validate": false
+                }
+              }
+            },
+            "domainMap" : {
+              "$command" : {
+                ".read": "data.child('userid').val() == auth.email",
+                ".write": "true",
+                // Users can submit a command per site, and makes sure the commands email is the same as the auth
+                ".validate": "newData.hasChildren(['userid', 'sitename']) && newData.child('userid').val() == auth.email",
+                "userid": {
+                 ".validate": "newData.isString()"
+                },
+                "sitename": {
+                 ".validate": "newData.isString()"
+                },
+                "id": {
+                 ".validate": true
+                },
+                "maskDomain": {
+                 ".validate": true
+                },
+                "contentDomain": {
+                 ".validate": true
+                },
+                "$other": {
+                 ".validate": false
+                }
+              }
+            },
           },
           "sites": {
             "$site" : {
@@ -248,6 +332,7 @@
               "messages": {
                 ".write": false,
                 "$message": {
+                  ".write": true,
                   "message": {
                     ".validate": true
                   },
