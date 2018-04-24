@@ -33,25 +33,25 @@ require('dotenv').config({ silent: true });
 module.exports = function(grunt) {
   // Project configuration.
   grunt.initConfig({
-    firebase: process.env.FIREBASE,                                             // The name of your firebase
-    firebaseSecret: process.env.FIREBASE_KEY,                                    // Your firebase's API key
-    mailgunKey: process.env.MAILGUN_SECRET_KEY,                                           // The API key from mailgun
-    mailgunDomain: process.env.MAILGUN_DOMAIN,                                           // The domain that uses mailgun
-    fromEmail: process.env.FROM_EMAIL,                               // Mailgun will send ALL emails for ALL sites from this email address.
-    elasticServer: process.env.ELASTIC_SEARCH_SERVER,                               // The address of your elastic server
-    elasticUser: process.env.ELASTIC_SEARCH_USER,                                       // The read/write user on your elastic server
-    elasticPassword: process.env.ELASTIC_SEARCH_PASSWORD,                           // The password for your elastic user
-    //elasticOptions: {                                                 // This block is completely optional but useful if you need to specify
-    //  port: 9200,                                                     // more elasticsearch options. Possible keys are :
-    //  secure: false,                                                  // port, secure, defaultMethod, params, path, timeout, keepAlive and agent
-    //  defaultMethod: 'GET'                                            // Uncomment this block and fill in your required values if needed
+    firebase: process.env.FIREBASE,                                         // The name of your firebase
+    firebaseServiceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,    // Your firebase's service account key
+    mailgunKey: process.env.MAILGUN_SECRET_KEY,                             // The API key from mailgun
+    mailgunDomain: process.env.MAILGUN_DOMAIN,                              // The domain that uses mailgun
+    fromEmail: process.env.FROM_EMAIL,                                      // Mailgun will send ALL emails for ALL sites from this email address.
+    elasticServer: process.env.ELASTIC_SEARCH_SERVER,                       // The address of your elastic server
+    elasticUser: process.env.ELASTIC_SEARCH_USER,                           // The read/write user on your elastic server
+    elasticPassword: process.env.ELASTIC_SEARCH_PASSWORD,                   // The password for your elastic user
+    //elasticOptions: {                                                     // This block is completely optional but useful if you need to specify
+    //  port: 9200,                                                         // more elasticsearch options. Possible keys are :
+    //  secure: false,                                                      // port, secure, defaultMethod, params, path, timeout, keepAlive and agent
+    //  defaultMethod: 'GET'                                                // Uncomment this block and fill in your required values if needed
     //},
-    googleProjectId: process.env.GOOGLE_PROJECT_ID,                                 // Your google project ID. Usually something like whatever-123
-    sitesBucket: process.env.SITES_BUCKET,                             // The name of the build bucket on Google Cloud Storage
-    backupBucket: process.env.BACKUPS_BUCKET,                          // The name of the backup bucket on Google Cloud Storage
-    uploadsBucket: process.env.UPLOADS_BUCKET,                         // The name of the bucket to push all file uploads to
-    googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,  // The email of your projects Service Acccount
-    newrelicEnabled: false,                                             // Set to true to enable NewRelic monitoring (also make sure that a newrelic.js file exists)
+    googleProjectId: process.env.GOOGLE_PROJECT_ID,                         // Your google project ID. Usually something like whatever-123
+    sitesBucket: process.env.SITES_BUCKET,                                  // The name of the build bucket on Google Cloud Storage
+    backupBucket: process.env.BACKUPS_BUCKET,                               // The name of the backup bucket on Google Cloud Storage
+    uploadsBucket: process.env.UPLOADS_BUCKET,                              // The name of the bucket to push all file uploads to
+    googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,               // The email of your projects Service Acccount
+    newrelicEnabled: false,                                                 // Set to true to enable NewRelic monitoring (also make sure that a newrelic.js file exists)
     memcachedServers: [
       'localhost:11211'
     ],
