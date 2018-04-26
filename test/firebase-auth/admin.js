@@ -1,13 +1,22 @@
 var test = require( 'tape' )
 var path = require( 'path' )
 var grunt = require( 'grunt' )
-var firebaseInitialize = require( path.join( '..', '..', 'libs', 'firebase', 'initialize.js' ) )
-var webhookTasks = require( path.join( '..', '..', 'Gruntfile.js' ) )
+var Firebase = require( '../../libs/firebase/index.js' )
+var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
-test( 'firebase-admin-initialize', function ( t ) {
-  t.plan( 1 )
-  var firebase = firebaseInitialize( grunt.config() )
+test( 'firebase-admin', function ( t ) {
+  t.plan( 4 )
+  
+  var firebase = Firebase( grunt.config() )
   t.assert( typeof firebase === 'object', 'Firebase instance is an object.' )
+
+  var db = firebase.database()
+  t.assert( typeof db === 'object', 'Firebase database instance is an object.' )
+
+  firebase.token( 'test-token', function ( error, token ) {
+    t.assert( error === null, 'Firebase token error is null.' )
+    t.assert( typeof token === 'string', 'Firebase token is a string.' )
+  } )
 } )
