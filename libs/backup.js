@@ -110,62 +110,7 @@ module.exports.start = function (config, logger, callback) {
     if ( options.removeBackup.timestamp === false ) return next()
     cloudStorage.objects.del( options.backupBucket, 'backup-' + options.removeBackup.timestamp, next )
   }
-
-  
-  // cloudStorage.getToken(function(token) {
-
-  //   // This is the upload reuqest, because the file can be so large we use the resumable
-  //   // upload API of cloud storage. So first we request a url to upload to.
-  //   request({
-  //     url: 'https://www.googleapis.com/upload/storage/v1/b/' + options.backupBucket + '/o',
-  //     qs: { uploadType: 'resumable', 'access_token' : token },
-  //     method: 'POST',
-  //     headers: {
-  //       'X-Upload-Content-Type' : 'application/json',
-  //       'Content-Type' : 'application/json; charset=UTF-8',
-  //     },
-  //     body: JSON.stringify({
-  //       name: 'backup-' + backupTs,
-  //       cacheControl: "no-cache"
-  //     }) 
-  //   }, function(err, res, body) {
-  //     var url = res.headers.location;
-
-  //     // The location returned by google is the url to send the file to for upload
-  //     // We create a get request to download the data from firebase and pipe it into
-  //     // a PUT request to googles cloud url, for effeciency.
-  //     request.get('https://' + config.get('firebase') + '.firebaseio.com/.json?auth=' + config.get('firebaseSecret') + '&format=export').pipe(
-  //       request.put(url, function(err, res, body) {
-  //         // We update the list of backups in firebase
-  //         self.root.child('management/backups/').push(backupTs, function() {
-  //           // Do cleanup of old backups here, delete ones past 30 days ago
-  //           self.root.child('management/backups/').once('value', function(snap) {
-  //             var data = snap.val();
-
-  //             var ids = _.keys(data);
-
-  //             if(ids.length > 30) {
-  //               var oldestId = ids[0];
-  //               var oldestTimestamp = data[oldestId];
-
-  //               self.root.child('management/backups/' + oldestId).remove(function() {
-  //                 cloudStorage.objects.del(config.get('backupBucket'), 'backup-' + oldestTimestamp, function() {
-  //                   console.log('Done');
-  //                   process.exit(0);
-  //                 });
-  //               });
-  //             } else {
-  //               console.log('Done');
-  //               process.exit(0);
-  //             }
-  //           });
-  //         });
-  //       })
-  //     );
-  //   });
-  // });
-
-};
+}
 
 function exit ( error ) {
   var exitCode = 0
