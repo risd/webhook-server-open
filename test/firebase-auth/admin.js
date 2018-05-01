@@ -7,16 +7,19 @@ var webhookTasks = require( '../../Gruntfile.js' )
 webhookTasks( grunt )
 
 test( 'firebase-admin', function ( t ) {
-  t.plan( 4 )
+  t.plan( 5 )
   
-  var firebase = Firebase( grunt.config() )
+  var firebase = Firebase( grunt.config().firebase )
   t.assert( typeof firebase === 'object', 'Firebase instance is an object.' )
 
   var db = firebase.database()
   t.assert( typeof db === 'object', 'Firebase database instance is an object.' )
 
-  firebase.token( 'test-token', function ( error, token ) {
-    t.assert( error === null, 'Firebase token error is null.' )
-    t.assert( typeof token === 'string', 'Firebase token is a string.' )
+  firebase.customToken( 'test-custom-token', function ( error, token ) {
+    t.assert( error === null, 'Firebase custom token error is null.' )
+    t.assert( typeof token === 'string', 'Firebase custom token is a string.' )
   } )
+
+  var sercreKey = firebase.idToken()
+  t.assert( typeof sercreKey === 'string', 'Firebase sercre key is a string.' )
 } )

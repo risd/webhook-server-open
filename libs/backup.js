@@ -26,19 +26,18 @@ module.exports.start = function (config, logger, callback) {
 
   var self = this;
 
-  var firebase = Firebase( config() )
+  var firebase = Firebase( config().firebase )
   this.root = firebase.database()
 
   var options = {
     backupBucket: config.get( 'backupBucket' ),
     backupTimestamp: Date.now(),
-    firebaseName: config.get( 'firebase' ),
+    firebase: config.get( 'firebase' ),
     removeBackup: { timestamp: false, id: false },
   }
 
   async.series( [
     getCloudStorageToken,    // adds { cloudStorageToken } to options
-    getFirebaseToken,        // adds { firebaseToken } to options
     getUploadUrl,            // adds { uploadUrl } to options
     createBackup,
     storeBackupTimestampReference,
@@ -52,14 +51,6 @@ module.exports.start = function (config, logger, callback) {
     // our cloud storage module, this request is very special so we build it manually
     cloudStorage.getToken( function ( token ) {
       options.cloudStorageToken = token;
-      next()
-    } )
-  }
-
-  function getFirebaseToken ( next ) {
-    firebase.token( 'rm-wh-backup', function ( error, token ) {
-      if ( error ) return next( error )
-      options.firebaseToken = token;
       next()
     } )
   }
@@ -84,13 +75,12 @@ module.exports.start = function (config, logger, callback) {
   }
 
   function createBackup ( next ) {
-    var url = `https://${ options.firebaseName }.firebaseio.com/.json?access_token=${ options.firebaseToken }&format=export`
-    console.log( 'url:', url )
+    var url = `https://${ options.firebase.name }.firebaseio.com/.json?auth=${ options.firebase.secretKey }&format=export`
     request.get( url ).pipe( request.put( options.uploadUrl, next ) )
   }
 
   function storeBackupTimestampReference ( next ) {
-    self.root.ref( 'management/backups/' ).push( options.backupTimestamp, next)
+    self.root.ref( 'management/backups/' ).push( options.backupTimestamp, next )
   }
 
   function checkRemoveOldestBackup ( next ) {
@@ -99,7 +89,7 @@ module.exports.start = function (config, logger, callback) {
 
       var ids = _.keys( data )
 
-      if(ids.length > 30) {
+      if( ids.length > 30 ) {
         var oldestId = ids[ 0 ]
         var oldestTimestamp = data[ oldestId ]
 

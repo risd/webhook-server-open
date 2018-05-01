@@ -33,8 +33,11 @@ require('dotenv').config({ silent: true });
 module.exports = function(grunt) {
   // Project configuration.
   grunt.initConfig({
-    firebase: process.env.FIREBASE,                                         // The name of your firebase
-    firebaseServiceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,    // Your firebase's service account key
+    firebase: {
+      name: process.env.FIREBASE,                                           // The name of your firebase
+      secretKey: process.env.FIREBASE_KEY,                                  // The Firebase secret key
+      serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,          // Your firebase's service account key
+    },
     mailgunKey: process.env.MAILGUN_SECRET_KEY,                             // The API key from mailgun
     mailgunDomain: process.env.MAILGUN_DOMAIN,                              // The domain that uses mailgun
     fromEmail: process.env.FROM_EMAIL,                                      // Mailgun will send ALL emails for ALL sites from this email address.

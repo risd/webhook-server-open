@@ -9,6 +9,6 @@ test( 'backup', function ( t ) {
   t.plan( 1 )
   
   backup.start( grunt.config, console.log, function ( error ) {
-    t.assert( error === undefined, 'Backup completed without error.' )
+    t.assert( error === null, 'Backup completed without error.' )
   } )
 } )
