@@ -14,6 +14,8 @@ function EnvOptions ( options ) {
 
   var envOptions = {
     fastlyAddDomain: process.env.FASTLY_ADD_DOMAIN,
+    fastlyMapDomainKey: process.env.FASTLY_MAP_DOMAIN_KEY,
+    fastlyMapDomainValue: process.env.FASTLY_MAP_DOMAIN_VALUE,
   }
 
   Object.assign( envOptions, options )

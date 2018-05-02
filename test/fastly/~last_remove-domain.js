@@ -1,4 +1,4 @@
-var testOptions = require( './env-options.js' )()
+var testOptions = require( '../env-options.js' )()
 
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
