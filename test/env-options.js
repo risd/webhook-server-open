@@ -16,6 +16,10 @@ function EnvOptions ( options ) {
     fastlyAddDomain: process.env.FASTLY_ADD_DOMAIN,
     fastlyMapDomainKey: process.env.FASTLY_MAP_DOMAIN_KEY,
     fastlyMapDomainValue: process.env.FASTLY_MAP_DOMAIN_VALUE,
+    buildSiteName: process.env.BUILD_SITE_NAME,
+    buildBucketName: process.env.BUILD_BUCKET_NAME,
+    buildDeployBranch: process.env.BUILD_DEPLOY_BRANCH,
+    buildUserId: process.env.BUILD_USER_ID,
   }
 
   Object.assign( envOptions, options )

@@ -4,7 +4,7 @@
 var fs = require('fs');
 var url = require( 'url' )
 var assert = require( 'assert' )
-var firebase = require('firebase');
+var Firebase = require('./firebase/index.js');
 var colors = require('colors');
 var _ = require('lodash');
 var uuid = require('node-uuid');
@@ -62,9 +62,9 @@ module.exports.start = function (config, logger) {
   var jobQueue = JobQueue.init(config);
 
   var self = this;
-  var firebaseUrl = config.get('firebase') || '';
 
-  this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/buckets');
+  var firebase = Firebase( config().firebase )
+  this.root = firebase.database()
 
   var buildFolderRoot = '../build-folders';
   var setupBucketOptions = {
@@ -83,14 +83,14 @@ module.exports.start = function (config, logger) {
    */
   var reportStatus = function(site, message, status, code) {
     if ( ! code ) code = 'BUILT'
-    var messagesRef = self.root.root().child('/management/sites/' + site + '/messages/');
+    var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
     messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: code }, function() {
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
         if(size > 50) {
-          messagesRef.startAt().limit(1).once('child_added', function(snap) {
-            snap.ref().remove();
+          messagesRef.startAt().limitToFirst(1).once('child_added', function(snap) {
+            messagesRef.child(snap.key).remove();
           });
         }
       });
@@ -133,18 +133,14 @@ module.exports.start = function (config, logger) {
     }
   }
 
-  self.root.auth(config.get('firebaseSecret'), function(err) {
-    if(err) {
-      console.log(err.red);
-      process.exit(1);
-    }
 
-    console.log('Waiting for commands'.red);
+  // Initialize ----
+  console.log('Waiting for commands'.red);
 
-    // Wait for a build job, extract info from payload
-    jobQueue.reserveJob('build', 'build', buildJob);
+  // Wait for a build job, extract info from payload
+  jobQueue.reserveJob('build', 'build', buildJob);
 
-  });
+
 
   function buildJob (payload, identifier, data, client, jobCallback) {
     console.log('Triggered command!');
@@ -159,12 +155,11 @@ module.exports.start = function (config, logger) {
     var site = data.sitename;
     var siteBucket = data.siteBucket;
     var branch = data.branch;
-    var deploys = data.deploys;
     var noDelay = data.noDelay || false;
 
     console.log('Processing Command For '.green + site.red);
 
-    self.root.root().child('management/sites/' + site).once('value', function(siteData) {
+    self.root.ref('management/sites/' + site).once('value', function(siteData) {
       var siteValues = siteData.val();
 
       // If the site does not exist, may be stale build, should no longer happen
@@ -176,7 +171,7 @@ module.exports.start = function (config, logger) {
       // Create build-folders if it isnt there
       mkdirp.sync('../build-folders/');
 
-      var siteName = siteData.name();
+      var siteName = siteData.key;
       var buildFolderRoot = '../build-folders';
       var buildFolder = buildFolderRoot + '/' + Deploys.utilities.nameForSiteBranch( site, siteBucket );
 
@@ -1023,8 +1018,9 @@ module.exports.start = function (config, logger) {
           }
 
         } else {
-          console.log('Site does not exist or no permissions');
-          processSiteCallback( null );
+          var message = 'Site does not exist or no permissions'
+          console.log( 'Site does not exist or no permissions' );
+          processSiteCallback( new Error( message ) );
         }
       }
 
