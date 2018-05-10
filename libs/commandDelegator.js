@@ -62,15 +62,15 @@ function CommandDelegator (config, logger) {
 
   // Where in firebase we look for commands, plus the name of the locks we use in memcached
   var commandUrls = [
-    { commands: 'management/commands/build/', lock: 'build', tube: 'build' },
-    { commands: 'management/commands/create/', lock: 'create', tube: 'create' },
-    { commands: 'management/commands/verification/', lock: 'verification', tube: 'verification' },
-    { commands: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
-    { commands: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
-    { commands: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
-    { commands: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
-    { commands: 'management/commands/redirects/', lock: 'redirects', tube: 'redirects' },
-    { commands: 'management/commands/domainMap/', lock: 'domainMap', tube: 'domainMap' },
+    { command: 'management/commands/build/', lock: 'build', tube: 'build' },
+    { command: 'management/commands/create/', lock: 'create', tube: 'create' },
+    { command: 'management/commands/verification/', lock: 'verification', tube: 'verification' },
+    { command: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
+    { command: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
+    { command: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
+    { command: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
+    { command: 'management/commands/redirects/', lock: 'redirects', tube: 'redirects' },
+    { command: 'management/commands/domainMap/', lock: 'domainMap', tube: 'domainMap' },
   ];
 
   var commandHandlersStore = commandHandlersInterface();
@@ -133,7 +133,7 @@ function CommandDelegator (config, logger) {
 
     var queueFirebase = function ( toQueue, callback ) {
       if ( typeof callback !== 'function' ) callback = function noop () {}
-      self.root.ref( handlers[ toQueue.commands ] ).push().set( toQueue.data, callback )
+      self.root.ref( handlers[ toQueue.tube ].command ).push().set( toQueue.data, callback )
     }
 
     var external = function () {
@@ -188,7 +188,7 @@ function CommandDelegator (config, logger) {
   // as jobs are added we queue them up ten listen again.
   function handleCommands(client, item) { 
     console.log('Waiting on commands for ' + item.tube);
-    self.root.ref(item.commands).on('child_added', onCommandSnapshot, onCommandSnapshotError);
+    self.root.ref(item.command).on('child_added', onCommandSnapshot, onCommandSnapshotError);
 
     return handleCommandData;
 
@@ -198,7 +198,7 @@ function CommandDelegator (config, logger) {
       var identifier = snapshot.key;
       
       // We remove the data immediately to avoid duplicates
-      self.root.ref(item.commands).child(snapshot.key).remove()
+      self.root.ref(item.command).child(snapshot.key).remove()
 
       var commandData = {
         payload: payload,
