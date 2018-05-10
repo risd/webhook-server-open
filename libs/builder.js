@@ -95,7 +95,7 @@ module.exports.start = function (config, logger) {
         }
       });
     });
-  };
+  }
 
   /**
    * Downloads the site archive from cloud storage
