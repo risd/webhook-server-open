@@ -1,4 +1,4 @@
-'use strict';
+
 
 /**
 * The command delegator is a program that moves jobs queued up in firebase into beanstalk. We move
@@ -9,7 +9,7 @@
 
 var events = require('events');
 var util = require('util');
-var firebase = require('firebase');
+var Firebase = require('./firebase/index.js');
 var colors = require('colors');
 var _ = require('lodash');
 var async = require('async');
@@ -55,10 +55,10 @@ function CommandDelegator (config, logger) {
   // Memcached is used for locks, to avoid setting the same job
   var memcached = new Memcached(config.get('memcachedServers'));
   var self = this;
-  var firebaseUrl = config.get('firebase') || '';
-  this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/');
+  var firebase = Firebase( config().firebase )
+  this.root = firebase.database()
 
-  var deploys = Deploys( this.root.child( 'buckets' ) )
+  var deploys = Deploys( this.root )
 
   // Where in firebase we look for commands, plus the name of the locks we use in memcached
   var commandUrls = [
@@ -75,28 +75,19 @@ function CommandDelegator (config, logger) {
 
   var commandHandlersStore = commandHandlersInterface();
 
-  self.root.auth(config.get('firebaseSecret'), function(err) {
-    if(err) {
-      console.log(err.red);
-      process.exit(1);
-    }
+  // For each command we listen on a seperate tube and firebase url
+  console.log('Starting clients'.red);
 
-    // For each command we listen on a seperate tube and firebase url
-    console.log('Starting clients'.red);
+  var commandTasks = commandUrls.map( connectionForCommandTasks );
 
-    var commandTasks = commandUrls.map( connectionForCommandTasks );
-
-    return async.parallel( commandTasks, onCommandHandlers )
-  });
+  async.parallel( commandTasks, onCommandHandlers )
 
   return this;
 
   function onCommandHandlers ( error, commandHandlers ) {
-    commandHandlers.forEach( function ( handler ) {
-      commandHandlersStore.add(  handler.tube, handler.commandHandler )
-    } )
+    commandHandlers.forEach( commandHandlersStore.add )
 
-    self.emit( 'ready', commandHandlersStore.queue )
+    self.emit( 'ready', commandHandlersStore.external() )
   }
 
   function connectionForCommandTasks ( item ) {
@@ -113,8 +104,8 @@ function CommandDelegator (config, logger) {
             console.log(err);
             return process.exit(1);
           }
-          var commandHandler = handleCommands(conn, item);
-          onConnectionMade( null, { tube: item.tube, commandHandler: commandHandler })
+          var memcachedCommandHandler = handleCommands(conn, item);
+          onConnectionMade( null,  Object.assign( { memcachedCommandHandler: memcachedCommandHandler }, item ) )
         });
       });
       
@@ -128,21 +119,33 @@ function CommandDelegator (config, logger) {
   function commandHandlersInterface () {
     var handlers = {};
     
-    var add = function ( tube, handler ) {
-      handlers[ tube ] = handler;
+    var add = function ( command ) {
+      handlers[ command.tube ] = command;
     }
 
-    var queue = function ( tube, commandData ) {
+    var queueMemcached = function ( toQueue ) {
       try {
-        handlers[ tube ]( commandData )
+        handlers[ toQueue.tube ].memcachedCommandHandler( toQueue.data )
       } catch ( error ) {
         throw error;
       }
     }
 
+    var queueFirebase = function ( toQueue, callback ) {
+      if ( typeof callback !== 'function' ) callback = function noop () {}
+      self.root.ref( handlers[ toQueue.commands ] ).push().set( toQueue.data, callback )
+    }
+
+    var external = function () {
+      return {
+        queueMemcached: queueMemcached,
+        queueFirebase: queueFirebase,
+      }
+    }
+
     return {
       add: add,
-      queue: queue,
+      external: external,
     }
   }
 
@@ -185,17 +188,17 @@ function CommandDelegator (config, logger) {
   // as jobs are added we queue them up ten listen again.
   function handleCommands(client, item) { 
     console.log('Waiting on commands for ' + item.tube);
-    self.root.child(item.commands).on('child_added', onCommandSnapshot, onCommandSnapshotError);
+    self.root.ref(item.commands).on('child_added', onCommandSnapshot, onCommandSnapshotError);
 
     return handleCommandData;
 
     function onCommandSnapshot ( snapshot ) {
 
       var payload = snapshot.val();
-      var identifier = snapshot.name();
+      var identifier = snapshot.key;
       
       // We remove the data immediately to avoid duplicates
-      snapshot.ref().remove();
+      self.root.ref(item.commands).child(snapshot.key).remove()
 
       var commandData = {
         payload: payload,
