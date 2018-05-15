@@ -28,7 +28,7 @@ test( 'builder', function ( t ) {
   build( command, command.identifier, command.payload, mockClient, jobCallback )
   
   function jobCallback ( error ) {
-    t.assert( error === undefined, 'Backup completed without error.' )
+    t.assert( error === undefined, 'Build completed without error.' )
   }
 
 } )
