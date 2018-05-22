@@ -1,6 +1,6 @@
 beanstalk: beanstalkd
 memcached: memcached
-command_delegator: npm run command-delegator
+# command_delegator: npm run command-delegator
 # webhook_server: npm start
 # create_worker: npm run create-worker
 # invite_worker: npm run invite-worker
@@ -15,4 +15,4 @@ command_delegator: npm run command-delegator
 # timeout_worker_2: npm run timeout-worker
 # timeout_worker_3: npm run timeout-worker
 # timeout_worker_4: npm run timeout-worker
-domain_mapper: npm run domain-mapper
+# domain_mapper: npm run domain-mapper
