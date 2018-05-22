@@ -6,10 +6,12 @@ var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
+Error.stackTraceLimit = Infinity;
+
 test( 'firebase-admin', function ( t ) {
   t.plan( 5 )
   
-  var firebase = Firebase( grunt.config().firebase )
+  var firebase = Firebase( Object.assign( { initializationName: 'admin-test' }, grunt.config().firebase ) )
   t.assert( typeof firebase === 'object', 'Firebase instance is an object.' )
 
   var db = firebase.database()

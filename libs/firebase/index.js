@@ -6,15 +6,16 @@ module.exports = Firebase;
 /**
  * Initialize the firebase admin SDK via service account key.
  * 
- * @param  {object} config
- * @param  {object} config.name               The name of the firebase to initialize
- * @param  {object} config.serviceAccountKey  The service account key for the firebase to initialize
- * @return {object} firebase                          The firebase instance that has been initialized.
+ * @param  {object}  config
+ * @param  {string}  config.name                 The name of the firebase to initialize
+ * @param  {string}  config.serviceAccountKey    The service account key for the firebase to initialize
+ * @param  {string?} config.initializationName   The name to use when initializing the firebase instance
+ * @return {object}  firebase                          The firebase instance that has been initialized.
  */
 function Firebase ( config ) {
   if ( ! ( this instanceof Firebase ) ) return new Firebase( config )
   var firebaseName = config.name;
-  var firebaseServiceAccountKey = require( path.join( __dirname, '..', '..', config.serviceAccountKey ) );
+  var firebaseServiceAccountKey = require( `${ process.cwd() }/${ config.serviceAccountKey }` );
   this._secretKey = config.secretKey
 
   var options = {
@@ -22,13 +23,15 @@ function Firebase ( config ) {
     databaseURL: 'https://' + firebaseName + '.firebaseio.com',
   }
 
-  admin.initializeApp( options )
+  this._initializationName = config.initializationName || '[DEFAULT]'
 
-  this.admin = admin;
+  admin.initializeApp( options, this._initializationName )
+
+  this._admin = admin;
 }
 
 Firebase.prototype.database = function () {
-  return this.admin.database()
+  return this._admin.database()
 }
 
 Firebase.prototype.customToken = function ( uid, callback ) {
@@ -37,7 +40,7 @@ Firebase.prototype.customToken = function ( uid, callback ) {
     callback = uid
   }
   var allowances = { serviceAccount: true }
-  this.admin.auth().createCustomToken( uid, allowances )
+  this._admin.auth().createCustomToken( uid, allowances )
     .then( function ( customToken ) {
       callback( null, customToken )
     } )
