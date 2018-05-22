@@ -20,6 +20,8 @@ function EnvOptions ( options ) {
     buildBucketName: process.env.BUILD_BUCKET_NAME,
     buildDeployBranch: process.env.BUILD_DEPLOY_BRANCH,
     buildUserId: process.env.BUILD_USER_ID,
+    createUserId: process.env.CREATE_USER_ID,
+    createSiteName: process.env.CREATE_SITE_NAME,
   }
 
   Object.assign( envOptions, options )

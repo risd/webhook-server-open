@@ -8,7 +8,7 @@
 */
 
 // Requires
-var firebase = require('firebase');
+var Firebase = require('./firebase/index.js');
 var colors = require('colors');
 var _ = require('lodash');
 var uuid = require('node-uuid');
@@ -40,28 +40,27 @@ module.exports.start = function (config, logger) {
 
   var jobQueue = JobQueue.init(config);
   var self = this;
-  var firebaseUrl = config.get('firebase') || '';
 
-  this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com');
+  var firebaseOptions = Object.assign(
+    { initializationName: 'create-worker' },
+    config().firebase )
+  var firebase = Firebase( firebaseOptions )
+  this.root = firebase.database()
 
-  self.root.auth(config.get('firebaseSecret'), function(err) {
-    if(err) {
-      console.log(err.red);
-      process.exit(1);
-    }
+  console.log('Waiting for commands'.red);
 
-    console.log('Waiting for commands'.red);
+  // Wait for create commands from firebase
+  jobQueue.reserveJob('create', 'create', createSite);
 
-    // Wait for create commands from firebase
-    jobQueue.reserveJob('create', 'create', createSite);
-  });
+  return createSite;
 
   function createSite (payload, identifier, data, client, callback) {
     var userid = data.userid;
     var site = data.sitename;
 
     console.log('Processing Command For '.green + site.red);
-    self.root.child('management/sites/' + site).once('value', function(siteData) {
+    self.root.ref('management/sites/' + site).once('value', function(siteData) {
+      console.log( siteData )
       var siteValues = siteData.val();
 
       // IF site already has a key, we alraedy created it, duplicate job
@@ -73,16 +72,17 @@ module.exports.start = function (config, logger) {
       // Else if the site owner is requesting, we need to make it
       else if(_(siteValues.owners).has(escapeUserId(userid)))
       {
-        self.root.child('management/sites/' + site + '/error/').set(false, function(err) {
+        self.root.ref('management/sites/' + site + '/error/').set(false, function(err) {
           // We setup the site, add the user as an owner (if not one) and finish up
-          setupSite(site, siteValues, siteData, siteData.ref(), userid, function(err) {
+          setupSite(site, siteValues, siteData, siteData.ref, userid, function(err) {
             if(err) {
-              self.root.child('management/sites/' + site + '/error/').set(true, function(err) {
-                console.log('Error Creating Site For '.green + site.red);
-                callback();
+              self.root.ref('management/sites/' + site + '/error/').set(true, function(err) {
+                var errorMessage = 'Error Creating Site For '.green + site.red;
+                console.log( errorMessage );
+                callback( new Error( errorMessage.stripColors ) );
               });
             } else {
-              self.root.child('management/users/' + escapeUserId(userid) + '/sites/owners/' + site).set(true, function(err) {
+              self.root.ref('management/users/' + escapeUserId(userid) + '/sites/owners/' + site).set(true, function(err) {
                 console.log('Done Creating Site For '.green + site.red);
                 callback();
               });
@@ -91,11 +91,12 @@ module.exports.start = function (config, logger) {
         });
       } else {
         // Someone is trying to do something they shouldn't
-        console.log('Site does not exist or no permissions');
-        callback();
+        var errorMessage = 'Site does not exist or no permissions'
+        console.log( errorMessage );
+        callback( new Error( 'Site does not exist or no permissions' ) );
       }
     }, function(err) {
-      callback();
+      callback( err );
     });
   }
 
@@ -115,10 +116,6 @@ module.exports.start = function (config, logger) {
 
     var siteBucket = unescapeSite(site);
 
-    console.log('setting up site')
-    console.log(siteBucket)
-    console.log(key)
-
     var generateKey = function () {
       return miss.through.obj(function (row, enc, next) {
         if ( row.bucketExists === true && row.siteKey.length > 0 ) {
@@ -129,7 +126,7 @@ module.exports.start = function (config, logger) {
             console.log(err)
 
             // Set some billing info, not used by self-hosting, but required to run
-            siteRef.root().child('billing/sites/' + row.siteName).set({
+            siteRef.root.child('billing/sites/' + row.siteName).set({
               'plan-id': 'mainplan',
               'email': userid,
               'status': 'paid',
@@ -177,19 +174,26 @@ module.exports.start = function (config, logger) {
   function createData() {
     return miss.through.obj( function ( row, enc, next ) {
       console.log( 'create-data:start' )
-      var data = {}
-      data[ row.siteKey ] = {
-        dev: {
-          data: {},
-          contentType: {},
-          settings: {},
-        }
+      var devData = {
+        data: {},
+        contentType: {},
+        settings: {},
       }
-      self.root.child( 'buckets' ).child( row.siteName ).set( data, function onComplete ( error ) {
+      console.log( row.siteName )
+      console.log( devData )
+      var dataRef = self.root.ref( `buckets/${ row.siteName }/${ row.siteKey }/dev` )
+      dataRef.set( devData, function onComplete ( error ) {
         console.log( 'create-data:end:error' )
         console.log( error )
-        if ( error ) return next( error )
-        next( null, row )
+        console.log( arguments )
+
+        dataRef.once( 'value', function ( snapshot ) {
+          console.log( 'snapshot-value' )
+          console.log( snapshot.val() )
+
+          if ( error ) return next( error )
+          next( null, row )
+        } )
       } )
     } )
   }
