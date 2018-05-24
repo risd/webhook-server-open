@@ -39,7 +39,7 @@ function FastlyWebhookService ( options ) {
   // version is active starts as true.
   // only made false base internally updating the state
   this._version_is_active = true;
-  // domain configuration : [ { domain, cname, ip, forceSSL } ] 
+  // domain configuration : [ { domain, address, forceSSL } ] 
   this._domains = ensureArray( options.domains )
 
   var fastly = Fastly( token )
