@@ -41,10 +41,6 @@ function FastlyWebhookService ( options ) {
   this._version_is_active = true;
   // domain configuration : [ { domain, cname, ip, forceSSL } ] 
   this._domains = ensureArray( options.domains )
-  // domain to ignore
-  this._ignore_domain = options.ignoreDomain || []
-  // domains to force over ssl
-  this._ssl_domains = options.sslDomains || []
 
   var fastly = Fastly( token )
   this.request = fastly.request.bind( fastly )
@@ -61,6 +57,7 @@ FastlyWebhookService.prototype.initialize = initializeService;
 FastlyWebhookService.prototype.domain = addDomains;
 FastlyWebhookService.prototype.removeDomain = removeDomains;
 FastlyWebhookService.prototype.isFastlyDomain = isFastlyDomain;
+FastlyWebhookService.prototype.addressForDomain = addressForDomain;
 FastlyWebhookService.prototype.redirects = setRedirects;
 FastlyWebhookService.prototype.mapDomain = mapDomain;
 FastlyWebhookService.prototype.removeMapDomain = removeMapDomain;
@@ -266,9 +263,27 @@ function activateVersion ( options, complete ) {
 function isFastlyDomain ( domain ) {
   return this._domains.filter( isIncluded ).length > 0;
 
-  function isIncluded ( ignored ) {
-    return minimatch( domain, ignored.domain )
+  function isIncluded ( included ) {
+    return minimatch( domain, included.domain )
   }
+}
+
+/**
+ * Given a domain, return the associated Fastly IP for the domain.
+ * Returns false if the domain is not managed by Fastly.
+ * 
+ * @param  {string} domain         The domain whose IP will be retrieved
+ * @return {string|false} address  The address behind the Fastly domain
+ */
+function addressForDomain ( domain ) {
+  var address = false;
+  for (var i = 0; i < this._domains.length; i++) {
+    if ( minimatch( domain, this._domains[ i ].domain ) ) {
+      address = this._domains[ i ].address;
+      break;
+    }
+  }
+  return address;
 }
 
 /**

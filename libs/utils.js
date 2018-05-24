@@ -251,12 +251,19 @@ function cachePurge ( options ) {
     }
 
     var requestOptions = { method: 'PURGE', url: purgeUrl, followRedirect: false }
-    if ( purgeProxy ) requestOptions.proxy = purgeProxy;
+    if ( purgeProxy ) {
+      requestOptions.proxy = purgeProxy;
+    }
+    else {
+      // If there is no purge proxy, then the site is not managed by
+      // Fastly, and will not respond to the PURGE request.
+      return next( null, args )
+    }
 
     try {
       request( requestOptions, function ( error, response, body ) {
         if ( error ) { console.log( 'purge-error:', error ); console.log( error ); }
-        console.log( 'purge:' + purgeUrl )
+        console.log( `purge:${ purgeProxy }:${ purgeUrl }`)
         next( null, args )
       } )  
     }

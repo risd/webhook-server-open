@@ -23,6 +23,7 @@ var throughConcurrent = require( 'through2-concurrent' )
 var path = require( 'path' )
 var glob = require( 'glob' )
 var setupBucket = require('./creator.js').setupBucket;
+var Fastly = require( './fastly/index.js' )
 var utils = require('./utils.js');
 
 // Util functions
@@ -73,6 +74,7 @@ module.exports.start = function (config, logger) {
     fastly: config.get( 'fastly' ),
   }
 
+  var fastly = Fastly( config.get( 'fastly' ) )
 
   /**
    *  Reports the status to firebase, used to display messages in the CMS
@@ -200,7 +202,7 @@ module.exports.start = function (config, logger) {
           var buildDiff = Math.floor((buildtime - now)/1000);
           
           var maxParallel = config.get( 'builder' ).maxParallel;
-          var purgeProxy = config.get( 'fastly' ).ip;
+          var purgeProxy = fastly.addressForDomain( siteBucket )
 
           var pipelineArgs = {
             siteName: siteName,
