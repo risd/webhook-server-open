@@ -69,10 +69,7 @@ module.exports = function(grunt) {
     },
     fastly: {
       token: process.env.FASTLY_TOKEN,
-      ip: process.env.FASTLY_IP,
       service_id: process.env.FASTLY_SERVICE_ID,
-      ignoreDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
-      sslDomains: process.env.FASTLY_SSL_DOMAINS,
       domains: parseJson( process.env.FASTLY_DOMAINS, [] ),
     }
   });
