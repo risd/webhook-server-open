@@ -1,3 +1,4 @@
+var minimatch = require( 'minimatch' )
 var miss = require( 'mississippi' )
 var request = require( 'request' )
 var assert = require( 'assert' )
@@ -38,10 +39,8 @@ function FastlyWebhookService ( options ) {
   // version is active starts as true.
   // only made false base internally updating the state
   this._version_is_active = true;
-  // domain to ignore
-  this._ignore_domain = options.ignoreDomain || []
-  // domains to force over ssl
-  this._ssl_domains = options.sslDomains || []
+  // domain configuration : [ { domain, address, forceSSL } ] 
+  this._domains = ensureArray( options.domains )
 
   var fastly = Fastly( token )
   this.request = fastly.request.bind( fastly )
@@ -55,9 +54,10 @@ FastlyWebhookService.prototype.dictionary = dictionaryForName;
 FastlyWebhookService.prototype.dictionaryId = dictionaryIdForName;
 FastlyWebhookService.prototype.version = getSetVersion;
 FastlyWebhookService.prototype.initialize = initializeService;
-FastlyWebhookService.prototype.isNotIgnoredDomain = isNotIgnoredDomain;
 FastlyWebhookService.prototype.domain = addDomains;
 FastlyWebhookService.prototype.removeDomain = removeDomains;
+FastlyWebhookService.prototype.isFastlyDomain = isFastlyDomain;
+FastlyWebhookService.prototype.addressForDomain = addressForDomain;
 FastlyWebhookService.prototype.redirects = setRedirects;
 FastlyWebhookService.prototype.mapDomain = mapDomain;
 FastlyWebhookService.prototype.removeMapDomain = removeMapDomain;
@@ -256,15 +256,34 @@ function activateVersion ( options, complete ) {
  * Within webhook, we have development domains, that do not get
  * placed under fastly, and instead or handled directly through
  * cloudflare.
+ * 
  * @param  {string}  domain
  * @return {Boolean}
  */
-function isNotIgnoredDomain ( domain ) {
-  return this._ignore_domain.filter( isIgnored ).length === 0;
+function isFastlyDomain ( domain ) {
+  return this._domains.filter( isIncluded ).length > 0;
 
-  function isIgnored ( ignoredDomain ) {
-    return domain.endsWith( ignoredDomain )
+  function isIncluded ( included ) {
+    return minimatch( domain, included.domain )
   }
+}
+
+/**
+ * Given a domain, return the associated Fastly IP for the domain.
+ * Returns false if the domain is not managed by Fastly.
+ * 
+ * @param  {string} domain         The domain whose IP will be retrieved
+ * @return {string|false} address  The address behind the Fastly domain
+ */
+function addressForDomain ( domain ) {
+  var address = false;
+  for (var i = 0; i < this._domains.length; i++) {
+    if ( minimatch( domain, this._domains[ i ].domain ) ) {
+      address = this._domains[ i ].address;
+      break;
+    }
+  }
+  return address;
 }
 
 /**
@@ -281,9 +300,9 @@ function addDomains ( domains, complete ) {
   var self = this;
 
   // filter ignored domains
-  domains = domains.filter( this.isNotIgnoredDomain.bind( this ) )
+  domains = domains.filter( this.isFastlyDomain.bind( this ) )
 
-  if ( domains.length === 0 ) return complete( null, { status: 'ok' } )
+  if ( domains.length === 0 ) return complete( null, { status: 'ok', noDomainsAdded: true } )
 
   // tasks to execute in order to add the domain
   var tasks = [];
@@ -600,7 +619,9 @@ function removeDomains ( domains, complete ) {
   var self = this;
   var service_id = self._service_id;
 
-  domains = domains.filter( this.isNotIgnoredDomain.bind( this ) )
+  domains = domains.filter( this.isFastlyDomain.bind( this ) )
+
+  if ( domains.length === 0 ) return complete( null, { status: 'ok', noDomainsRemoved: true } )
 
   // remove the domain
   // remove the redirects
@@ -1246,8 +1267,6 @@ function serviceConfigurationUpdater () {
   }
 
   function postRequestVersioned ( args, complete ) {
-    console.log( 'post-args' )
-    console.log( args )
     var apiRequest = self.request;
     var service_id = self._service_id;
     var version = self.version()
@@ -1665,6 +1684,14 @@ function configFastlyJsonRequest ( token ) {
         callback(null, body);
     });
   }
+}
+
+function ensureArray ( value ) {
+  return Array.isArray( value )
+    ? value
+    : typeof value === 'object'
+      ? [ value ]
+      : []
 }
 
 /* helpers:end */

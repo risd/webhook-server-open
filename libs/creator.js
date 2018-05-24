@@ -15,6 +15,7 @@ var uuid = require('node-uuid');
 var JobQueue = require('./jobQueue.js');
 var request = require('request');
 var miss = require('mississippi');
+var minimatch = require( 'minimatch' );
 
 var utils = require( './utils.js' );
 var usingArguments = utils.usingArguments;
@@ -195,8 +196,13 @@ module.exports.start = function (config, logger) {
   }
 };
 
+var DEFAULT_CNAME_RECORD = { content: 'c.storage.googleapis.com', }
+
 module.exports.setupBucket = setupBucket;
 module.exports.createCnameRecord = createCnameRecord;
+module.exports.cnameForDomain = cnameForDomain;
+module.exports.DEFAULT_CNAME_RECORD = DEFAULT_CNAME_RECORD;
+
 
 
 /**
@@ -336,6 +342,7 @@ function updateIndex () {
  * @param  {object}    options.client
  * @param  {string}    options.client.key
  * @param  {string}    options.client.email
+ * @param  {string}    options.domains
  * @return {Function}  transform stream
  */
 function ensureCname ( options ) {
@@ -346,7 +353,6 @@ function ensureCname ( options ) {
       console.log( 'site-setup:ensure-cname:' + row.siteBucket )
 
       var cnameOptions = Object.assign( {
-        usesFastly: row.cdn,
         siteBucket: row.siteBucket,
       }, options )
 
@@ -366,14 +372,20 @@ function ensureCname ( options ) {
 
 
 /**
- * Create a CNAME record in CloudFlare for the given `row.siteBucket`
+ * Create a CNAME record in CloudFlare for the given `row.siteBucket`.
+ * The a site on the `developmentDomain` uses the default CNAME value
+ * of Google Storage CNAME. Other domains can be configured via the
+ * `domains` key.
  * 
  * @param  {object} options
+ * @param  {string} options.siteBucket
  * @param  {object} options.client
  * @param  {string} options.client.email
  * @param  {string} options.client.key
- * @param  {string} options.siteBucket
- * @param  {object?} options.usesFastly
+ * @param  {Array} options.domains
+ * @param  {string} options.domains[].domain   Minimatch compatabile domain string
+ * @param  {string} options.domains[].cname    CNAME content value to use for matching domain
+ * @param  {string} options.developmentDomain  Domain to use for 
  * @param  {Function} onComplete ( Error|null, Boolean|CnameRecord )
  */
 function createCnameRecord ( options, callback ) {
@@ -386,7 +398,7 @@ function createCnameRecord ( options, callback ) {
   var cname = false;
 
   return miss.pipe(
-    usingArguments( options ),  // { client, siteBucket, usesFastly }
+    usingArguments( options ),  // { client, siteBucket, domains }
     getZoneId(),                // adds { zoneId }
     getOrCreateCname(),         // if { zoneId }, adds { cname }
     sink( function ( row ) {
@@ -403,6 +415,7 @@ function createCnameRecord ( options, callback ) {
     return miss.through.obj( function ( row, enc, next ) {
       console.log( 'create-cname-record:get-zone-id' )
       var domain = domainForBucket( row.siteBucket )
+
       getZoneFn( domain, function ( error, zone ) {
         if ( error ) return next( error )
         if ( zone === false ) {
@@ -438,8 +451,6 @@ function createCnameRecord ( options, callback ) {
 
   function getOrCreateCname () {
     var baseRecordOptions = { type: 'CNAME', proxied: true }
-    var googleRecordContent =  { content: 'c.storage.googleapis.com', };
-    var fastlyRecordContent =  { content: 'nonssl.global.fastly.net', };
 
     return miss.through.obj( function ( row, enc, next ) {
       console.log( 'create-cname-record:get-or-create' )
@@ -456,7 +467,7 @@ function createCnameRecord ( options, callback ) {
             zone_id: row.zoneId,
           },
           baseRecordOptions,
-          row.usesFastly ? fastlyRecordContent : googleRecordContent )
+          cnameForDomain( row.domains, row.siteBucket ) )
 
         var existingRecord = valueInArray( cnames, nameKey, row.siteBucket )
 
@@ -548,6 +559,18 @@ function createCnameRecord ( options, callback ) {
 
     return getPageOfCnames( { page: 1 }, paginate )
   }
+}
+
+function cnameForDomain ( domainConfiguration, siteBucket ) {
+  // defaults to google cname record content
+  var cnameRecord =  DEFAULT_CNAME_RECORD;
+  for (var i = 0; i < domainConfiguration.length; i++) {
+    if ( minimatch( siteBucket, domainConfiguration[ i ].domain ) ) {
+      cnameRecord.content = domainConfiguration[ i ].cname;
+      break;
+    }
+  }
+  return cnameRecord;
 }
 
 function ensureCdn ( fastlyOptions ) {

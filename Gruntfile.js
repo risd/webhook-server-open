@@ -61,6 +61,7 @@ module.exports = function(grunt) {
         email: process.env.CLOUDFLARE_EMAIL,
         key: process.env.CLOUDFLARE_KEY,
       },
+      domains: parseJson( process.env.CLOUDFLARE_DOMAINS, [] ),
     },
     builder: {
       forceWrite: process.env.BUILDER_FORCE_WRITE || false,
@@ -68,10 +69,8 @@ module.exports = function(grunt) {
     },
     fastly: {
       token: process.env.FASTLY_TOKEN,
-      ip: process.env.FASTLY_IP,
       service_id: process.env.FASTLY_SERVICE_ID,
-      ignoreDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
-      sslDomains: process.env.FASTLY_SSL_DOMAINS,
+      domains: parseJson( process.env.FASTLY_DOMAINS, [] ),
     }
   });
 
@@ -148,4 +147,12 @@ function concurrencyOption ( concurrencyOptionValue ) {
   if ( typeof concurrencyOptionValue === 'number' ) return Math.floor( concurrencyOptionValue )
   if ( concurrencyOptionValue === 'max' ) return require('os').cpus().length;
   return require('os').cpus().length / 2;
+}
+
+function parseJson ( value, defaultValue ) {
+  try {
+    return JSON.parse( value )
+  } catch ( error ) {
+    return defaultValue
+  }
 }
