@@ -178,7 +178,7 @@ function uploadIfDifferent ( options ) {
   function conditionalUpload () {
     return miss.through.obj( function ( args, enc, next ) {
 
-      if ( args.builtFileMd5 === args.remoteFileMd5 ) return next()
+      // if ( args.builtFileMd5 === args.remoteFileMd5 ) return next()
 
       var retryableUploadOptions = streamArgsToUploadOptions( args );
 
