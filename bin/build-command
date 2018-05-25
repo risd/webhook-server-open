@@ -41,6 +41,10 @@ var siteBranchCmdOptions = {
     master: testMaster,
     develop: testDevelop,
   },
+  'sei': {
+    master: seiMaster,
+    develop: seiDevelop,
+  }
 }
 
 var cmd = parseArgs( process.argv.slice( 2 ) )
@@ -486,6 +490,44 @@ function liberalArtsMaDevelop () {
     "branch":"develop",
   }
   var identifier = "risd-liberal-arts-ma,1risd,1systems_dev.test.risd.systems"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;  
+}
+
+function seiMaster () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-sei,1risd,1systems",
+    "siteBucket": "sei.risd.edu",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+  }
+  var identifier = "risd-sei,1risd,1systems_sei.risd.edu"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;  
+}
+
+function seiDevelop () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-sei,1risd,1systems",
+    "siteBucket": "risd-sei.risd.systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+  }
+  var identifier = "risd-sei,1risd,1systems_risd-sei.risd.systems"
 
   var cmd = {
     "identifier": identifier,
