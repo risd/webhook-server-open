@@ -40,6 +40,7 @@ var siteBranchCmdOptions = {
   'test': {
     master: testMaster,
     develop: testDevelop,
+    'develop-edu': testDevelopEdu,
   },
   'sei': {
     master: seiMaster,
@@ -452,6 +453,25 @@ function testDevelop () {
     "branch":"develop",
   }
   var identifier = "unique-cli-test,1risd,1systems_test.risd.systems"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;  
+}
+
+function testDevelopEdu () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"unique-cli-test,1risd,1systems",
+    "siteBucket": "webhook-dev.risd.edu",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+  }
+  var identifier = "unique-cli-test,1risd,1systems_webhook-dev.risd.edu"
 
   var cmd = {
     "identifier": identifier,

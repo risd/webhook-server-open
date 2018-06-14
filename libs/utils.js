@@ -17,6 +17,7 @@ module.exports = {
   cachePurge: cachePurge,
   protocolForDomain: protocolForDomain,
   addMaskDomain: addMaskDomain,
+  addPurgeProxy: addPurgeProxy,
 }
 
 // Read stream that passes in initialze arguments
@@ -53,6 +54,24 @@ function addMaskDomain ( config ) {
       args.maskDomain = maskDomain;
       next( null, args )
     } )
+  } )
+}
+
+/**
+ * Populate the `args.purgeProxy` key with the `purgeProxy` if there
+ * is one for the current `maskDomain` or `contentDomain` when there isn't
+ * a `maskDomain`.
+ *
+ * Expects { siteBucket, maskDomain?, ... }
+ * Pushes  { siteBucket, maskDomain?, purgeProxy, ... }
+ */
+function addPurgeProxy ( config ) {
+  var cdn = require( './fastly/index.js' )( config )
+  return miss.through.obj( function ( args, enc, next ) {
+    args.purgeProxy = args.maskDomain
+      ? cdn.addressForDomain( args.maskDomain )
+      : cdn.addressForDomain( args.siteBucket )
+    next( null, args )
   } )
 }
 

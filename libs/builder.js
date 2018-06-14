@@ -35,6 +35,7 @@ var uploadIfDifferent = utils.uploadIfDifferent;
 var redirectTemplateForDestination = utils.redirectTemplateForDestination;
 var cachePurge = utils.cachePurge;
 var addMaskDomain = utils.addMaskDomain;
+var addPurgeProxy = utils.addPurgeProxy;
 
 var escapeUserId = function(userid) {
   return userid.replace(/\./g, ',1');
@@ -202,7 +203,6 @@ module.exports.start = function (config, logger) {
           var buildDiff = Math.floor((buildtime - now)/1000);
           
           var maxParallel = config.get( 'builder' ).maxParallel;
-          var purgeProxy = fastly.addressForDomain( siteBucket )
 
           var pipelineArgs = {
             siteName: siteName,
@@ -217,6 +217,7 @@ module.exports.start = function (config, logger) {
             buildFolder: buildFolder,
             builtFolder: path.join( buildFolder, '.build' ),
             maskDomain: undefined,
+            purgeProxy: undefined,
           }
 
           miss.pipe(
@@ -225,8 +226,9 @@ module.exports.start = function (config, logger) {
             installDependencies(),
             makeDeployBuckets(),
             addMaskDomain( config.get( 'fastly' ) ),
-            buildUploadSite( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
-            deleteRemoteFilesNotInBuild( { maxParallel: maxParallel, purgeProxy: purgeProxy } ),
+            addPurgeProxy( config.get( 'fastly' ) ),
+            buildUploadSite( { maxParallel: maxParallel } ),
+            deleteRemoteFilesNotInBuild( { maxParallel: maxParallel } ),
             sink(),
             onPipelineComplete)
 
@@ -323,13 +325,11 @@ module.exports.start = function (config, logger) {
            * 
            * @param  {object} options
            * @param  {number} options.maxParallel?  Max number of build workers to spawn.
-           * @param  {number} options.purgeProxy?   The address to use as a proxy when defining the cache PURGE request
            * @return {object} stream                Transform stream that handles the work.
            */
           function buildUploadSite ( options ) {
             if ( !options ) options = {}
             var maxParallel = options.maxParallel || 1;
-            var purgeProxy = options.purgeProxy;
 
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'build-upload-site:start' )
@@ -353,9 +353,10 @@ module.exports.start = function (config, logger) {
               };
               var robotsTxtOptions = Object.assign( { buildFolder: args.buildFolder }, siteMapOptions );
 
+              var purgeProxy = fastly.addressForDomain( siteBucket )
               var uploadOptions = {
                 maxParallel: maxParallel,
-                purgeProxy: options.purgeProxy,
+                purgeProxy: args.purgeProxy,
               }
               
               miss.pipe(
@@ -899,13 +900,11 @@ module.exports.start = function (config, logger) {
            * 
            * @param  {object} options
            * @param  {number} options.maxParallel?  Max number of build workers to spawn.
-           * @param  {object} options.purgeProxy?    The address to use as a proxy when defining the cache PURGE request
            * @return {object} stream  Transform stream that will handle the work.
            */
           function deleteRemoteFilesNotInBuild ( options ) {
             if ( !options ) options = {};
             var maxParallel = options.maxParallel || 1;
-            var purgeProxy = options.purgeProxy;
 
             return miss.through.obj( function ( args, enc, next ) {
               
@@ -918,7 +917,7 @@ module.exports.start = function (config, logger) {
                 feedCloudFiles( { buckets: buckets } ),            // adds { bucket, builtFile }
                 feedNotLocalFiles( { maxParallel: maxParallel } ), // pushes previous if conditions are met
                 deleteFromBucket( { maxParallel: maxParallel } ),  // adds { remoteDeleted }
-                cachePurge( { purgeProxy: purgeProxy } ),
+                cachePurge( { purgeProxy: args.purgeProxy } ),
                 sink(),
                 function onComplete ( error ) {
                   console.log( 'delete-remote-files-not-in-build:end' )
