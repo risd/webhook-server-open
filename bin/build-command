@@ -23,6 +23,7 @@ var siteBranchCmdOptions = {
     develop: risdPoliciesDevelop,
   },
   'risd-weekend': {
+    develop: risdWeekendDevelop,
     master: risdWeekendMaster,
   },
   'cdcf': {
@@ -45,6 +46,9 @@ var siteBranchCmdOptions = {
   'sei': {
     master: seiMaster,
     develop: seiDevelop,
+  },
+  'commencement': {
+    'master-2018': commencement2018Master,
   }
 }
 
@@ -257,11 +261,11 @@ function undergradDevelop () {
     "build_time":"2017-04-10T10:10:00-04:00",
     "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
     "sitename":"risd-undergraduate-welcome,1risd,1systems",
-    "siteBucket": "risd-undergraduate-welcome.risd.systems",
+    "siteBucket": "congratulations.risd.systems",
     "userid":"rrodrigu@risd.edu",
     "branch":"develop",
     "deploys": [
-      { branch: 'develop', bucket: 'risd-undergraduate-welcome.risd.systems' }
+      { branch: 'develop', bucket: 'congratulations.risd.systems' }
     ]
   }
   var payload = {
@@ -307,6 +311,29 @@ function risdPoliciesDevelop () {
     ]
   }
   var identifier = "risd-policies,1risd,1systems_develop"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd;
+}
+
+function risdWeekendDevelop () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"risd-weekend,1risd,1systems",
+    "siteBucket": "risd-weekend.risd.systems",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"develop",
+    "deploys": [
+      { branch: 'master', bucket: 'risdweekend.com' },
+      { branch: 'develop', bucket: 'risd-weekend.risd.systems' },
+    ]
+  }
+  var identifier = "risd-weekend,1risd,1systems_risd-weekend.risd.systems"
 
   var cmd = {
     "identifier": identifier,
@@ -555,4 +582,23 @@ function seiDevelop () {
   }
 
   return cmd;  
+}
+
+function commencement2018Master () {
+  var data = {
+    "build_time":"2017-04-10T10:10:00-04:00",
+    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
+    "sitename":"commencement,1risd,1systems",
+    "siteBucket": "2018.commencement.risd.edu",
+    "userid":"rrodrigu@risd.edu",
+    "branch":"master",
+  }
+  var identifier = "commencement,1risd,1systems_2018.commencement.risd.edu"
+
+  var cmd = {
+    "identifier": identifier,
+    "payload": data,
+  }
+
+  return cmd; 
 }
