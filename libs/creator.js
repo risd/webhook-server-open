@@ -563,8 +563,8 @@ function createCnameRecord ( options, callback ) {
 
 function cnameForDomain ( domainConfiguration, siteBucket ) {
   // defaults to google cname record content
-  var cnameRecord =  DEFAULT_CNAME_RECORD;
-  for (var i = 0; i < domainConfiguration.length; i++) {
+  var cnameRecord =  Object.assign( {}, DEFAULT_CNAME_RECORD )
+  for ( var i = 0; i < domainConfiguration.length; i++ ) {
     if ( minimatch( siteBucket, domainConfiguration[ i ].domain ) ) {
       cnameRecord.content = domainConfiguration[ i ].cname;
       break;
