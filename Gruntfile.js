@@ -136,6 +136,12 @@ module.exports = function(grunt) {
     timeoutWorker.start(grunt.config, grunt.log);
   })
 
+  grunt.registerTask('flushBuildQueue', 'Stop build workers, flush build queue, and restart build workers.', function () {
+    var done = this.async()
+    var flusher = require('./libs/flush-queue.js')
+    flusher.start(grunt.config, grunt.log, done)
+  })
+
   grunt.registerTask('echoConfig', 'Logs out the current config object.', function () {
     console.log( grunt.config() )
   });

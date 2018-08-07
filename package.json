@@ -17,6 +17,7 @@
     "timeout-worker": "grunt timeoutWorker",
     "backup-cron": "grunt backupCron",
     "extract-key": "grunt extractKey",
+    "flush-build-queue": "grunt flushBuildQueue",
     "dev": "nf start --procfile=Procfile.dev"
   },
   "engines": {
