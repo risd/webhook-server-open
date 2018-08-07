@@ -277,12 +277,13 @@ module.exports.start = function (config, logger) {
               runInDir( 'npm', args.buildFolder, [ 'install', '--production' ], function ( error ) {
                 if ( error ) {
                   console.log( error );
-                  error.reportStatus = {
+                  var installError = new Error( 'Could not complete npm install' ) 
+                  installError.reportStatus = {
                     site: args.siteName,
-                    message: 'Failed to build, errors encountered in build process',
+                    message: 'Failed to build, errors in installation of site dependencies for ' + siteBucket,
                     status: 1,
                   }
-                  return next( error )
+                  return next( installError )
                 }
                 else next( null, args )
               } )
@@ -565,6 +566,7 @@ module.exports.start = function (config, logger) {
                   return function forFile ( buildFile ) {
                     return siteBuckets.map( function ( siteBucket ) {
                       var bucket = siteBucket.maskDomain ? siteBucket.maskDomain : siteBucket.contentDomain
+
                       return {
                         buildFolder: args.buildFolder,
                         command: 'grunt',
