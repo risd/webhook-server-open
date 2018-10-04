@@ -15,6 +15,8 @@
 *    extractKey       - A utility to extract the SSH key for a google service acccount
 */
 
+require('dotenv').config({ silent: true });
+
 var builder = require('./libs/builder.js');
 var siteIndexer = require('./libs/siteIndex.js');
 var redirects = require('./libs/redirects.js');
@@ -27,8 +29,6 @@ var extractKey = require('./libs/extractKey.js');
 var previewBuilder = require('./libs/preview-builder.js');
 var domainMapper = require('./libs/domain-mapper.js');
 var timeoutWorker = require('./libs/timeout-worker.js');
-
-require('dotenv').config({ silent: true });
 
 module.exports = function(grunt) {
   // Project configuration.
