@@ -36,7 +36,7 @@ var refreshToken = function(callback) {
         if (err) { return console.log(err); }
         oauthToken = token;
 
-        callback();
+        callback(err, token);
      });     
   });
 };
@@ -94,7 +94,8 @@ function jsonRequest(options, callback)  {
       } else if(res.statusCode/100 === 2) {
         callback(null, body);
       } else if(res.statusCode === 401) {
-        refreshToken(function() {
+        refreshToken(function( error ) {
+          if ( error ) return callback( error )
           if(options.multipart)
           {
             multiData.forEach(function(item) {
@@ -124,17 +125,13 @@ module.exports.setServiceAccount = function(account) {
 // Manually get token, used when wanting a stream back, caller is
 // responsible for making sure token is valid
 module.exports.getToken = function(callback) {
-  refreshToken(function() {
-    callback(oauthToken);
-  });
+  refreshToken(callback);
 };
 
 // Init, manually refreshes the token before we do any requests
 // just to get things started
 module.exports.init = function(callback) {
-  refreshToken(function() {
-    callback();
-  });
+  refreshToken(callback);
 }
 
 // Sets the key file file, not curretly used

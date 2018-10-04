@@ -1,7 +1,7 @@
 var path = require( 'path' )
 var admin = require( 'firebase-admin' )
 
-module.exports = Firebase;
+module.exports = WHFirebase;
 
 /**
  * Initialize the firebase admin SDK via service account key.
@@ -12,8 +12,8 @@ module.exports = Firebase;
  * @param  {string?} config.initializationName   The name to use when initializing the firebase instance
  * @return {object}  firebase                          The firebase instance that has been initialized.
  */
-function Firebase ( config ) {
-  if ( ! ( this instanceof Firebase ) ) return new Firebase( config )
+function WHFirebase ( config ) {
+  if ( ! ( this instanceof WHFirebase ) ) return new WHFirebase( config )
   var firebaseName = config.name;
   var firebaseServiceAccountKey = require( `${ process.cwd() }/${ config.serviceAccountKey }` );
   this._secretKey = config.secretKey
@@ -25,22 +25,33 @@ function Firebase ( config ) {
 
   this._initializationName = config.initializationName || '[DEFAULT]'
 
-  admin.initializeApp( options, this._initializationName )
+  this._app = appForName( this._initializationName )
+  if ( ! this._app ) {
+    this._app = admin.initializeApp( options, this._initializationName )
+  }
 
-  this._admin = admin;
+  function appForName ( name ) {
+    var appOfNameList = admin.apps.filter( appOfName )
+    if ( appOfNameList.length === 1 ) return appOfNameList[ 0 ]
+    return null
+
+    function appOfName ( app ) {
+      return app.name === name
+    }
+  }
 }
 
-Firebase.prototype.database = function () {
-  return this._admin.database()
+WHFirebase.prototype.database = function () {
+  return this._app.database()
 }
 
-Firebase.prototype.customToken = function ( uid, callback ) {
+WHFirebase.prototype.customToken = function ( uid, callback ) {
   if ( typeof uid === 'function' ) {
     uid = 'default-token'
     callback = uid
   }
   var allowances = { serviceAccount: true }
-  this._admin.auth().createCustomToken( uid, allowances )
+  this._app.auth().createCustomToken( uid, allowances )
     .then( function ( customToken ) {
       callback( null, customToken )
     } )
@@ -49,6 +60,6 @@ Firebase.prototype.customToken = function ( uid, callback ) {
     } )
 }
 
-Firebase.prototype.idToken = function () {
+WHFirebase.prototype.idToken = function () {
   return this._secretKey;
 }
