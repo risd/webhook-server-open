@@ -1,10 +1,11 @@
 var testOptions = require( './env-options.js' )()
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
-var builder = require( '../libs/builder.js' )
-var webhookTasks = require( '../Gruntfile.js' )
 
 webhookTasks( grunt )
+
+var builder = require( '../libs/builder.js' )
+var webhookTasks = require( '../Gruntfile.js' )
 
 grunt.config.merge( { suppressJobQueue: true } )
 
