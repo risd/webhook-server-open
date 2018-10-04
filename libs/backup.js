@@ -49,7 +49,8 @@ module.exports.start = function (config, logger, callback) {
   function getCloudStorageToken ( next ) {
     // We force ourself to get the token first, because we will use it to bypass
     // our cloud storage module, this request is very special so we build it manually
-    cloudStorage.getToken( function ( token ) {
+    cloudStorage.getToken( function ( error, token ) {
+      if ( error ) return next( error )
       options.cloudStorageToken = token;
       next()
     } )
@@ -108,7 +109,13 @@ module.exports.start = function (config, logger, callback) {
 
   function removeBackupTimestamp ( next ) {
     if ( options.removeBackup.timestamp === false ) return next()
-    cloudStorage.objects.del( options.backupBucket, 'backup-' + options.removeBackup.timestamp, next )
+    cloudStorage.objects.del( options.backupBucket, 'backup-' + options.removeBackup.timestamp, deleteHandler )
+
+    function deleteHandler ( error ) {
+      // if the error is a 204 error, ths means that there was no backup to remove
+      if ( error && error !== 204 ) return next( error )
+      next()
+    }
   }
 }
 
