@@ -44,6 +44,8 @@ module.exports.start = function (config, logger) {
   var firebaseOptions = Object.assign(
     { initializationName: 'create-worker' },
     config().firebase )
+
+  // project::firebase::initialize::done
   var firebase = Firebase( firebaseOptions )
   this.root = firebase.database()
 
@@ -59,31 +61,37 @@ module.exports.start = function (config, logger) {
     var site = data.sitename;
 
     console.log('Processing Command For '.green + site.red);
+
+    // project::firebase::ref::done
     self.root.ref('management/sites/' + site).once('value', function(siteData) {
-      console.log( siteData )
       var siteValues = siteData.val();
 
       // IF site already has a key, we alraedy created it, duplicate job
       if(siteValues.key)
       {
         console.log('Site already has key');
-        callback();
+
+        callback( new Error( 'site-exists' ) );
       }
       // Else if the site owner is requesting, we need to make it
       else if(_(siteValues.owners).has(escapeUserId(userid)))
       {
+        // project::firebase::ref::done
         self.root.ref('management/sites/' + site + '/error/').set(false, function(err) {
           // We setup the site, add the user as an owner (if not one) and finish up
           setupSite(site, siteValues, siteData, siteData.ref, userid, function(err) {
             if(err) {
+              var errorMessage = 'Error Creating Site For '.green + site.red;
+              // project::firebase::ref::done
               self.root.ref('management/sites/' + site + '/error/').set(true, function(err) {
-                var errorMessage = 'Error Creating Site For '.green + site.red;
-                console.log( errorMessage );
-                callback( new Error( errorMessage.stripColors ) );
+                if ( err ) return callback( err )
+                return callback( new Error( errorMessage.stripColors ) );  
               });
             } else {
+              // project::firebase::ref::done
               self.root.ref('management/users/' + escapeUserId(userid) + '/sites/owners/' + site).set(true, function(err) {
                 console.log('Done Creating Site For '.green + site.red);
+                if (err) return callback( err )
                 callback();
               });
             }
@@ -121,19 +129,26 @@ module.exports.start = function (config, logger) {
         if ( row.bucketExists === true && row.siteKey.length > 0 ) {
           console.log( 'site-setup:generate-key:', row.siteBucket )
 
+          // project::firebase::ref::done
+          // project::firebase::set::done
           siteRef.child('key').set(row.siteKey, function(err) {
             console.log('site-setup:generate-key:setting-billing:')
             console.log(err)
+            if ( err ) return next( err )
 
             // Set some billing info, not used by self-hosting, but required to run
-            siteRef.root.child('billing/sites/' + row.siteName).set({
+            // project::firebase::child::done
+            // project::firebase::set::done
+            self.root.ref('billing/sites/' + row.siteName).set({
               'plan-id': 'mainplan',
               'email': userid,
               'status': 'paid',
               'active': true,
               'endTrial' : Date.now()
             }, function(err) {
-              console.log( 'site-setup:generate-key:' )
+              console.log( 'site-setup:generate-key:error' )
+              console.log( err )
+              if ( err ) return next( err )
               next( null, row );
             });
           });
@@ -180,21 +195,17 @@ module.exports.start = function (config, logger) {
         settings: {},
       }
       console.log( row.siteName )
+      console.log( row.siteKey )
       console.log( devData )
-      var dataRef = self.root.ref( `buckets/${ row.siteName }/${ row.siteKey }/dev` )
-      dataRef.set( devData, function onComplete ( error ) {
-        console.log( 'create-data:end:error' )
-        console.log( error )
-        console.log( arguments )
-
-        dataRef.once( 'value', function ( snapshot ) {
-          console.log( 'snapshot-value' )
-          console.log( snapshot.val() )
-
+      // project::firebase::ref::done
+      // project::firebase::set::done
+      self.root.ref( `buckets/${ row.siteName }/${ row.siteKey }/dev` )
+        .set( devData, function onComplete ( error ) {
+          console.log( 'create-data:end:error' )
+          console.log( error )
           if ( error ) return next( error )
           next( null, row )
         } )
-      } )
     } )
   }
 };
