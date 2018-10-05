@@ -1,11 +1,12 @@
 var testOptions = require( './env-options.js' )()
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
-var commandDelegator = require( '../libs/commandDelegator.js' )
-var JobQueue = require( '../libs/jobQueue.js' )
 var webhookTasks = require( '../Gruntfile.js' )
 
 webhookTasks( grunt )
+
+var commandDelegator = require( '../libs/commandDelegator.js' )
+var JobQueue = require( '../libs/jobQueue.js' )
 
 var commandor = commandDelegator.start( grunt.config, console.log )
 var jobQueue = JobQueue.init( grunt.config )
@@ -15,7 +16,8 @@ var options = [ {
   tube: 'build',
   data: {
     userid: 'test-user',
-    sitename: 'site-name',
+    sitename: 'commencement,1risd,1systems',
+    branch: 'master',
     buildtime: '1',
     id: 'unique-id',
     contentType: 'content-type',
@@ -23,13 +25,13 @@ var options = [ {
   },
   expectedData: {
     userid: 'test-user',
-    sitename: 'site-name',
-    siteBucket: 'site-name',
+    sitename: 'commencement,1risd,1systems',
+    branch: 'master',
     buildtime: '1',
     id: 'unique-id',
     contentType: 'content-type',
     itemKey: 'item-key',
-    branch: 'master',
+    siteBucket: 'commencement.risd.edu'
   },
   handler: function ( handlerPayload, handlerIdentifier, handlerData, handlerClient, handlerCallback ) {
     this.t.deepEqual( handlerData, this.expectedData, 'The payload is consistent for tube: ' + this.tube )
