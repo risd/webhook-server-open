@@ -63,6 +63,7 @@ module.exports.start = function (config, logger) {
 
   var self = this;
 
+  // project::firebase::initialize::done
   var firebase = Firebase( config().firebase )
   this.root = firebase.database()
 
@@ -83,8 +84,11 @@ module.exports.start = function (config, logger) {
    */
   var reportStatus = function(site, message, status, code) {
     if ( ! code ) code = 'BUILT'
+    // project::firebase::ref::done
     var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
+    // project::firebase::push::done
     messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: code }, function() {
+      // project::firebase::once::done
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
@@ -159,6 +163,7 @@ module.exports.start = function (config, logger) {
 
     console.log('Processing Command For '.green + site.red);
 
+    // project::firebase::ref::done
     self.root.ref('management/sites/' + site).once('value', function(siteData) {
       var siteValues = siteData.val();
 
