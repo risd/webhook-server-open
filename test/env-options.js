@@ -22,6 +22,10 @@ function EnvOptions ( options ) {
     buildUserId: process.env.BUILD_USER_ID,
     createUserId: process.env.CREATE_USER_ID,
     createSiteName: process.env.CREATE_SITE_NAME,
+    domainUserId: process.env.BUILD_USER_ID,
+    domainMapperSitename: process.env.BUILD_SITE_NAME,
+    domainMapperKey: process.env.FASTLY_MAP_DOMAIN_KEY,
+    domainMapperValue: process.env.FASTLY_MAP_DOMAIN_VALUE,
   }
 
   Object.assign( envOptions, options )

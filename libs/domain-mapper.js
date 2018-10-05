@@ -10,17 +10,26 @@ module.exports.start = function ( config, logger ) {
   var jobQueue = JobQueue.init( config )
   var cdn = FastlyWebhook( config.get( 'fastly' ) )
 
+  // project::firebase::initialize::done
   var firebase = Firebase( config().firebase )
   this.root = firebase.database()
 
   var reportStatus = function(site, message, status, code) {
     if ( ! code ) code = 'DOMAINS'
+    // project::firebase::ref::done
     var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
+    // project::firebase::push::done
     messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: code }, function() {
+      // project::firebase::ref::done
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
         if(size > 50) {
+          // project::firebase::startAt::done
+          // project::firebase::limiteToFirst::done
+          // project::firebase::once--child_added::done
+          // project::firebase::child::done
+          // project::firebase::remove::done
           messagesRef.startAt().limitToFirst(1).once('child_added', function(snap) {
             messagesRef.child(snap.key).remove();
           });
