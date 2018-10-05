@@ -55,9 +55,12 @@ function CommandDelegator (config, logger) {
   // Memcached is used for locks, to avoid setting the same job
   var memcached = new Memcached(config.get('memcachedServers'));
   var self = this;
+
+  // project::firebase::initialize::done
   var firebase = Firebase( config().firebase )
   this.root = firebase.database()
 
+  // project::firebase::deploys-integration::done
   var deploys = Deploys( this.root )
 
   // Where in firebase we look for commands, plus the name of the locks we use in memcached
@@ -133,6 +136,10 @@ function CommandDelegator (config, logger) {
 
     var queueFirebase = function ( toQueue, callback ) {
       if ( typeof callback !== 'function' ) callback = function noop () {}
+
+      // project::firebase::ref::done
+      // project::firebase::push::done
+      // project::firebase::set::done
       self.root.ref( handlers[ toQueue.tube ].command ).push().set( toQueue.data, callback )
     }
 
@@ -188,6 +195,9 @@ function CommandDelegator (config, logger) {
   // as jobs are added we queue them up ten listen again.
   function handleCommands(client, item) { 
     console.log('Waiting on commands for ' + item.tube);
+
+    // project::firebase::ref::done
+    // project::firebase::on--child_added::done
     self.root.ref(item.command).on('child_added', onCommandSnapshot, onCommandSnapshotError);
 
     return handleCommandData;
@@ -198,6 +208,9 @@ function CommandDelegator (config, logger) {
       var identifier = snapshot.key;
       
       // We remove the data immediately to avoid duplicates
+      // project::firebase::ref::done
+      // project::firebase::child::done
+      // project::firebase::remove::done
       self.root.ref(item.command).child(snapshot.key).remove()
 
       var commandData = {
