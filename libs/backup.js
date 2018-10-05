@@ -76,15 +76,18 @@ module.exports.start = function (config, logger, callback) {
   }
 
   function createBackup ( next ) {
+    // project::firebase::export::done
     var url = `https://${ options.firebase.name }.firebaseio.com/.json?auth=${ options.firebase.secretKey }&format=export`
     request.get( url ).pipe( request.put( options.uploadUrl, next ) )
   }
 
   function storeBackupTimestampReference ( next ) {
+    // project::firebase::push::done
     self.root.ref( 'management/backups/' ).push( options.backupTimestamp, next )
   }
 
   function checkRemoveOldestBackup ( next ) {
+    // project::firebase::once::done
     self.root.ref( 'management/backups/' ).once( 'value', function( snapshot ) {
       var data = snapshot.val()
 
