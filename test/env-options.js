@@ -26,6 +26,8 @@ function EnvOptions ( options ) {
     domainMapperSitename: process.env.BUILD_SITE_NAME,
     domainMapperKey: process.env.FASTLY_MAP_DOMAIN_KEY,
     domainMapperValue: process.env.FASTLY_MAP_DOMAIN_VALUE,
+    inviteUser: process.env.CREATE_USER_ID,
+    inviteSiteName: process.env.CREATE_SITE_NAME,
   }
 
   Object.assign( envOptions, options )

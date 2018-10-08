@@ -7,7 +7,7 @@
 */
 
 var fs = require('fs');
-var firebase = require('firebase');
+var Firebase = require('./firebase/index.js');
 var colors = require('colors');
 var _ = require('lodash');
 var uuid = require('node-uuid');
@@ -37,23 +37,20 @@ module.exports.start = function (config, logger) {
 
   var jobQueue = JobQueue.init(config);
   var self = this;
-  var firebaseUrl = config.get('firebase') || '';
 
-  this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/management/users/');
-  this.commandRoot = new firebase('https://' + firebaseUrl + '.firebaseio.com/management/commands/invite/');
+  var firebaseOptions = Object.assign(
+    { initializationName: 'invite-worker' },
+    config().firebase )
 
-  self.root.auth(config.get('firebaseSecret'), function(err) {
-    if(err) {
-      console.log(err.red);
-      process.exit(1);
-    }
+  // project::firebase::initialize::done
+  var firebase = Firebase( firebaseOptions )
+  this.root = firebase.database()
+  this.users = this.root.ref( 'management/users' )
 
-    console.log('Waiting for invites'.red);
+  console.log('Waiting for invites'.red);
 
-    // Wait for jobs
-    jobQueue.reserveJob('invite', 'invite', inviter);
-
-  });
+  // Wait for jobs
+  jobQueue.reserveJob('invite', 'invite', inviter);
 
   return inviter;
 
@@ -62,8 +59,10 @@ module.exports.start = function (config, logger) {
     var fromUsername = data.from_userid;
     var siteref = data.siteref;
 
+    // project::firebase::child::done
+    // project::firebase::once--value::done
     // Check to see if the user exists
-    self.root.child(escapeUserId(username)).once('value', function(data) {
+    self.users.child(escapeUserId(username)).once('value', function(data) {
       var user = data.val();
 
 
@@ -89,7 +88,9 @@ module.exports.start = function (config, logger) {
 
     var siteRefUrl = 'http://' + unescapeUserId(siteref);
 
-    self.root.root().child('management/sites/' + siteref + '/dns').once('value', function(snap) {
+    // project::firebase::ref::done
+    // project::firebase::once--value::done
+    self.root.ref('management/sites/' + siteref + '/dns').once('value', function(snap) {
       if(snap.val()) {
         siteRefUrl = 'http://' + snap.val();
       }
@@ -125,7 +126,9 @@ module.exports.start = function (config, logger) {
 
     var siteRefUrl = 'http://' + unescapeUserId(siteref);
 
-    self.root.root().child('management/sites/' + siteref + '/dns').once('value', function(snap) {
+    // project::firebase::ref::done
+    // project::firebase::once--value::done
+    self.root.ref('management/sites/' + siteref + '/dns').once('value', function(snap) {
       if(snap.val()) {
         siteRefUrl = 'http://' + snap.val();
       }
