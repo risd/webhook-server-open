@@ -57,16 +57,6 @@ test( 'create-existing-site', function ( t ) {
 
 } )
 
-test( 'clean-up', function ( t ) {
-  t.plan( 1 )
-
-  deleteSite( testOptions.createSiteName, deleteHandler )
-
-  function deleteHandler ( error ) {
-    t.assert( ! error, 'Deleted all firebase site paths without error.' )
-  }
-} )
-
 test.onFinish( process.exit )
 
 function makeCreateWithHandler ( createHandler ) {
@@ -83,21 +73,6 @@ function makeCreateWithHandler ( createHandler ) {
   var create = creator.start( grunt.config, console.log )
 
   return create( createOptions, createOptions.identifier, createOptions.payload, mockClient, createHandler )
-}
-
-function deleteSite ( siteName, callback ) {
-
-  async.parallel( removePaths( firebaseSitePaths( siteName ) ), callback )
-
-  function removePaths ( pathsObject ) {
-    return Object.keys( pathsObject ).map( pathKeyToRemovePathTask )
-
-    function pathKeyToRemovePathTask ( pathKey ) {
-      return function removePathTask ( taskComplete ) {
-        firebase.database().ref( pathsObject[ pathKey ] ).remove( taskComplete )
-      }
-    }
-  }
 }
 
 function firebaseSitePaths ( siteName ) {
