@@ -88,7 +88,7 @@ module.exports.start = function (config, logger) {
     var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
     // project::firebase::push::done
     messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: code }, function() {
-      // project::firebase::once::done
+      // project::firebase::once--value::done
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
