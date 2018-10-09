@@ -28,6 +28,7 @@ function EnvOptions ( options ) {
     domainMapperValue: process.env.FASTLY_MAP_DOMAIN_VALUE,
     inviteUser: process.env.CREATE_USER_ID,
     inviteSiteName: process.env.CREATE_SITE_NAME,
+    redirectsSiteName: process.env.CREATE_SITE_NAME,
   }
 
   Object.assign( envOptions, options )
