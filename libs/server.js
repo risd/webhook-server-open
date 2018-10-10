@@ -15,8 +15,7 @@ var request = require('request');
 var fs = require('fs');
 var mkdirp = require('mkdirp');
 var async = require('async');
-var Firebase = require('firebase');
-var fireUtil = require('./firebase-util.js');
+var Firebase = require('./firebase/index');
 var wrench = require('wrench');
 var path = require('path');
 var cloudStorage = require('./cloudStorage.js');
@@ -78,9 +77,7 @@ module.exports.start = function(config, logger)
 
   cloudStorage.setProjectName(config.get('googleProjectId'));
   cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
-  fireUtil.configUtils(config);
 
-  var firebaseUrl = config.get('firebase') || '';
   var app = express();
 
   var serverName = config.get('elasticServer').replace('http://', '').replace('https://', '');
@@ -99,19 +96,16 @@ module.exports.start = function(config, logger)
   }
 
   var elastic = new ElasticSearchClient(elasticOptions);
-  
-  // We do this to allow for CORS requests to the server (for search)
-  var allowCrossDomain = function(req, res, next) {
-      res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
-      res.header('Access-Control-Allow-Headers', 'Content-Type');
 
-      if ('OPTIONS' == req.method) {
-        res.send(200);
-      } else {
-        next();
-      }
-  };
+  var firebaseOptions = Object.assign(
+    { initializationName: 'create-worker' },
+    config().firebase )
+
+  // project::firebase::initialize::done
+  var firebase = Firebase( firebaseOptions )
+  var database = firebase.database()
+
+  var deploys = Deploys( database )
 
   // Set up our request handlers for express
   app.use(express.limit('1024mb'));
@@ -119,68 +113,64 @@ module.exports.start = function(config, logger)
   app.use(allowCrossDomain);
   app.use(errorHandler);
 
-  var firebaseRoot = 'https://' + firebaseUrl +  '.firebaseio.com';
+  
+  app.get('/', getRootHandler)
+  app.get('/backup-snapshot/', getBackupHandler)
+  app.post('/upload-url/',  postUploadUrlHandler)
+  app.post('/upload-file/', postUploadFileHandler)
+  app.post('/search/', postSearchHandler)
+  app.post('/search/index/', postSearchIndexHandler)
+  app.post('/search/delete/', postSearchDeleteHandler)
+  app.post('/search/delete/type/', postSearchDeleteTypeHandler)
+  app.post('/search/delete/index/', postSearchDeleteIndexHandler)
+  app.post('/upload/', postUploadHandler)
 
-  var bucketsRootPath = [ firebaseRoot, 'buckets' ].join( '/' )
-  var bucketsRoot = new Firebase( bucketsRootPath );
-  bucketsRoot.auth( config.get('firebaseSecret'), function ( error ) {
-    if ( error ){
-      console.log( 'Error connecting to buckets root.' ); console.log( error );
-    }
-    else console.log( 'Connected to Buckets root for Deploys' )
-  } )
+  app.listen(3000);
+  console.log('listening on 3000...'.red);
 
-  var deploys = Deploys( bucketsRoot )
+  return app;
 
   // Used to know that the program is working
-  app.get('/', function(req, res) {
+  function getRootHandler (req, res) {
     res.send('Working...');
-  });
+  }
 
   // Request for backup snapshots, passed a token, sitename, and a timestamp
   // If the token matches the token for the site on record, returns
   // a backup for the given site
-  app.get('/backup-snapshot/', function(req, res) {
+  function getBackupHandler (req, res) {
     var token = req.query.token;
     var timestamp = req.query.timestamp;
     var site = req.query.site;
 
-    fireUtil.get(firebaseRoot + '/management/sites/' + site + '/', function(data) {
-      if(!data) {
-        res.status(404);
-        res.end();
-      }
-      
-      if(data.key === token)
-      {
-        fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
+    var respond404 = function respond404 ( res ) {
+      res.status( 404 )
+      res.end()
+    }
 
-          // Billing, if not active block access
-          if(active === false) {
-            res.status(404);
-            res.end();
-          }
+    database.ref( '/management/sites/' + site + '/' )
+      .once( 'value', function ( siteDataSnapshot ) {
+        var data = siteDataSnapshot.val()
 
-          // Pipe backup to response stream
-          cloudStorage.getToken(function() {
-            var backupStream = cloudStorage.objects.getStream(config.get('backupBucket'), 'backup-' + timestamp);
-            var extractor = backupExtractor.getParser(['buckets', site, token, 'dev']);
+        if ( ! data ) return respond404( res )
 
-            backupStream.pipe(extractor).pipe(res);
-          });
-        });
-      } else {
-        res.status(404);
-        res.end();
-      }
-    });
+        if ( data.key !== token ) return respond404( res )
 
-  });
+        database.ref( '/billing/sites/' + site + '/active' )
+          .once( 'value', function ( activeSnapshot ) {
+            var active = activeSnapshot.val()
 
-  // Files are uploaded to the same `uploadsBucket`, at the URL returned
-  // for the given `fileName`
-  var fileUrlForFileName = function ( fileName ) {
-    return [ '//', config.get( 'uploadsBucket' ), '/webhook-uploads/', encodeURIComponent( fileName ) ].join( '' )
+            if ( ! active ) return respond404( res )
+
+            // Pipe backup to response stream
+            cloudStorage.getToken(function() {
+              var backupStream = cloudStorage.objects.getStream(config.get('backupBucket'), 'backup-' + timestamp);
+              var extractor = backupExtractor.getParser(['buckets', site, token, 'dev']);
+
+              backupStream.pipe(extractor).pipe(res);
+            });
+          } )
+      } )
   }
 
   // Handles uploading a file from a url
@@ -188,7 +178,7 @@ module.exports.start = function(config, logger)
   // site and token are the site and token for the site to upload to
   // resize_url is passed if the url is of an image and needs a resize_url returned
   // Finally url is the url of the object to upload
-  app.post('/upload-url/', function(req, res) {
+  function postUploadUrlHandler (req, res) {
 
     var site = req.body.site;
     var token = req.body.token;
@@ -196,79 +186,73 @@ module.exports.start = function(config, logger)
     var url = req.body.url; 
     var originReq = req;
 
-    // If no url, get out of here
-    if(!url) {
+
+    var respond500 = function respond404 ( res, msg ) {
       cleanUpFiles(originReq);
-      res.json(500, {});
-      return;
+      res.json( 500, msg || {} )
+      res.end()
     }
 
-    fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
-      // If not active, get out of here
-      if(active === false) {
-        cleanUpFiles(originReq);
-        res.json(404);
-        res.end();
-        return;
-      }
+    var respond404 = function respond404 ( res ) {
+      res.json( 404 )
+      res.end()
+    }
 
-      fireUtil.get(firebaseRoot + '/management/sites/' + site + '/', function(data) {
+    // If no url, get out of here
+    if( ! url ) return respond500( res )
 
-        if(!data) {
-          cleanUpFiles(originReq);
-          res.status(404);
-          res.end();
-          return;
-        }
-        
-        if(data.key === token)
-        {
-          // Where to upload to
-          var siteBucket = unescapeSite(site);
+    database.ref( '/billing/sites/' + site + '/active' )
+      .once( 'value', function ( activeSnapshot ) {
+        var active = activeSnapshot.val()
 
-          // Create a temporary file to pipe the url data into
-          temp.open({ prefix: 'uploads', dir: '/tmp' }, function(err, info) {
-            var fp = info.path;
+        if ( ! active ) return respond404( res )
 
-            // Check to see if url is a valid url
-            try {
-              var req = request(url);
-            } catch (e) {
-              cleanUpFiles(originReq);
-              res.json(500, { error: err});
-              return;
-            }
+        database.ref( '/management/sites/' + site + '/' )
+          .once( 'value', function ( siteDataSnapshot ) {
+            var data = siteDataSnapshot.val()
 
-            var requestFailed = false;
-            // Request the URL and pipe into our temporary file
-            req.on('response', function (response) {
-              if (!response || response.statusCode !== 200) {
-                requestFailed = true;
-                fs.unlinkSync(fp);
-                cleanUpFiles(originReq);
-                res.json(500, { error: err});
-              }
-            })
-            .pipe(fs.createWriteStream(fp))
-            .on('close', function () {
-              if (requestFailed) {
-                cleanUpFiles(originReq);
-                return;
+            if ( ! data ) return respond404( res )
+
+            if ( data.key !== token ) return respond404( res )
+
+            var siteBucket = unescapeSite(site);
+
+            // Create a temporary file to pipe the url data into
+            temp.open({ prefix: 'uploads', dir: '/tmp' }, function(err, info) {
+              var fp = info.path;
+
+              // Check to see if url is a valid url
+              try {
+                var req = request(url);
+              } catch (e) {
+                return respond500( res, { error: err } )
               }
 
-              // Once we've stored it in a temporary file, upload file to site
-              var fileName = path.basename(url);
-              var timestamp = new Date().getTime();
-              fileName = timestamp + '_' + fileName;
+              var requestFailed = false;
+              // Request the URL and pipe into our temporary file
+              req.on('response', function (response) {
+                if (!response || response.statusCode !== 200) {
+                  requestFailed = true;
+                  fs.unlinkSync(fp);
+                }
+              })
+              .pipe(fs.createWriteStream(fp))
+              .on('close', function () {
+                if (requestFailed) return respond500( res, { error: 'Failed to upload file.' } )
 
-              var stat = fs.statSync(fp);
+                // Once we've stored it in a temporary file, upload file to site
+                var fileName = path.basename(url);
+                var timestamp = new Date().getTime();
+                fileName = timestamp + '_' + fileName;
 
-              // Size limit of 50MB
-              if(stat.size > (50 * 1024 * 1024)) {
-                fs.unlinkSync(fp);
-                cleanUpFiles(originReq);
-                res.json(500, { error: 'File too large. 50 MB is limit.' });
-              } else {
+                var stat = fs.statSync(fp);
+
+                // Size limit of 50MB
+                if(stat.size > (50 * 1024 * 1024)) {
+                  fs.unlinkSync(fp);
+                  cleanUpFiles(originReq);
+                  return respond500( res, { error: 'File too large. 50 MB is limit.' } )
+                } 
 
                 var mimeType = mime.lookup(url);
                 var fileUrl = fileUrlForFileName( fileName );
@@ -282,11 +266,7 @@ module.exports.start = function(config, logger)
 
                 function onUploadTaskComplete ( error, results ) {
                   fs.unlinkSync(fp); // Remove temp file
-                  if(error) {
-                    cleanUpFiles(originReq);
-                    res.json(500, { error: error});
-                    return;
-                  }
+                  if(error) return respond500( res, { error: error} )
 
                   // If resize url requested, send request to Google App for resize url
                   if(resizeUrlRequested) {
@@ -318,25 +298,20 @@ module.exports.start = function(config, logger)
                   }
                 }
 
-              }
+              });
             });
-          });
-        } else {
-          cleanUpFiles(originReq);
-          res.json(401, {'error' : 'Invalid token'});
-        }
-
-      });
-
-    });
-  });
+          } )
+      }, function ( activeSnapshotError ) {
+        return respond500( res, { error: activeSnapshotError } )
+      } )
+  }
 
   // Handles uploading a file posted directly to the server
   // Post body contains site, token, resize_url, and file payload
   // site and token are the site and token for the site to upload to
   // resize_url is passed if the url is of an image and needs a resize_url returned
   // Finally the payload is the file being posted to the server
-  app.post('/upload-file/', function(req, res) {
+  function postUploadFileHandler (req, res) {
 
     var site = req.body.site;
     var token = req.body.token;
@@ -436,7 +411,26 @@ module.exports.start = function(config, logger)
         });
       });
     }
-  });
+  }
+
+  // We do this to allow for CORS requests to the server (for search)
+  function allowCrossDomain (req, res, next) {
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
+      res.header('Access-Control-Allow-Headers', 'Content-Type');
+
+      if ('OPTIONS' == req.method) {
+        res.send(200);
+      } else {
+        next();
+      }
+  }
+
+  // Files are uploaded to the same `uploadsBucket`, at the URL returned
+  // for the given `fileName`
+  function fileUrlForFileName ( fileName ) {
+    return [ '//', config.get( 'uploadsBucket' ), '/webhook-uploads/', encodeURIComponent( fileName ) ].join( '' )
+  }
 
   /*
   * Performs a search against elastic for the given query on the given typeName
@@ -447,7 +441,7 @@ module.exports.start = function(config, logger)
   * @param typeName The type to restrict search to (null if all)
   * @param callback Function to call with results
   */
-  var searchElastic = function(site, query, page, typeName, callback) {
+  function searchElastic (site, query, page, typeName, callback) {
 
     if(!query.endsWith('*')) {
       query = query + '*';
@@ -507,7 +501,7 @@ module.exports.start = function(config, logger)
   // Site and Token are the sitename and token for the site search is being performed on
   // query is the query being performed, page is the page of search being returned
   // typeName is the type to restrict to, null for all types
-  app.post('/search/', function(req, res) {
+  function postSearchHandler (req, res) {
     var site = req.body.site;
     var token = req.body.token;
     var query = req.body.query;
@@ -540,14 +534,14 @@ module.exports.start = function(config, logger)
         }
       });
     });
-  });
+  }
 
   // Handles search indexing
   // Post data includes site, token, data, id, oneOff, and typeName
   // Site and Token are the sitename and token for the site search is being performed on
   // data is the data being indexed, id is the id of the object, oneOff is true/false depending 
   // on if the object is a oneOff, typeName is the type of the object
-  app.post('/search/index/', function(req, res) {
+  function postSearchIndexHandler (req, res) {
 
     var site = req.body.site;
     var token = req.body.token;
@@ -593,13 +587,13 @@ module.exports.start = function(config, logger)
       });
 
     });
-  });
+  }
 
   // Handles deleteting a search object
   // Post data includes site, token, id,  and typeName
   // Site and Token are the sitename and token for the site search is being performed on
   // id is the id of the object, typeName is the type of the object
-  app.post('/search/delete/', function(req, res) {
+  function postSearchDeleteHandler (req, res) {
 
     // Todo: validate this shit
     var site = req.body.site;
@@ -632,13 +626,13 @@ module.exports.start = function(config, logger)
         }
       });
     });
-  });
+  }  
 
   // Handles deleteting all objects of a type from search
   // Post data includes site, token, and typeName
   // Site and Token are the sitename and token for the site search is being performed on
   // typeName is the type of the object
-  app.post('/search/delete/type/', function(req, res) {
+  function postSearchDeleteTypeHandler (req, res) {
 
     // Todo: validate this shit
     var site = req.body.site;
@@ -676,13 +670,12 @@ module.exports.start = function(config, logger)
       });
 
     });
-  });
-
+  }
 
   // Deletes an entire index (site) from search
   // Post data includes site and  token
   // Site and Token are the sitename and token for the site search is being performed on
-  app.post('/search/delete/index/', function(req, res) {
+  function postSearchDeleteIndexHandler (req, res) {
 
     // Todo: validate this shit
     var site = req.body.site;
@@ -712,13 +705,13 @@ module.exports.start = function(config, logger)
       });
 
     });
-  });
+  }
 
   // Handles uploading a site to our system and triggering a build
   // Post data in cludes site, token, and the file called payload
   // Site and Token are the name of the site and the token for the site to upload to
   // The Payload file is the zip file containing the site generated by wh deploy
-  app.post('/upload/', function(req, res) {
+  function postUploadHandler (req, res) {
 
     console.log( 'upload' )
 
@@ -796,11 +789,11 @@ module.exports.start = function(config, logger)
         var ts = Date.now();
         fireUtil.set(firebaseRoot + '/management/sites/' + site + '/version', ts, function(){
           fireUtil.set(firebaseRoot + '/management/commands/build/' + site, {
-          		userid: 'admin',
-          		sitename: site,
-          		id: uniqueId(),
-          		branch: branch,
-          	}, function(){
+              userid: 'admin',
+              sitename: site,
+              id: uniqueId(),
+              branch: branch,
+            }, function(){
             console.log( 'build-signal-submitted' )
             console.log( 'send-files:done' )
             callback();
@@ -808,9 +801,7 @@ module.exports.start = function(config, logger)
         });
       });
     }
+  }
 
-  });
-
-  app.listen(3000);
-  console.log('listening on 3000...'.red);
+  
 };
