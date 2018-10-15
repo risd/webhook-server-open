@@ -36,37 +36,10 @@ String.prototype.startsWith = function (str){
   return this.indexOf(str) == 0;
 };
 
-// Used to generate GUIDs for random uses
-function uniqueId() {
-  return Date.now() + 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8);
-    return v.toString(16);
-  }); 
-}
-
-var unescapeSite = function(site) {
-  return site.replace(/,1/g, '.');
-}
-
 // General error handling function
-function errorHandler(err, req, res, next) {
+function errorHandler (err, req, res, next) {
   res.status(500);
   res.send('error');
-}
-
-// Cleans up any files that may have been posted to
-// the server in req, used to clean up uploads
-var cleanUpFiles = function(req) {
-  var curFile = null;
-  for(var key in req.files) {
-    if(req.files[key].path) {
-      try {
-        fs.unlinkSync(req.files[key].path);
-      } catch (e) {
-        // Ignore, just last minute trying to unlink
-      }
-    }
-  }
 }
 
 module.exports.start = function(config, logger)
@@ -111,8 +84,6 @@ module.exports.start = function(config, logger)
   app.use(express.limit('1024mb'));
   app.use(express.bodyParser({ maxFieldsSize: 10 * 1024 * 1024 }));
   app.use(allowCrossDomain);
-  app.use(errorHandler);
-
   
   app.get('/', getRootHandler)
   app.get('/backup-snapshot/', getBackupHandler)
@@ -124,6 +95,8 @@ module.exports.start = function(config, logger)
   app.post('/search/delete/type/', postSearchDeleteTypeHandler)
   app.post('/search/delete/index/', postSearchDeleteIndexHandler)
   app.post('/upload/', postUploadHandler)
+
+  app.use(errorHandler);
 
   app.listen(3000);
   console.log('listening on 3000...'.red);
@@ -494,7 +467,7 @@ module.exports.start = function(config, logger)
           })
           .exec();
     }
-  };
+  }
 
   // Handles search requests
   // Post data includes site, token, query,  page, and typeName
@@ -508,32 +481,33 @@ module.exports.start = function(config, logger)
     var page = req.body.page || 1;
     var typeName = req.body.typeName || null;
 
-    cleanUpFiles(req);
+    async.series( [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+      elasticSearchQuery.bind( null, { site: site, typeName: typeName, query: query, page: page } )
+    ], handleResponseForQuery )
 
-    fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
-      if(active === false) {
-        res.json(401, { error: 'Site not active, please check billing status.' });
-        res.end();
-        return;
-      }
+    function handleResponseForQuery ( error, seriesResults ) {
+      if ( error ) return handleResponseForSeries( error )
+      var responseData = seriesResults.pop()
+      res.json( 200, responseData )
+      res.end()
+    }
 
-      fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(key) {
-        if(key === token) {
-          searchElastic(unescapeSite(site), query, page, typeName, function(err, data) {
-            if(err) {
-              res.json(500, { error: err });
-            }
-            if(!data.hits) {
-              res.json(200, { 'hits' : {} });
-            } else {
-              res.json(200, { 'hits' : data.hits.hits });
-            }
-          });
-        } else {
-          res.json(401, {'error' : 'UNAUTHORIZED' });
-        }
+    function elasticSearchQuery ( options, callback ) {
+      var site = options.site
+      var typeName = options.typeName
+      var query = options.query
+      var page = options.page
+
+      var callbackErrorValue = null
+
+      searchElastic(unescapeSite(site), query, page, typeName, function(err, data) {
+        if ( err ) return callback( { statusCode: 500, message: 'Could not search elastic.' } )
+        if ( ! data.hits ) return callback( null, { hits : {} } )
+        else return callback ( null, { hits : data.hits.hits } )
       });
-    });
+    }
   }
 
   // Handles search indexing
@@ -550,43 +524,45 @@ module.exports.start = function(config, logger)
     var typeName = req.body.typeName;
     var oneOff = req.body.oneOff || false;
 
-    cleanUpFiles(req);
+    async.series( [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+      elasticSearchIndexItem.bind( null, { site: site, typeName: typeName, id: id, doc: data, oneOff: oneOff } )
+    ], handleResponseForSeries.bind( null, res ) )
 
-    fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
-      if(active === false) {
-        res.json(401, { error: 'Site not active, please check billing status.' });
-        res.end();
-        return;
-      }
+    function elasticSearchIndexItem ( options, callback ) {
+      var site = options.site
+      var typeName = options.typeName
+      var id = options.id
+      var doc = options.doc
+      var oneOff = options.oneOff
 
-      fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(key) {
-        if(key === token) {
-          var parsed = JSON.parse(data);
-          parsed.__oneOff = oneOff;
+      var callbackErrorValue = null
+      
+      var parsed = JSON.parse(doc);
+      parsed.__oneOff = oneOff;
+      
+      elastic.index(unescapeSite(site), typeName, parsed, id)
+        .on('data', function( indexedResponse ) {
+          if ( typeof indexedResponse === 'string' ) {
+            indexedData = JSON.parse( indexedResponse )
+          }
+          else if ( typeof indexedResponse === 'object' ) {
+            indexedData = Object.create( indexedResponse )
+          }
 
-          console.log( 'elastic-index' )
-          console.log( 'site:' +  unescapeSite(site) )
-          console.log( 'typeName:' + typeName )
-          console.log( 'parsed:' + JSON.stringify( parsed ) )
-          console.log( 'id:' + id )
-
-          elastic.index(unescapeSite(site), typeName, parsed, id).on('data', function(data) {
-            if(data) {
-              data = JSON.parse(data);
-            }
-
-            if(data.error) {
-              res.json(500, { 'error' : data.error })
-            } else {
-              res.json(200, {'message' : 'success'});
-            }
-          }).exec();
-        } else {
-          res.json(401, {'error' : 'UNAUTHORIZED' });
-        }
-      });
-
-    });
+          if ( indexedData.error ) {
+            callbackErrorValue = { statusCode: 500, message: indexedData.error }
+          }
+        })
+        .on('error', function ( error ) {
+          callbackErrorValue = { statusCode: 500, message: 'Could not index item for site.' }
+        })
+        .on('done', function () {
+          callback( callbackErrorValue )
+        })
+        .exec();
+    }
   }
 
   // Handles deleteting a search object
@@ -601,31 +577,26 @@ module.exports.start = function(config, logger)
     var id   = req.body.id;
     var typeName = req.body.typeName;
 
-    cleanUpFiles(req);
+    async.series( [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+      elasticDeleteSearchItem.bind( null, { site: site, typeName: typeName, id: id } )
+    ], handleResponseForSeries.bind( null, res ) )
 
-    fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
-      if(active === false) {
-        res.json(401, { error: 'Site not active, please check billing status.' });
-        res.end();
-        return;
-      }
-
-      fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(key) {
-        if(key === token) {
-
-          console.log( 'elastic-delete' )
-          console.log( 'site:' +  unescapeSite(site) )
-          console.log( 'typeName:' + typeName )
-          console.log( 'id:' + id )
-
-          elastic.deleteDocument(unescapeSite(site), typeName, id).on('data', function(data) {
-            res.json(200, {'message' : 'success'});
-          }).exec();
-        } else {
-          res.json(401, {'error' : 'UNAUTHORIZED' });
-        }
-      });
-    });
+    function elasticDeleteSearchItem ( options, callback ) {
+      var site = options.site
+      var typeName = options.typeName
+      var id = options.id
+      var callbackErrorValue = null
+      elastic.deleteDocument(unescapeSite(site), typeName, id)
+        .on('error', function ( error ) {
+          callbackErrorValue = { statusCode: 500, message: 'Could not delete content-type item for site.' }
+        })
+        .on('done', function() {
+          callback( callbackErrorValue )
+        })
+        .exec()
+    }
   }  
 
   // Handles deleteting all objects of a type from search
@@ -639,76 +610,56 @@ module.exports.start = function(config, logger)
     var token = req.body.token;
     var typeName = req.body.typeName;
 
-    cleanUpFiles(req);
+    async.series( [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+      elasticContentTypeDeleteIndex.bind( null, { site: site, typeName: typeName } )
+    ], handleResponseForSeries.bind( null, res ) )
 
-    fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
-      if(active === false) {
-        res.json(401, { error: 'Site not active, please check billing status.' });
-        res.end();
-        return;
-      }
-
-      fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(key) {
-        if(key === token) {
-
-          var qryObj = {
-            "query" : {
-              "match_all" : {}
-            }
-          };
-
-          console.log( 'elastic-delete-type' )
-          console.log( 'site:' +  unescapeSite(site) )
-          console.log( 'typeName:' + typeName )
-
-          elastic.deleteMapping(unescapeSite(site), typeName).on('data', function(data) {
-            res.json(200, {'message' : 'success'});
-          }).exec();
-        } else {
-          res.json(401, {'error' : 'UNAUTHORIZED' });
-        }
-      });
-
-    });
+    function elasticContentTypeDeleteIndex ( options, callback ) {
+      var site = options.site
+      var typeName = options.typeName
+      var callbackErrorValue = null
+      elastic.deleteMapping(unescapeSite(site), typeName)
+        .on('error', function ( error ) {
+          callbackErrorValue = { statusCode: 500, message: 'Could not delete content-type index for site.' }
+        })
+        .on('done', function() {
+          callback( callbackErrorValue )
+        })
+        .exec();
+    }
   }
 
   // Deletes an entire index (site) from search
-  // Post data includes site and  token
+  // Post data includes site and token
   // Site and Token are the sitename and token for the site search is being performed on
   function postSearchDeleteIndexHandler (req, res) {
 
-    // Todo: validate this shit
     var site = req.body.site;
     var token = req.body.token;
 
-    cleanUpFiles(req);
+    async.series( [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } )
+      elasticDeleteIndex.bind( null, site )
+    ], handleResponseForSeries.bind( null, res ) )
 
-    fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
-      if(active === false) {
-        res.json(401, { error: 'Site not active, please check billing status.' });
-        res.end();
-        return;
-      }
-
-      fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(key) {
-        if(key === token) {
-
-          console.log( 'elastic-delete-site' )
-          console.log( 'site:' +  unescapeSite(site) )
-
-          elastic.deleteIndex(unescapeSite(site)).on('data', function(data) {
-            res.json(200, {'message' : 'success'});
-          }).exec();
-        } else {
-          res.json(401, {'error' : 'UNAUTHORIZED' });
-        }
-      });
-
-    });
+    function elasticDeleteIndex ( site, callback ) {
+      var callbackErrorValue = null;
+      elastic.deleteIndex(unescapeSite(site))
+        .on('error', function ( error ) {
+          callbackErrorValue = { statusCode: 500, message: 'Could not delete site index.' }
+        })
+        .on('done', function() {
+          callback( callbackErrorValue )
+        })
+        .exec()
+    }
   }
 
   // Handles uploading a site to our system and triggering a build
-  // Post data in cludes site, token, and the file called payload
+  // Post data includes site, token, and the file called payload
   // Site and Token are the name of the site and the token for the site to upload to
   // The Payload file is the zip file containing the site generated by wh deploy
   function postUploadHandler (req, res) {
@@ -727,81 +678,162 @@ module.exports.start = function(config, logger)
     if(!payload || !payload.path) {
       cleanUpFiles(req);
       res.status(500);
-      res.end();
+      return res.end();
     }
-
     
     console.log( 'firebase-active?' )
 
-    // Check active status of site and if the key is correct
-    fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
-      if(active === false) {
-        console.log( 'firebase-active?:false' )
-        cleanUpFiles(req);
-        res.json(500, { error: 'Site not active, please check billing status.' });
-        res.end();
-        return;
-      }
-
-      console.log( 'firebase-active?:true' )
-      console.log( 'matching-token?' )
-
-      fireUtil.get(firebaseRoot + '/management/sites/' + site + '/key', function(data) {
-        if(data === token)
-        {
-          console.log( 'matching-token?:true' )
-          console.log( 'send-files' )
-          // If key is good, repackage the zip files into a new zip and upload
-          sendFiles(site, branch, payload.path, function(err) {
-
-            if(err) {
-              console.log( 'send-files:done:err' )
-              console.log( err )
-              cleanUpFiles(req);
-              res.json(500, { error: err });
-            } else {
-              console.log( 'send-files:done' )
-              cleanUpFiles(req);
-              res.json(200, { 'message': 'Finished' });
-            }
-
-          });
-        } else {
-          console.log( 'matching-token?:false' )
-          cleanUpFiles(req);
-          res.json(401, {'error' : 'Invalid token'});
-        } 
-
-      });
-
-    });
+    async.series( [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+      sendFiles.bind( null, site, branch, payload.path )
+    ], function handlePostUploadHandlerSeries ( error ) {
+      cleanUpFiles( req )
+      handleResponseForSeries( res, error )
+    } )
 
     function sendFiles(site, branch, path, callback) {
       // When done zipping up, upload to our archive in cloud storage
       console.log( 'upload-file' )
       cloudStorage.objects.upload(config.get('sitesBucket'), path, Deploys.utilities.fileForSiteBranch( site, branch ), function(err, data) {
         console.log( 'upload-file:done' )
-        
-        if ( err ) console.log( 'upload-file:done:err' ); console.log( err )
+        fs.unlinkSync( path )
 
-        fs.unlinkSync(path);
-        // Signal build worker to build the site
-        var ts = Date.now();
-        fireUtil.set(firebaseRoot + '/management/sites/' + site + '/version', ts, function(){
-          fireUtil.set(firebaseRoot + '/management/commands/build/' + site, {
-              userid: 'admin',
-              sitename: site,
-              id: uniqueId(),
-              branch: branch,
-            }, function(){
-            console.log( 'build-signal-submitted' )
-            console.log( 'send-files:done' )
-            callback();
-          });
-        });
+        if ( err ) {
+          console.log( 'upload-file:done:err' )
+          console.log( err )
+          return callback( { statusCode: 500, message: 'Could not upload to sites bucket.' } )
+        }
+
+        async.series( [
+          setSiteVersion.bind( null, { siteName: site, timestamp: Date.now() } ),
+          signalBuild.bind( null, { siteName: site, branch: branch } )
+        ], callback )
       });
     }
   }
 
-  
+  function siteBillingActive ( site, callback ) {
+    database.ref( '/billing/sites/' + site + '/active' )
+      .once( 'value', onActiveSnapshotSuccess, onActiveSnapshotError )
+
+    function onActiveSnapshotSuccess ( activeSnapshot ) {
+      var isActive = activeSnapshot.val()
+      // if this function is pulled out into a common firebase interface,
+      // just return the active value
+      if ( ! isActive ) return callback( siteBillingActiveError() )
+      callback( null )
+    }
+
+    function onActiveSnapshotError ( error ) {
+      callback( siteBillingActiveError() )
+    }
+
+    // server specific error based on being able to send a response with
+    // the object `res.send( error.statusCode, error )
+    function siteBillingActiveError () {
+      return {
+        statusCode: 500,
+        message: 'Site not active, please check billing status.',
+      }
+    }
+  }
+
+  function siteKeyEqualsToken( options, callback ) {
+    var siteName = options.siteName
+    var token = options.token
+    database.ref( '/management/sites/' + siteName + '/key' )
+      .once( 'value', onSiteKeySnapshotSuccess, valueDoesNotExistErrorHandler( callback ) )
+
+    function onSiteKeySnapshotSuccess ( siteKeySnapshot ) {
+      var siteKey = siteKeySnapshot.val()
+      if ( ! siteKey ) return callback( valueDoesNotExistErrorObject() )
+      if ( siteKey !== token ) return callback( tokenNotValidError() )
+      callback()
+    }
+
+    function tokenNotValidError () {
+      return {
+        statusCode: 403,
+        message: 'Token is not valid.',
+      }
+    }
+  }
+
+  function setSiteVersion ( options, callback ) {
+    var siteName = options.siteName
+    var timestamp = options.timestamp
+    database.ref( '/management/sites/' + siteName + '/version' )
+      .set( timestamp, valueDoesNotExistErrorHandler( callback ) )
+  }
+
+  function signalBuild ( options, callback ) {
+    var siteName = options.siteName
+    var branch = options.branch
+
+    var buildSignalOptions = {
+      sitename: siteName,
+      branch: branch,
+      userid: 'admin',
+      id: uniqueId(),
+    }
+    database.ref( '/management/commands/build/' + siteName )
+      .set( buildSignalOptions, valueDoesNotExistErrorHandler( callback ) )
+  }
+
+  function valueDoesNotExistErrorHandler ( callbackFn ) {
+    return function firebaseErrorHandler ( error ) {
+      if ( error ) return callbackFn( valueDoesNotExistErrorObject() )
+      return callbackFn()
+    }
+  }
+
+  function valueDoesNotExistErrorObject () {
+    return {
+      statusCode: 500,
+      message: 'Site does not exist.'
+    }
+  }
+
+  // Used as the handler for async.series calls within req, res handlers
+  function handleResponseForSeries ( res, error ) {
+    if ( error ) {
+      res.json( error.statusCode, { error: error.message } )
+    }
+    else {
+      res.json( 200, { message: 'Finished' } )
+    }
+    res.end()
+  }
 };
+
+
+
+/* helpers */
+
+function uniqueId() {
+  return Date.now() + 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8);
+    return v.toString(16);
+  }); 
+}
+
+
+// Cleans up any files that may have been posted to
+// the server in req, used to clean up uploads
+function cleanUpFiles (req) {
+  var curFile = null;
+  for(var key in req.files) {
+    if(req.files[key].path) {
+      try {
+        fs.unlinkSync(req.files[key].path);
+      } catch (e) {
+        // Ignore, just last minute trying to unlink
+      }
+    }
+  }
+}
+
+function unescapeSite (site) {
+  return site.replace(/,1/g, '.');
+}
