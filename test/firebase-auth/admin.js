@@ -25,3 +25,5 @@ test( 'firebase-admin', function ( t ) {
   var sercreKey = firebase.idToken()
   t.assert( typeof sercreKey === 'string', 'Firebase sercre key is a string.' )
 } )
+
+test.onFinish( process.exit )
