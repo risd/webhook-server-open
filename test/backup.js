@@ -13,3 +13,5 @@ test( 'backup', function ( t ) {
     t.assert( ! error, 'Backup completed without error.' )
   } )
 } )
+
+test.onFinish( process.exit )

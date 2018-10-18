@@ -33,3 +33,5 @@ test( 'builder', function ( t ) {
   }
 
 } )
+
+test.onFinish( process.exit )

@@ -26,3 +26,5 @@ test( 'create-dns-record', function ( t ) {
   } )
 
 } )
+
+test.onFinish( process.exit )
