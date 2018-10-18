@@ -54,5 +54,4 @@ test( 'command-build', function ( t ) {
   } )
 } )
 
-
-
+test.onFinish( process.exit )

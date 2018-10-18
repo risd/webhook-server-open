@@ -252,9 +252,15 @@ function CommandDelegator (config, logger) {
           if ( payload.siteBucket ) {
             var siteBuckets = [ payload.siteBucket ]
           }
+          else if ( payload.branch ) {
+            var siteBuckets = configuration.deploys
+              .filter( function ( deploy ) { return deploy.branch === payload.branch } )
+              .map( function ( deploy ) { return deploy.bucket } )
+          }
           else {
             var siteBuckets = configuration.deploys.map( function ( deploy ) { return deploy.bucket } )
           }
+
           siteBuckets = _.uniq( siteBuckets )
 
           return siteBuckets.map( toBuildCommandArgs ).forEach( queueCommandForArgs )
