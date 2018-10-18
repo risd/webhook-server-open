@@ -84,6 +84,7 @@ module.exports.start = function(config, logger)
   app.use(express.limit('1024mb'));
   app.use(express.bodyParser({ maxFieldsSize: 10 * 1024 * 1024 }));
   app.use(allowCrossDomain);
+  app.use(errorHandler);
   
   app.get('/', getRootHandler)
   app.get('/backup-snapshot/', getBackupHandler)
@@ -95,8 +96,6 @@ module.exports.start = function(config, logger)
   app.post('/search/delete/type/', postSearchDeleteTypeHandler)
   app.post('/search/delete/index/', postSearchDeleteIndexHandler)
   app.post('/upload/', postUploadHandler)
-
-  app.use(errorHandler);
 
   app.listen(3000);
   console.log('listening on 3000...'.red);
@@ -121,29 +120,24 @@ module.exports.start = function(config, logger)
       res.end()
     }
 
-    database.ref( '/management/sites/' + site + '/' )
-      .once( 'value', function ( siteDataSnapshot ) {
-        var data = siteDataSnapshot.val()
+    var validateRequestSeries = [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+    ]
 
-        if ( ! data ) return respond404( res )
+    async.series( validateRequestSeries, function handleValidationSeries ( error ) {
+      if ( error ) return handleResponseForSeries( res, error )
+      extractBackup( timestamp, res )
+    } )
 
-        if ( data.key !== token ) return respond404( res )
+    function extractBackup ( timestamp, res ) {
+      cloudStorage.getToken(function() {
+        var backupStream = cloudStorage.objects.getStream(config.get('backupBucket'), 'backup-' + timestamp);
+        var extractor = backupExtractor.getParser(['buckets', site, token, 'dev']);
 
-        database.ref( '/billing/sites/' + site + '/active' )
-          .once( 'value', function ( activeSnapshot ) {
-            var active = activeSnapshot.val()
-
-            if ( ! active ) return respond404( res )
-
-            // Pipe backup to response stream
-            cloudStorage.getToken(function() {
-              var backupStream = cloudStorage.objects.getStream(config.get('backupBucket'), 'backup-' + timestamp);
-              var extractor = backupExtractor.getParser(['buckets', site, token, 'dev']);
-
-              backupStream.pipe(extractor).pipe(res);
-            });
-          } )
-      } )
+        backupStream.pipe(extractor).pipe(res);
+      });
+    }
   }
 
   // Handles uploading a file from a url
@@ -159,124 +153,88 @@ module.exports.start = function(config, logger)
     var url = req.body.url; 
     var originReq = req;
 
-
-    var respond500 = function respond404 ( res, msg ) {
-      cleanUpFiles(originReq);
-      res.json( 500, msg || {} )
-      res.end()
-    }
-
-    var respond404 = function respond404 ( res ) {
-      res.json( 404 )
-      res.end()
-    }
-
     // If no url, get out of here
-    if( ! url ) return respond500( res )
-
-    database.ref( '/billing/sites/' + site + '/active' )
-      .once( 'value', function ( activeSnapshot ) {
-        var active = activeSnapshot.val()
-
-        if ( ! active ) return respond404( res )
-
-        database.ref( '/management/sites/' + site + '/' )
-          .once( 'value', function ( siteDataSnapshot ) {
-            var data = siteDataSnapshot.val()
-
-            if ( ! data ) return respond404( res )
-
-            if ( data.key !== token ) return respond404( res )
-
-            var siteBucket = unescapeSite(site);
-
-            // Create a temporary file to pipe the url data into
-            temp.open({ prefix: 'uploads', dir: '/tmp' }, function(err, info) {
-              var fp = info.path;
-
-              // Check to see if url is a valid url
-              try {
-                var req = request(url);
-              } catch (e) {
-                return respond500( res, { error: err } )
-              }
-
-              var requestFailed = false;
-              // Request the URL and pipe into our temporary file
-              req.on('response', function (response) {
-                if (!response || response.statusCode !== 200) {
-                  requestFailed = true;
-                  fs.unlinkSync(fp);
-                }
-              })
-              .pipe(fs.createWriteStream(fp))
-              .on('close', function () {
-                if (requestFailed) return respond500( res, { error: 'Failed to upload file.' } )
-
-                // Once we've stored it in a temporary file, upload file to site
-                var fileName = path.basename(url);
-                var timestamp = new Date().getTime();
-                fileName = timestamp + '_' + fileName;
-
-                var stat = fs.statSync(fp);
-
-                // Size limit of 50MB
-                if(stat.size > (50 * 1024 * 1024)) {
-                  fs.unlinkSync(fp);
-                  cleanUpFiles(originReq);
-                  return respond500( res, { error: 'File too large. 50 MB is limit.' } )
-                } 
-
-                var mimeType = mime.lookup(url);
-                var fileUrl = fileUrlForFileName( fileName );
-
-                console.log( 'upload-url' )
-                console.log( siteBucket )
-                console.log( fileName )
-                console.log( fileUrl )
-
-                cloudStorage.objects.upload(config.get( 'uploadsBucket' ), fp, 'webhook-uploads/' + fileName, 'public,max-age=86400', mimeType, onUploadTaskComplete)
-
-                function onUploadTaskComplete ( error, results ) {
-                  fs.unlinkSync(fp); // Remove temp file
-                  if(error) return respond500( res, { error: error} )
-
-                  // If resize url requested, send request to Google App for resize url
-                  if(resizeUrlRequested) {
-                    request('http://' + config.get('googleProjectId') + '.appspot.com/' + config.get( 'uploadsBucket' ) + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
-                      var resizeUrl = '';
-
-                      if(data && data.statusCode === 200) {
-                        resizeUrl = body;
-                      }
-
-                      cleanUpFiles(originReq);
-                      res.json(200, { 
-                        'message' : 'Finished', 
-                        'url' : fileUrl,
-                        'size' : stat.size, 
-                        'mimeType' : mimeType,
-                        'resize_url' : resizeUrl,
-                      });
-
-                    });
-                  } else {
-                    cleanUpFiles(originReq);
-                    res.json(200, { 
-                      'message' : 'Finished', 
-                      'url' : fileUrl, 
-                      'size' : stat.size, 
-                      'mimeType' : mimeType,
-                    });
-                  }
-                }
-
-              });
-            });
-          } )
-      }, function ( activeSnapshotError ) {
-        return respond500( res, { error: activeSnapshotError } )
+    if ( ! url ) {
+      cleanUpFiles( req )
+      return handleResponseForSeries( res, {
+        statusCode: 400,
+        message: 'Body requires a `url` attribute to upload.'
       } )
+    }
+
+    var validateRequestSeries = [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+    ]
+
+    var uploadFileWaterfall = [
+      createTmpFile,
+      downloadUrlToPath.bind( null, url ),
+      limitFileSize,
+      uploadLocalFileToUploadsBucket,
+    ]
+
+    if ( resizeUrlRequested ) uploadFileWaterfall = uploadFileWaterfall.concat( [ getResizeUrl ] )
+
+    async.series( validateRequestSeries, function handleValidationSeries ( error ) {
+      if ( error ) {
+        cleanUpFiles( req )
+        return handleResponseForSeries( res, error )
+      }
+
+      async.waterfall( uploadFileWaterfall, handleUploadFileWaterfall.bind( null, req, res ) )
+    } )
+
+    // callback => localFile
+    function createTmpFile ( callback ) {
+      temp.open( { prefix: 'uploads', dir: '/tmp' }, function ( err, info ) {
+        if ( err ) return callback( err )
+        callback( null, info.path )
+      } )
+    }
+
+    // url, localFile, callback => error?, { localFile, localFileOrigin }
+    function downloadUrlToPath ( url, localFile, callback ) {
+      var downloadError = { statusCode: 500, message: 'Could not download url.' }
+      try {
+        var req = request( url )
+      } catch ( error ) {
+        return callback( downloadError )
+      }
+
+      var requestFailed = false
+      // Request the URL and pipe into our temporary file
+      req
+        .on('response', function (response) {
+          if ( ! response || response.statusCode !== 200) {
+            requestFailed = true
+            fs.unlinkSync( localFile )
+          }
+        })
+        .on('error', function ( error ) {
+          fs.unlinkSync( localFile )
+          callback( downloadError )
+        })
+        .pipe( fs.createWriteStream( localFile ) )
+          .on( 'close', function () {
+            if ( requestFailed ) return callback( downloadError )
+            callback( null, { localFile: localFile, localFileOrigin: url } )
+          } )
+    }
+
+    // { localFile, localFileOrigin }, callback => error?, { localFile, localFileOrigin }
+    function limitFileSize ( options, callback ) {
+      var localFile = options.localFile
+      fs.stat( localFile, function ( error, stat ) {
+        if ( error ) return callback( { status: 500, message: 'File too large. 50 MB is limit.' } )
+        // Size limit of 50MB
+        if( stat.size > ( 50 * 1024 * 1024 ) ) {
+          return callback( { status: 500, message: 'File too large. 50 MB is limit.' } )
+        }
+
+        callback( null, options )
+      } )
+    }
   }
 
   // Handles uploading a file posted directly to the server
@@ -289,101 +247,123 @@ module.exports.start = function(config, logger)
     var site = req.body.site;
     var token = req.body.token;
     var resizeUrlRequested = req.body.resize_url || false;
-    var payload = req.files.payload; 
+    var payload = req.files.payload;
 
     console.log( 'upload-file' )
     console.log( site )
 
     // 50 MB file size limit
-    if(payload.size > (50 * 1024 * 1024)) 
-    {
-      res.json('500', { error: 'File too large. 50 MB is limit.' });
-      cleanUpFiles(req);
-    } else {
-      fireUtil.get(firebaseRoot + '/billing/sites/' + site + '/active', function(active) {
-        // If site not active, abort
-        if(active === false) {
-          cleanUpFiles(req);
-          res.json(404);
-          res.end();
-          return;
-        }
-
-        fireUtil.get(firebaseRoot + '/management/sites/' + site + '/', function(data) {
-
-          if(!data) {
-            cleanUpFiles(req);
-            res.status(404);
-            res.end();
-            return;
-          }
-          
-          if(data.key === token)
-          {
-            // Bucket to upload to
-            var siteBucket = unescapeSite(site);
-
-            var origFilename = path.basename(payload.originalFilename);
-            var timestamp = new Date().getTime();
-            var fileName = timestamp + '_' + origFilename;
-            var fileUrl = fileUrlForFileName( fileName );
-
-            var localFile = payload.path;
-            var remoteFile = 'webhook-uploads/' + fileName;
-            var cacheControl = 'public,max-age=86400';
-            
-            cloudStorage.objects.upload( config.get( 'uploadsBucket' ), localFile, remoteFile, cacheControl, function ( error, result ) {
-              
-              if ( error ) {
-                console.log( 'upload-task-complete:error' )
-                console.log( error )
-                console.log( JSON.stringify( result ) )
-                cleanUpFiles(req);
-                res.json(500, { error: error});
-                return;
-              }
-
-              console.log( 'upload-task-complete' )
-              console.log( JSON.stringify( result ) )
-
-              var mimeType = mime.lookup(localFile);
-              cleanUpFiles(req);
-
-              // If resize url needed, send request to google app engine app
-              if(resizeUrlRequested) {
-                request('http://' + config.get('googleProjectId') + '.appspot.com/' + config.get( 'uploadsBucket' ) + '/webhook-uploads/' + encodeURIComponent(fileName), function(err, data, body) {
-                  var resizeUrl = '';
-
-                  if(data && data.statusCode === 200) {
-                    resizeUrl = body;
-                  }
-                  
-                  res.json(200, {
-                    'message' : 'Finished',
-                    'url' : fileUrl,
-                    'resize_url' : resizeUrl,
-                    'mimeType' : mimeType,
-                    'size': result.size,
-                  });
-                });
-              } else {
-                res.json(200, {
-                  'message' : 'Finished',
-                  'url' : fileUrl,
-                  'mimeType' : mimeType,
-                  'size': result.size,
-                });
-              }
-            })
-
-          } else {
-            cleanUpFiles(req);
-            res.json(401, {'error' : 'Invalid token'});
-          }
-
-        });
-      });
+    if ( payload.size > ( 50 * 1024 * 1024 ) ) {
+      cleanUpFiles( req )
+      res.json( 500, { error: 'File too large. 50 MB is limit.' } )
+      return;
     }
+
+    var localFile = payload.path;
+    var localFileOrigin = payload.originalFilename;
+
+    var validateRequestSeries = [
+      siteBillingActive.bind( null, site ),
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+    ]
+
+    var uploadFileWaterfall = [
+      uploadLocalFileToUploadsBucket.bind( null, { localFile: localFile, localFileOrigin: localFileOrigin } )
+    ]
+
+    if ( resizeUrlRequested ) uploadFileWaterfall = uploadFileWaterfall.concat( [ getResizeUrl ] )
+
+    async.series( validateRequestSeries, function handleValidationSeries ( error ) {
+      if ( error ) {
+        cleanUpFiles( req )
+        return handleResponseForSeries( res, error )
+      }
+
+      async.waterfall( uploadFileWaterfall, handleUploadFileWaterfall.bind( null, req, res ) )
+    } )
+  }
+
+  /**
+   * uploadLocalFileToUploadsBucket
+   * 1/3 helper tasks to get files uploaded into the `webhook-uploads`
+   *     directory of webhook with a timestamp of when they were uploaded.
+   * 
+   * Used to upload a `localFile` to the timestamped destination based on
+   * the `localFileOrigin` name.
+   *
+   * This function supports both CMS upload processes
+   * ( file based & url based ).
+   *
+   * Signature:
+   * { ..., localFile, localFileOrigin }, callback => error?, { localFile, localFileOrigin, fileSize, bucket, remoteFile, gscUrl, mimeType }
+   */
+  function uploadLocalFileToUploadsBucket ( options, callback ) {
+    var localFileOrigin = options.localFileOrigin
+
+    var baseRemoteFileName = path.basename( localFileOrigin )
+    var uploadOptions = Object.assign( {}, options, {
+      remoteFile: baseRemoteFileName,
+      cacheControl: 'public,max-age=86400',
+    } )
+
+    cloudStorageObjectUploadToUploadsBucketTimestamped( uploadOptions, handleUploadToUploadsBucketTimestamped )
+
+    function handleUploadToUploadsBucketTimestamped ( error, results ) {
+      if ( error ) return callback( error )
+      return callback( null, Object.assign( {}, uploadOptions, {
+        bucket: results.bucket,
+        remoteFile: results.name,
+        gscUrl: `//${ results.bucket }/${ results.name }`,
+        fileSize: results.size,
+        mimeType: results.contentType,
+      } ) )
+    }
+  }
+
+  /**
+   * getResizeUrl
+   * 2/3 helper tasks to get files uploaded into the `webhook-uploads`
+   *     directory of webhook with a timestamp of when they were uploaded.
+   *
+   * Used to get a `resizeUrl` from a `gscUrl`.
+   * 
+   * Signature:
+   * { ..., gscUrl }, callback => error?, { ..., gscUrl, resizeUrl }
+   */
+  function getResizeUrl ( options, callback ) {
+    resizeUrlForUrl( options.gscUrl, handleResize )
+
+    function handleResize ( error, resizeUrl ) {
+      if ( error ) return callback( error )
+      callback( null, Object.assign( {}, options, { resizeUrl: resizeUrl } ) )
+    }
+  }
+
+  /**
+   * handleUploadFileWaterfall
+   * 3/3 helper handler to respond to file uploads to `webhook-uploads`
+   *     directory of webhook with a timestamp of when they were uploaded.
+   *
+   * Used to handle the response to the file upload request.
+   * 
+   * Signature:
+   * req, res, error?, { gscUrl, fileSize, mimeType, resizeUrl? }
+   */
+  function handleUploadFileWaterfall ( req, res, error, uploadResults ) {
+    cleanUpFiles( req )
+    if ( error ) return handleResponseForSeries( res, error )
+
+    if ( uploadResults.localFile ) fs.unlinkSync( uploadResults.localFile )
+
+    var successResponse = {
+      message: 'Finished',
+      url: uploadResults.gscUrl,
+      size: uploadResults.fileSize,
+      mimeType: uploadResults.mimeType,
+    }
+    if ( uploadResults.resizeUrl ) successResponse.resize_url = uploadResults.resizeUrl
+
+    res.json( 200, successResponse )
   }
 
   // We do this to allow for CORS requests to the server (for search)
@@ -488,10 +468,9 @@ module.exports.start = function(config, logger)
     ], handleResponseForQuery )
 
     function handleResponseForQuery ( error, seriesResults ) {
-      if ( error ) return handleResponseForSeries( error )
+      if ( error ) return handleResponseForSeries( res, error )
       var responseData = seriesResults.pop()
       res.json( 200, responseData )
-      res.end()
     }
 
     function elasticSearchQuery ( options, callback ) {
@@ -641,8 +620,8 @@ module.exports.start = function(config, logger)
 
     async.series( [
       siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } )
-      elasticDeleteIndex.bind( null, site )
+      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
+      elasticDeleteIndex.bind( null, site ),
     ], handleResponseForSeries.bind( null, res ) )
 
     function elasticDeleteIndex ( site, callback ) {
@@ -694,13 +673,13 @@ module.exports.start = function(config, logger)
 
     function sendFiles(site, branch, path, callback) {
       // When done zipping up, upload to our archive in cloud storage
-      console.log( 'upload-file' )
+      console.log( 'send-files' )
       cloudStorage.objects.upload(config.get('sitesBucket'), path, Deploys.utilities.fileForSiteBranch( site, branch ), function(err, data) {
-        console.log( 'upload-file:done' )
+        console.log( 'send-files:done' )
         fs.unlinkSync( path )
 
         if ( err ) {
-          console.log( 'upload-file:done:err' )
+          console.log( 'send-files:done:err' )
           console.log( err )
           return callback( { statusCode: 500, message: 'Could not upload to sites bucket.' } )
         }
@@ -781,6 +760,54 @@ module.exports.start = function(config, logger)
       .set( buildSignalOptions, valueDoesNotExistErrorHandler( callback ) )
   }
 
+  function cloudStorageObjectUpload ( options, callback ) {
+    var bucket = options.bucket
+    var localFile = options.localFile
+    var remoteFile = options.remoteFile
+    var cacheControl = options.cacheControl
+    var mimeType = options.mimeType
+
+    cloudStorage.objects.upload( bucket, localFile, remoteFile, cacheControl, mimeType, handleObjectUpload )
+
+    function handleObjectUpload ( error, results ) {
+      if ( error ) return callback( { statusCode: 500, message: 'Could not upload file.' } )
+      return callback( null, results )
+    }
+  }
+
+  function cloudStorageObjectUploadToUploadsBucket ( options, callback ) {
+    cloudStorageObjectUpload( Object.assign( {}, options, { bucket: config.get( 'uploadsBucket' ) } ), callback )
+  }
+
+  function cloudStorageObjectUploadToUploadsBucketTimestamped ( options, callback ) {
+    cloudStorageObjectUploadToUploadsBucket( Object.assign(
+      {},
+      options,
+      { remoteFile: timestampedUploadsPathForFileName( options.remoteFile ) }
+    ), callback )
+  }
+
+  // url, callback => error?, resizeUrl?
+  function resizeUrlForUrl ( url, callback ) {
+    var encodedUrl = encodeURIComponentsForURL( removeProtocolFromURL( url ) )
+    console.log( 'encodedUrl' )
+    console.log( encodedUrl )
+    request( `http://${ config.get('googleProjectId') }.appspot.com/${ encodedUrl  }`, handleResize )
+
+    function handleResize ( error, response, responseBody ) {
+      console.log( error )
+      console.log( responseBody )
+      if ( error ) return callback( { statusCode: 500, message: 'Could not get resize url for file.' } )
+      var resizeUrl = ''
+      if ( response && response.statusCode === 200 ) resizeUrl = responseBody
+      callback( null, resizeUrl )
+    }
+  }
+
+  function timestampedUploadsPathForFileName ( fileName ) {
+    return encodeURIComponentsForURL( `webhook-uploads/${ new Date().getTime() }_${ fileName }` )
+  }
+
   function valueDoesNotExistErrorHandler ( callbackFn ) {
     return function firebaseErrorHandler ( error ) {
       if ( error ) return callbackFn( valueDoesNotExistErrorObject() )
@@ -788,6 +815,18 @@ module.exports.start = function(config, logger)
     }
   }
 
+  /**
+   * valueDoesNotExistErrorObject
+   *
+   * An error object to respond to requests for sites
+   * that do not exist within the webhook system.
+   *
+   * All errors objects should have a `statusCode` & `message` key.
+   * 
+   * @return {object} error
+   * @return {number} error.statusCode
+   * @return {string} error.message
+   */
   function valueDoesNotExistErrorObject () {
     return {
       statusCode: 500,
@@ -803,7 +842,6 @@ module.exports.start = function(config, logger)
     else {
       res.json( 200, { message: 'Finished' } )
     }
-    res.end()
   }
 };
 
@@ -836,4 +874,35 @@ function cleanUpFiles (req) {
 
 function unescapeSite (site) {
   return site.replace(/,1/g, '.');
+}
+
+function encodeURIComponentsForURL ( url ) {
+  var protocolIndex = url.indexOf( '//' )
+  var includesProtocol = protocolIndex === -1
+    ? false
+    : true
+
+  if ( includesProtocol ) {
+    var protocolString = url.split( '//' )[ 0 ]
+    url = url.slice( protocolIndex + 2 )
+  }
+
+  var encodedUrl = url.split( '/' ).map( encodeURIComponent ).join( '/' )
+
+  if ( includesProtocol ) {
+    encodedUrl = [ protocolString, encodedUrl ].join( '//' )
+  }
+
+  return encodedUrl
+}
+
+function removeProtocolFromURL ( url ) {
+  var protocolIndex = url.indexOf( '//' )
+  var includesProtocol = protocolIndex === -1
+    ? false
+    : true
+
+  if ( includesProtocol ) return url.slice( protocolIndex + 2 )
+
+  return url;
 }
