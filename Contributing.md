@@ -91,11 +91,6 @@ Here is a description of the various files that are in the server repo, and what
 
 * Utility to extract google service account SSH key for self-hosting.
 
-[libs/firebase-util.js](https://github.com/webhook/webhook-server-open/tree/master/libs/firebase-util.js)
-
-* A library used to get/set data from firebase through HTTP rather than Websockets
-* Useful for situations where a long running websocket is undesirable.
-
 [libs/invite.js](https://github.com/webhook/webhook-server-open/tree/master/libs/invite.js)
 
 * The invite worker, handles sending invite emails to users who have been invited to a site
