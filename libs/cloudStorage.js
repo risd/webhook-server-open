@@ -369,7 +369,17 @@ module.exports.objects = {
           'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
           body: fs.readFileSync(local)
       }]
-    }, callback);
+    }, function handleUpload ( error, results ) {
+        if ( error ) return callback( error )
+        if ( typeof results === 'string' ) {
+          try {
+            results = JSON.parse( results )
+          } catch ( e ) {
+            console.log( 'results not json' )
+          }
+        }
+        return callback( null, results )
+      } );
   },
 
   /*
@@ -429,7 +439,17 @@ module.exports.objects = {
             'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
             body: compressedContent,
         }]
-      }, next)
+      }, function handleUpload ( error, results ) {
+        if ( error ) return next( error )
+        if ( typeof results === 'string' ) {
+          try {
+            results = JSON.parse( results )
+          } catch ( e ) {
+            console.log( 'results not json' )
+          }
+        }
+        return next( null, results )
+      } )
     }
 
   },
