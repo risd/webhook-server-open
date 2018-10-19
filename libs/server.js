@@ -97,10 +97,11 @@ module.exports.start = function(config, logger)
   app.post('/search/delete/index/', postSearchDeleteIndexHandler)
   app.post('/upload/', postUploadHandler)
 
-  app.listen(3000);
-  console.log('listening on 3000...'.red);
+  var serverPort = 3000
+  app.listen(serverPort);
+  console.log(`listening on ${ serverPort }...`.red);
 
-  return app;
+  return { app: app, port: serverPort }
 
   // Used to know that the program is working
   function getRootHandler (req, res) {
@@ -114,11 +115,6 @@ module.exports.start = function(config, logger)
     var token = req.query.token;
     var timestamp = req.query.timestamp;
     var site = req.query.site;
-
-    var respond404 = function respond404 ( res ) {
-      res.status( 404 )
-      res.end()
-    }
 
     var validateRequestSeries = [
       siteBillingActive.bind( null, site ),
@@ -647,14 +643,14 @@ module.exports.start = function(config, logger)
 
     var site = req.body.site;
     var token = req.body.token;
-    var branch = req.body.branch || Deploys.utilities.defaultBranch();
+    var branch = req.body.branch;
     var payload = req.files.payload;
 
     console.log( 'with arguments' )
     console.log( site )
     console.log( branch )
 
-    if(!payload || !payload.path) {
+    if( ! payload || ! payload.path || ! branch ) {
       cleanUpFiles(req);
       res.status(500);
       return res.end();
