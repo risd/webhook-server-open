@@ -17,7 +17,6 @@ test( 'upload-compressed-object', function ( t ) {
     overrideMimeType: 'text/plain'
   }
   cloudStorage.objects.uploadCompressed( uploadOptions, function ( error, results ) {
-    console.log( results )
     t.assert( ! error, 'uploaded file content without error.' )
     t.assert( uploadOptions.bucket === results.bucket, 'uploaded file to the correct bucket.' )
     t.assert( uploadOptions.remote === results.name, 'uploaded file to the correct path.' )
