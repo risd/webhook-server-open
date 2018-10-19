@@ -29,6 +29,9 @@ function EnvOptions ( options ) {
     inviteUser: process.env.CREATE_USER_ID,
     inviteSiteName: process.env.CREATE_SITE_NAME,
     redirectsSiteName: process.env.CREATE_SITE_NAME,
+    siteIndexSiteName: process.env.CREATE_SITE_NAME,
+    siteIndexUserId: process.env.CREATE_USER_ID,
+
   }
 
   Object.assign( envOptions, options )
