@@ -65,7 +65,7 @@
     "touch": "0.0.3",
     "webhook-deploy-configuration": "^2.0.2",
     "webhook-elastic-search": "^1.0.1",
-    "webhook-site-data": "^1.0.0",
+    "webhook-site-data": "^2.0.3",
     "win-spawn": "~2.0.0",
     "wrench": "~1.5.8"
   },
