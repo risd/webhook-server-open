@@ -1,6 +1,13 @@
 var testOptions = require( './env-options.js' )()
+var grunt = require( 'grunt' )
 var async = require( 'async' )
 var test = require( 'tape' )
+var webhookTasks = require( '../Gruntfile.js' )
+
+webhookTasks( grunt )
+
+var Firebase = require( '../libs/firebase/index.js' )
+var firebase = Firebase( grunt.config.get( 'firebase' ) )
 
 test( 'delete-created-site', function ( t ) {
   t.plan( 1 )
