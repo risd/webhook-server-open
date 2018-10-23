@@ -31,7 +31,7 @@ function EnvOptions ( options ) {
     redirectsSiteName: process.env.CREATE_SITE_NAME,
     siteIndexSiteName: process.env.CREATE_SITE_NAME,
     siteIndexUserId: process.env.CREATE_USER_ID,
-
+    firebaseAdminSiteName: process.env.CREATE_SITE_NAME,
   }
 
   Object.assign( envOptions, options )
