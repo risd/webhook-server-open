@@ -10,7 +10,7 @@ webhookTasks( grunt )
 Error.stackTraceLimit = Infinity;
 
 test( 'firebase-admin', function ( t ) {
-  t.plan( 10 )
+  t.plan( 11 )
   
   var firebase = Firebase( Object.assign( { initializationName: 'admin-test' }, grunt.config().firebase ) )
   t.assert( typeof firebase === 'object', 'Firebase instance is an object.' )
@@ -33,7 +33,10 @@ test( 'firebase-admin', function ( t ) {
     t.assert( error, 'Deprecated: Child must be executed on a database reference, not the root database object.' )
   }
 
-  db.ref( siteKeyPath ).once( 'value', function ( siteKeySnapshot ) {
+  var siteKeyPathRef = db.ref( siteKeyPath )
+  t.assert( siteKeyPathRef.key === 'key', 'Ref has correct key.' )
+
+  siteKeyPathRef.once( 'value', function ( siteKeySnapshot ) {
     var siteKey = siteKeySnapshot.val()
     t.assert( typeof siteKey === 'string', 'The site key value is a string.' )
     t.assert( siteKeySnapshot.key === 'key', 'The key of the snapshot is the last part of the path to get the snapshot.' )
