@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+
+var async = require( 'async' )
+var grunt = require( 'grunt' )
+var webhookTasks = require( '../Gruntfile.js' )
+var Firebase = require( '../libs/firebase/index.js' )
+var resetSiteKeys = require( '../libs/firebase/reset-site-keys.js' )
+var resetUserPasswords = require( '../libs/firebase/reset-user-passwords.js' )
+
+webhookTasks( grunt )
+
+var firebase = Firebase( grunt.config().firebase )
+
+var resetKeysSeries = [
+  resetSiteKeys,
+  resetUserPasswords,
+]
+
+async.series( resetKeysSeries.map( bindFirebase ), hanldeSeries )
+
+function hanldeSeries ( error ) {
+  if ( error ) console.log( error )
+  process.exit( error ? 1 : 0 )
+}
+
+function bindFirebase ( fn ) {
+  return fn.bind( null, { firebase: firebase } )
+}

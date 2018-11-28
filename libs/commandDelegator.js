@@ -67,7 +67,8 @@ function CommandDelegator (config, logger) {
   var commandUrls = [
     { command: 'management/commands/build/', lock: 'build', tube: 'build' },
     { command: 'management/commands/create/', lock: 'create', tube: 'create' },
-    { command: 'management/commands/verification/', lock: 'verification', tube: 'verification' },
+    // no sign of what this is, or what it should do
+    // { command: 'management/commands/verification/', lock: 'verification', tube: 'verification' },
     { command: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
     { command: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
     { command: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
