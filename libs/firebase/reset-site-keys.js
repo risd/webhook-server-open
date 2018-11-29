@@ -52,7 +52,7 @@ function ResetSiteKeys ( opts, callback ) {
       onSitesSnapshotError( error )
     }
 
-    function onSitesSnapshot ( snapshot ) {
+    function onSitesSnapshot ( sitesSnapshot ) {
       try {
         var sitesData = sitesSnapshot.val()
         var siteNamesKeys = Object.keys( sitesData ).map( function ( siteName ) {
@@ -117,12 +117,16 @@ function ResetSiteKeys ( opts, callback ) {
 
     var updates = siteNamesKeys.map( toUpdateKeyValueTask )
 
-    async.parallelLimit( updates, 10, onUpdated )
+    async.series( updates, handleUpdatesSeries )
+
+    function handleUpdatesSeries ( error ) {
+      onUpdated( null, siteNamesKeys )
+    }
 
     function toUpdateKeyValueTask ( siteNameKeys ) {
+      
       return function updateKeyValueTask ( step ) {
         if ( ! siteNameKeys.currentSiteKey ) {
-          console.log( `not-migrated-does-not-have-site-key:${ siteNameKeys.siteNamem }` )
           return step()
         }
 
@@ -132,7 +136,22 @@ function ResetSiteKeys ( opts, callback ) {
           setKey.bind( null, siteNameKeys ),
         ]
 
-        async.series( series, step )
+        async.series( series, handleSeries )
+
+        function handleSeries ( error ) {
+          if ( error ) {
+            var errorMessage = `
+              ${ siteNameKeys.siteName } did not migrate.
+              This is likely because its data was removed,
+              but not its management entry.
+              It should likely be fully deleted.
+            `.split( '\n' )
+             .map( function trimLine ( line ) { return line.trim() } )
+             .join( '\n' )
+            console.log( errorMessage )
+          }
+          step()
+        }
       }
     }
 
@@ -147,6 +166,9 @@ function ResetSiteKeys ( opts, callback ) {
 
       function migrateSiteData ( devDataSnapshot ) {
         var devData = devDataSnapshot.val()
+        if ( devData === null ) {
+          return step( new Error( 'No data for site.' ) )
+        }
         return firebase.siteDevData( migrateOptions, devData )
       }
 
@@ -156,8 +178,7 @@ function ResetSiteKeys ( opts, callback ) {
       }
 
       function handleMigrationError ( error ) {
-        console.log( `migration-error:${ siteNameKeys.siteName }` )
-        console.log( error )
+        siteNameKeys.migratedData = false
         step()
       }
     }
@@ -174,8 +195,7 @@ function ResetSiteKeys ( opts, callback ) {
       }
 
       function handleDeleteDataError ( error ) {
-        console.log( `delete-data-error:${ siteNameKeys.siteName }` )
-        console.log( error )
+        siteNameKeys.removedOldData = false;
         step()
       }
     }
@@ -193,8 +213,7 @@ function ResetSiteKeys ( opts, callback ) {
       }
 
       function handleSetKeyError ( error ) {
-        console.log( `set-key-error:${ siteNameKeys.siteName }` )
-        console.log( error )
+        siteNameKeys.newSiteKeySet = false
         step()
       }
     }

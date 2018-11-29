@@ -1,3 +1,5 @@
+var _ = require( 'lodash' )
+var fs = require( 'fs' )
 var async = require( 'async' )
 
 module.exports = ResetUserPasswords;
@@ -7,6 +9,8 @@ function ResetUserPasswords ( opts, callback ) {
   if ( typeof callback !== 'function' ) callback = function noop () {}
 
   var firebase = opts.firebase;
+  var mailgun = opts.mailgun;
+  var fromEmail = opts.fromEmail;
 
   getFirebaseUsers( function withUsers ( error, usersSites ) {
     if ( error ) return callback( error )
@@ -47,18 +51,18 @@ function ResetUserPasswords ( opts, callback ) {
           var sites = usersData[ userEmail ].sites
           if ( ! sites ) return firstSite;
 
-          var owner = sites.owners
-          var user = sites.users
+          var owners = sites.owners
+          var users = sites.users
 
           if ( ! owners && ! users ) {
             return firstSite;
           }
           
-          if ( owner ) {
-            firstSite = firstKeyInObject( owner )
+          if ( owners ) {
+            firstSite = firstKeyInObject( owners )
           }
-          else if ( user && ( firstSite === false ) ) {
-            firstSite = firstKeyInObject( user )
+          else if ( userr && ( firstSite === false ) ) {
+            firstSite = firstKeyInObject( users )
           }
 
           return firstSite;
@@ -86,61 +90,45 @@ function ResetUserPasswords ( opts, callback ) {
 
   // usersSites : { userEmail : string, siteName : string }, onComplete : ( error |  )
   function resetPasswords ( usersSites, onComplete ) {
-    var retryTask = taskRetryManager();
+
+    var rawEmailTemplate = fs.readFileSync( 'libs/emails/password-reset.email' )
+    var emailTemplate = _.template( rawEmailTemplate )
 
     var resetPasswordTasks = usersSites.map( resetPasswordTaskFromUser )
 
-    async.parallelLimit( resetPasswordTasks, 5, onComplete )
+    async.series( resetPasswordTasks, onComplete )
 
     function resetPasswordTaskFromUser ( userSite ) {
+      return function createTaskFrom ( onTaskComplete ) {
+        firebase.resetUserPasswordLink( userSite )
+          .then( sendEmail )
+          .then( onTaskComplete )
+          .catch( handleError )
 
-      var createTaskFrom = function ( userSite, onTaskComplete, onTaskError ) {
-        firebase.resetUserPassword( userSite, function ( error ) {
+        function sendEmail ( resetPasswordLink ) {
+          return new Promise( function ( resolve, reject ) {
+            var message = {
+              from: fromEmail,
+              to: userSite.userEmail,
+              subject: `[ ${ userSite.siteName } ] Please reset your password.`,
+              text: emailTemplate( Object.assign( { link: resetPasswordLink }, userSite ) ),
+            }
+            mailgun.messages().send( message, function ( error ) {
+              if ( error ) return reject( error )
+              resolve()
+            } )  
+          } )
+        }
+
+        function handleError ( error ) {
           if ( error && error.code && error.message ) {
             console.log( `error: ${ user } - ${ error.code } - ${ error.message }` )
             return onTaskComplete()
           }
-          else if ( error ) {
-            return onTaskError( error )
+          else {
+            return onTaskComplete( error )
           }
-        } )
-      }
-
-      function onTaskError ( error ) {
-        if ( retryTask.attempts > 5 ) return onTaskError( error )
-
-        retryTask( function () {
-          createTaskFrom( userSite, onTaskComplete, onTaskError )
-        } )
-      }
-
-      function task ( onTaskComplete ) {
-        return createTaskFrom( userSite, onTaskComplete, onTaskError )
-      }
-
-      return task;
-    }
-
-    function taskRetryManager () {
-      var taskRetryAttempts = 0;
-
-      var retryTask = function ( task ) {
-        taskRetryAttempts += 1;
-        var timeout = backoffTime( taskRetryAttempts );
-        setTimeout( function retry () {
-          task()
-        }, timeout )
-      }
-
-      retryTask.attempts = taskRetryAttempts;
-
-      return retryTask;
-
-      function backoffTime (attempt) {
-        var backoff = Math.pow(2, attempt);
-        var maxBackoffTime = 32000;
-        var randomOffset = Math.random() * 10;
-        return Math.min(backoff, maxBackoffTime) + randomOffset;
+        }
       }
     }
   }

@@ -1,10 +1,12 @@
 var path = require( 'path' )
+var request = require( 'request-promise-native' )
 var admin = require( 'firebase-admin' )
+var getAccessToken = require( './access-token.js' )
 
-var continuationUrlFn = require( './auth-continuation-url.js' )
 var unescape = require( '../utils/firebase-unescape.js' )
 var escape = require( '../utils/firebase-escape.js' )
 
+var continuationUrlFn = require( '../../src/firebase-auth-continuation-url.js' )
 
 module.exports = WHFirebase;
 
@@ -20,8 +22,8 @@ module.exports = WHFirebase;
 function WHFirebase ( config ) {
   if ( ! ( this instanceof WHFirebase ) ) return new WHFirebase( config )
   var firebaseName = config.name;
+  this._firebaseName = firebaseName;
   var firebaseServiceAccountKey = require( `${ process.cwd() }/${ config.serviceAccountKey }` );
-  this._secretKey = config.secretKey
 
   var options = {
     credential: admin.credential.cert( firebaseServiceAccountKey ),
@@ -34,6 +36,8 @@ function WHFirebase ( config ) {
   if ( ! this._app ) {
     this._app = admin.initializeApp( options, this._initializationName )
   }
+
+  this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccountKey )
 
   function appForName ( name ) {
     var appOfNameList = admin.apps.filter( appOfName )
@@ -50,32 +54,13 @@ WHFirebase.prototype.database = function () {
   return this._app.database()
 }
 
-WHFirebase.prototype.customToken = function ( uid, callback ) {
-  if ( typeof uid === 'function' ) {
-    uid = 'default-token'
-    callback = uid
-  }
-  var allowances = { serviceAccount: true }
-  this._app.auth().createCustomToken( uid, allowances )
-    .then( function ( customToken ) {
-      callback( null, customToken )
-    } )
-    .catch( function ( error ) {
-      callback( error )
-    } )
-}
-
-WHFirebase.prototype.idToken = function () {
-  return this._secretKey;
-}
-
 WHFirebase.prototype.siteKey = WebhookSiteKey;
 WHFirebase.prototype.siteDevData = WebhookSiteDevData;
 // requires admin sdk + service account
 WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
 WHFirebase.prototype.allUsers = WebhookUsers;
-WHFirebase.prototype.resetUserPassword = WebhookUserPasswordReset;
+WHFirebase.prototype.resetUserPasswordLink = WebhookUserPasswordResetLink;
 
 function WebhookSiteKey ( options, siteKey ) {
   var keyPath = `${ siteManagementPath( options ) }/key`
@@ -91,12 +76,45 @@ function WebhookSiteKey ( options, siteKey ) {
 
 function WebhookSiteDevData ( options, siteData ) {
   var keyPath = siteDevKeyPath( options )
-  if ( siteData ) {
-    // set
+  var setMethod = appropriateSetMethod( siteData )
+  if ( setMethod && setMethod.sdk  ) {
+    // set via sdk
     return firebaseDatabaseSetValueForKeyPath( this._app, keyPath, siteData )
+  }
+  else if ( setMethod && setMethod.rest ) {
+    // set via rest
+    return firebaseDatabaseSetLargeValueForKeyPath.call( this, keyPath, siteData )
+  }
+  else if ( setMethod ) {
+    return Promise.reject( new Error( 'File is too big to set.' ) )
   }
   else {
     return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )  
+  }
+
+  function appropriateSetMethod ( siteData ) {
+    if ( ! siteData ) return false;
+    var dataSize = sizeOf( siteData )
+
+    // sizes defined: https://firebase.google.com/docs/database/usage/limits#writes
+    return {
+      sdk: fitsInSDK( dataSize ),
+      rest: fitsInREST( dataSize ),
+    }
+  }
+
+  function fitsInSDK ( dataSize ) {
+    var maxSDKSize = 16 * 1000 * 1000; // 16MB
+    return dataSize <= maxSDKSize
+  }
+
+  function fitsInREST ( dataSize ) {
+    var maxRESTSize = 256 * 1000 * 1000; // 256MB
+    return dataSize <= maxRESTSize;
+  }
+
+  function sizeOf ( data ) {
+    return Buffer( JSON.stringify( data ) ).length
   }
 }
 
@@ -110,13 +128,13 @@ function WebhookUsers () {
   return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
 }
 
-function WebhookUserPasswordReset ( options ) {
+function WebhookUserPasswordResetLink ( options ) {
   var userEmail = unescape( options.userEmail )
 
   // options : { siteName : string, userEmail : string } => continuationUrl : string
   var continuationUrl = continuationUrlFn( options )
-
-  return this._app.auth().sendPasswordResetEmail( userEmail, { url: continuationUrl } )
+console.log( this._app.auth().generatePasswordResetLink )
+  return this._app.auth().generatePasswordResetLink( userEmail, { url: continuationUrl } )
 }
 
 function WebhookSiteKeyDataRemove ( options ) {
@@ -126,6 +144,21 @@ function WebhookSiteKeyDataRemove ( options ) {
 
 function firebaseDatabaseSetValueForKeyPath ( firebase, keyPath, value ) {
   return firebase.database().ref( keyPath ).set( value )
+}
+
+function firebaseDatabaseSetLargeValueForKeyPath ( keyPath, value ) {
+  var uri = `https://${ this._firebaseName }.firebaseio.com/${ keyPath }.json`
+  return this._getAccessToken()
+    .then( function ( token ) {
+        uri += `?access_token=${ token }`
+        var putOptions = {
+          method: 'PUT',
+          uri: uri,
+          body: value,
+          json: true,
+        }
+        return request.put( putOptions )
+    } )
 }
 
 function firebaseDatabaseOnceValueForKeyPath ( firebase, keyPath ) {
