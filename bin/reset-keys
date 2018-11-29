@@ -11,9 +11,12 @@ webhookTasks( grunt )
 
 var firebase = Firebase( grunt.config().firebase )
 
+var mailgun = new Mailgun( { apiKey: grunt.config().mailgunKey, domain: grunt.config().mailgunDomain } )
+var fromEmail = grunt.config().fromEmail;
+
 var resetKeysSeries = [
-  resetSiteKeys,
-  resetUserPasswords,
+  resetSiteKeys.bind( null, { firebase: firebase } ),
+  resetUserPasswords.bind( null, { firebase: firebase, mailgun: mailgun, fromEmail, fromEmail } ),
 ]
 
 async.series( resetKeysSeries.map( bindFirebase ), hanldeSeries )
@@ -24,5 +27,5 @@ function hanldeSeries ( error ) {
 }
 
 function bindFirebase ( fn ) {
-  return fn.bind( null, { firebase: firebase } )
+  return fn
 }
