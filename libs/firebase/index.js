@@ -38,16 +38,6 @@ function WHFirebase ( config ) {
   }
 
   this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccountKey )
-
-  function appForName ( name ) {
-    var appOfNameList = admin.apps.filter( appOfName )
-    if ( appOfNameList.length === 1 ) return appOfNameList[ 0 ]
-    return null
-
-    function appOfName ( app ) {
-      return app.name === name
-    }
-  }
 }
 
 WHFirebase.prototype.database = function () {
@@ -61,6 +51,17 @@ WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
 WHFirebase.prototype.allUsers = WebhookUsers;
 WHFirebase.prototype.resetUserPasswordLink = WebhookUserPasswordResetLink;
+
+
+function appForName ( name ) {
+  var appOfNameList = admin.apps.filter( appOfName )
+  if ( appOfNameList.length === 1 ) return appOfNameList[ 0 ]
+  return null
+
+  function appOfName ( app ) {
+    return app.name === name
+  }
+}
 
 function WebhookSiteKey ( options, siteKey ) {
   var keyPath = `${ siteManagementPath( options ) }/key`
@@ -104,12 +105,12 @@ function WebhookSiteDevData ( options, siteData ) {
   }
 
   function fitsInSDK ( dataSize ) {
-    var maxSDKSize = 16 * 1000 * 1000; // 16MB
+    var maxSDKSize = 16 * 1024 * 1024; // 16MB
     return dataSize <= maxSDKSize
   }
 
   function fitsInREST ( dataSize ) {
-    var maxRESTSize = 256 * 1000 * 1000; // 256MB
+    var maxRESTSize = 256 * 1024 * 1024; // 256MB
     return dataSize <= maxRESTSize;
   }
 

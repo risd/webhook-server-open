@@ -46,15 +46,15 @@ test( 'firebase-reset-site-keys', function ( t ) {
   }
 } )
 
-test( 'firebase-reset-user-passwords', function ( t ) {
-  t.plan( 1 )
+// test( 'firebase-reset-user-passwords', function ( t ) {
+//   t.plan( 1 )
 
-  resetUserPasswords( { firebase: firebase, mailgun: mailgun, fromEmail, fromEmail }, handePasswordReset )
+//   resetUserPasswords( { firebase: firebase, mailgun: mailgun, fromEmail, fromEmail }, handePasswordReset )
 
-  function handePasswordReset ( error ) {
-    t.assert( ! error, 'Finished without error' )
-  }
+//   function handePasswordReset ( error ) {
+//     t.assert( ! error, 'Finished without error' )
+//   }
 
-} )
+// } )
 
 test.onFinish( process.exit )
