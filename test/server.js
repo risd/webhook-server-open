@@ -1,5 +1,6 @@
 var testOptions = require( './env-options.js' )()
 var fs = require( 'fs' )
+var mime = require( 'mime' )
 var path = require( 'path' )
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
@@ -65,20 +66,31 @@ var tests = [
     },
     res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
   },
-  // {
-  //   // method : POST, url : /upload-file/, json : true, body : { site, token, resize_url, files : { payload } }
-  //   name: 'POST /upload-file/', 
-  //   req: {
-  //     method: 'POST',
-  //     uri: serverUrlForPath( '/upload-file/' ),
-  //     json: true,
-  //     body: Object.assign( {
-  //       resize_url: true,
-  //       payload: fs.createReadStream( path.join( __dirname, 'files', 'img.png' ) ),
-  //     }, siteToken() ),
-  //   },
-  //   res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
-  // },
+  {
+    name: 'POST /upload-file/', 
+    req: {
+      method: 'POST',
+      uri: serverUrlForPath( '/upload-file/' ),
+      headers: {
+          'Content-Type': 'multipart/form-data',
+      },
+      multipart: [ {
+        'Content-Disposition': 'form-data; name="payload"; filename="img.png"',
+        'Content-Type': mime.lookup( 'img.png' ),
+        body: fs.readFileSync( path.join( __dirname, 'files', 'img.png' ) ),
+      }, {
+        'Content-Disposition': 'form-data; name="site"',
+        body: siteToken().site,
+      }, {
+        'Content-Disposition': 'form-data; name="token"',
+        body: siteToken().token,
+      }, {
+        'Content-Disposition': 'form-data; name="resize_url"',
+        body: "true"
+      } ],
+    },
+    res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
+  },
   {
     name: 'POST /search/',
     req: {

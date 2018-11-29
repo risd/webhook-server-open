@@ -258,6 +258,8 @@ module.exports.start = function(config, logger)
     var localFile = payload.path;
     var localFileOrigin = payload.originalFilename;
 
+    console.log( `local-file:${ localFile }` )
+
     var validateRequestSeries = [
       siteBillingActive.bind( null, site ),
       siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
@@ -346,10 +348,11 @@ module.exports.start = function(config, logger)
    * req, res, error?, { gscUrl, fileSize, mimeType, resizeUrl? }
    */
   function handleUploadFileWaterfall ( req, res, error, uploadResults ) {
-    cleanUpFiles( req )
     if ( error ) return handleResponseForSeries( res, error )
 
     if ( uploadResults.localFile ) fs.unlinkSync( uploadResults.localFile )
+
+    cleanUpFiles( req )
 
     var successResponse = {
       message: 'Finished',
