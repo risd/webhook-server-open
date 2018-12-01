@@ -2,6 +2,7 @@ var testOptions = require( './env-options.js' )()
 var test = require( 'tape' )
 var async = require( 'async' )
 var grunt = require( 'grunt' )
+var Deploys = require( 'webhook-deploy-configuration' )
 var webhookTasks = require( '../Gruntfile.js' )
 
 webhookTasks( grunt )
@@ -13,6 +14,7 @@ var firebaseEscape = require( '../libs/utils/firebase-escape.js' )
 grunt.config.merge( { suppressJobQueue: true } )
 
 var firebase = Firebase( grunt.config.get( 'firebase' ) )
+var deploys = Deploys( firebase.database() )
 
 test( 'add-owner', function ( t ) {
   /* Add owner is a task that is accomplished by the `wh create` command
@@ -43,6 +45,34 @@ test( 'create-site', function ( t ) {
     t.assert( error === undefined, 'Create completed without error.' )
   }
 
+} )
+
+test( 'set-deploy', function ( t ) {
+  t.plan( 1 )
+
+  firebase.siteKey( { siteName: testOptions.createSiteName } )
+    .then( setDeployWithToken )
+    .catch( siteTokenError )
+
+  function setDeployWithToken ( token ) {
+    var setterOptions = {
+      siteName: testOptions.createSiteName,
+      key: token.val(),
+      deploy: { branch: 'develop', bucket: testOptions.createSiteName }
+    }
+    deploys.setBucket( setterOptions, function ( error ) {
+      if ( error ) {
+        t.fail( error )
+      }
+      else {
+        t.ok( 'creator:deploy-settings-made' )
+      }
+    } )
+  }
+
+  function siteTokenError ( error ) {
+    t.fail( error.message )
+  }
 } )
 
 test( 'create-existing-site', function ( t ) {
