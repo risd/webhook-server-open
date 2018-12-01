@@ -18,7 +18,7 @@ WHElasticSearch.prototype.search = Search;
 WHElasticSearch.prototype.index = Index;
 WHElasticSearch.prototype.deleteDocument = DeleteDocument;
 WHElasticSearch.prototype.deleteType = DeleteType;
-WHElasticSearch.prototype.deleteIndex = DeleteIndex;
+WHElasticSearch.prototype.deleteSite = DeleteSite;
 
 function Search ( options ) {
   var client = this._client;
@@ -171,7 +171,7 @@ function DeleteType ( options ) {
   } )
 }
 
-function DeleteIndex ( options ) {
+function DeleteSite ( options ) {
   var client = this._client;
 
   var siteName = unescape( options.siteName )

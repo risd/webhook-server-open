@@ -514,7 +514,7 @@ module.exports.start = function(config, logger)
     ], handleResponseForSeries.bind( null, res ) )
 
     function elasticDeleteIndex ( options, callback ) {
-      elastic.deleteIndex( options )
+      elastic.deleteSite( options )
         .then( callback )
         .catch( handleDeleteIndexError )
 

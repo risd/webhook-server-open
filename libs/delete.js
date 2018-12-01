@@ -1,7 +1,8 @@
 var Deploys = require( 'webhook-deploy-configuration' )
-var Fastly = require( '../libs/fastly/index.js' )
-var Cloudflare = require( '../libs/cloudflare/index.js' )
-var Firebase = require( '../libs/firebase/index.js' )
+var Fastly = require( './fastly/index.js' )
+var Cloudflare = require( './cloudflare/index.js' )
+var Firebase = require( './firebase/index.js' )
+var ElasticSearch = require( './elastic-search/index.js' )
 
 module.exports = DeleteSite;
 
@@ -14,6 +15,7 @@ function DeleteSite ( options ) {
   this._fastly = Fastly( options.fastly )
   this._cloudflare = Cloudflare( options.cloudflare )
   this._deploys = Deploys( this._firebase.database() )
+  this._elastic = ElasticSearch( options.elastic )
 }
 
 DeleteSite.prototype.delete = WebhookSiteDelete;
@@ -44,6 +46,7 @@ function WebhookSiteDelete ( siteName ) {
       .concat( buckets.map( deleteCnameForSiteNameTask ) )
       .concat( buckets.map( deleteCDNDomain ) )
       .concat( self._firebase.deleteSite( { siteName: siteName } ) )
+      .concat( self._elastic.deleteSite( { siteName: siteName } ) )
 
     return Promise.all( deletors )
   }
