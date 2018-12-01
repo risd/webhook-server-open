@@ -51,7 +51,9 @@ WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
 WHFirebase.prototype.allUsers = WebhookUsers;
 WHFirebase.prototype.resetUserPasswordLink = WebhookUserPasswordResetLink;
+WHFirebase.prototype.deleteSite = WebhookSiteDelete;
 
+// helper - for initialization
 
 function appForName ( name ) {
   var appOfNameList = admin.apps.filter( appOfName )
@@ -62,6 +64,8 @@ function appForName ( name ) {
     return app.name === name
   }
 }
+
+// methods for interacting with webhook data
 
 function WebhookSiteKey ( options, siteKey ) {
   var keyPath = `${ siteManagementPath( options ) }/key`
@@ -134,7 +138,6 @@ function WebhookUserPasswordResetLink ( options ) {
 
   // options : { siteName : string, userEmail : string } => continuationUrl : string
   var continuationUrl = continuationUrlFn( options )
-console.log( this._app.auth().generatePasswordResetLink )
   return this._app.auth().generatePasswordResetLink( userEmail, { url: continuationUrl } )
 }
 
@@ -142,6 +145,76 @@ function WebhookSiteKeyDataRemove ( options ) {
   var keyPath = siteDataKeyPath( options )
   return firebaseDatabaseSetValueForKeyPath( this._app, keyPath, null )
 }
+
+function WebhookSiteDelete ( options ) {
+  var self = this;
+  var deleteSite = options.siteName;
+
+  // delete management path
+  // delete billing path
+  // delete bucket path
+  var deleteKeyPaths = [
+    siteManagementPath( options ),
+    siteBilling( options ),
+    siteBucketKeyPath( options ),
+  ]
+
+  // delete user references ( /management/users )
+  // allUsers => users => usersSites => deleteKeyPathPromises
+  return this.allUsers()
+    .then( getUserSites )
+    .then( returnDeletePromises )
+
+  function returnDeletePromises ( usersSites ) {
+    var deletePromises = usersSites
+      .filter( includesSiteToDelete )
+      .map( usersManagementPath )
+        .concat( deleteKeyPaths )
+          .map( setKeyPathToNull )
+
+    return admin.Promise.all( deletePromises )
+  }
+
+  function includesSiteToDelete ( userSite ) {
+    return unescape( userSite.siteName ) === unescape( deleteSite )
+  }
+
+  function setKeyPathToNull ( keyPath ) {
+    return firebaseDatabaseSetValueForKeyPath( self._app, keyPath, null )
+  }
+
+  function getUserSites ( usersSnapshot ) {
+    var users = usersSnapshot.val()
+    var usersSites = []
+    var userKeys = Object.keys( users )
+    for (var i = userKeys.length - 1; i >= 0; i--) {
+      var userKey = userKeys[ i ]
+      var userData = users[ userKey ]
+      if ( ! userData.sites ) continue;
+      var siteKeys = Object.keys( userData.sites )
+      for (var j = siteKeys.length - 1; j >= 0; j--) {
+        var siteKey = siteKeys[ j ]
+        var siteData = users[ userKey ].sites[ siteKey ]
+        if ( siteData ) {
+          var usersSitesKeys = Object.keys( siteData )
+          for (var k = 0; k < usersSitesKeys.length; k++) {
+            var userSite = usersSitesKeys[ k ]
+            usersSites.push( {
+              userEmail: unescape( userKey),
+              siteName: unescape( userSite ),
+              owner: siteKey === 'owners',
+              user: siteKey === 'users'
+            } )
+          }
+        }
+      }
+    }
+
+    return admin.Promise.resolve( usersSites )
+  }
+}
+
+// helpers - interfaces into data
 
 function firebaseDatabaseSetValueForKeyPath ( firebase, keyPath, value ) {
   return firebase.database().ref( keyPath ).set( value )
@@ -166,6 +239,8 @@ function firebaseDatabaseOnceValueForKeyPath ( firebase, keyPath ) {
   return firebase.database().ref( keyPath ).once( 'value' )
 }
 
+// helpers - construct paths
+
 function siteManagementPath ( options ) {
   var base = `management/sites`
   if ( options && options.siteName ) {
@@ -176,14 +251,34 @@ function siteManagementPath ( options ) {
   }
 }
 
-function usersManagementPath () {
-  return `management/users`
+function usersManagementPath ( options ) {
+  var base = `management/users`
+  if ( options && options.userEmail && options.owner && options.siteName ) {
+    return `${ base }/${ escape( options.userEmail ) }/sites/owners/${ escape( options.siteName ) }`
+  }
+  if ( options && options.userEmail && options.user && options.siteName ) {
+    return `${ base }/${ escape( options.userEmail ) }/sites/users/${ escape( options.siteName ) }`
+  }
+  if ( options && options.userEmail ) {
+    return `${ base }/${ escape( options.userEmail ) }`
+  }
+  else {
+    return base;
+  }
+}
+
+function siteBucketKeyPath ( options ) {
+  return `buckets/${ options.siteName }`
 }
 
 function siteDataKeyPath ( options ) {
-  return `buckets/${ options.siteName }/${ options.siteKey }`
+  return `${ siteBucketKeyPath( options ) }/${ options.siteKey }`
 }
 
 function siteDevKeyPath ( options ) {
   return `${ siteDataKeyPath( options ) }/dev`
+}
+
+function siteBilling ( options ) {
+  return `billing/sites/${ options.siteName }`
 }
