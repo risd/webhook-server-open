@@ -40,12 +40,11 @@ test( 'cloudflare-internal', function ( t ) {
   }
 
   function handleCnameError ( error ) {
-    console.log( error )
     t.fail( `Errored while getting CNAMEs.` )
   }
 } )
 
-test( 'cloudflare-create', function ( t ) {
+test( 'cloudflare-create-cname', function ( t ) {
   t.plan( 1 )
 
   cloudflare.getCnameForSiteName( siteName )
@@ -53,17 +52,15 @@ test( 'cloudflare-create', function ( t ) {
     .catch( handleCnameError )
 
   function handleCname ( cname ) {
-    console.log( cname )
     t.pass( `Successfully acquired CNAME for site name ${ siteName }.` )
   }
 
   function handleCnameError ( error ) {
-    console.log( error )
     t.fail( `Errored while getting CNAME for site name ${ siteName }.` )
   }
 } )
 
-test( 'cloudflare-delete', function ( t ) {
+test( 'cloudflare-delete-cname', function ( t ) {
   t.plan( 1 )
 
   cloudflare.deleteCnameForSiteName( siteName )
