@@ -35,13 +35,12 @@ var redirectTemplateForDestination = utils.redirectTemplateForDestination;
 var cachePurge = utils.cachePurge;
 var addMaskDomain = utils.addMaskDomain;
 
-var escapeUserId = function(userid) {
-  return userid.replace(/\./g, ',1');
-};
+var firebaseEscape = require( './utils/firebase-escape.js' )
+var firebaseUnescape = require( './utils/firebase-unescape.js' )
 
-var unescapeSite = function(site) {
-  return site.replace(/,1/g, '.');
-}
+// var escapeUserId = function(userid) {
+//   return userid.replace(/\./g, ',1');
+// };
 
 function noop () {}
 
@@ -190,7 +189,7 @@ module.exports.start = function (config, logger) {
       function processSite(buildFolder, processSiteCallback) { 
         console.log( 'process-site:', buildFolder )
         // Only admin or the site owners can trigger a build
-        if(_(siteValues.owners).has(escapeUserId(userid)) || _(siteValues.users).has(escapeUserId(userid)) || userid === 'admin')
+        if(_(siteValues.owners).has(firebaseEscape(userid)) || _(siteValues.users).has(firebaseEscape(userid)) || userid === 'admin')
         {
           console.log( 'setup-pipeline' )
           // If build time is defined, we build it now, then put in a job back to beanstalk with a delay
@@ -232,12 +231,14 @@ module.exports.start = function (config, logger) {
           // emits an error, this is called and the stream is closed.
           function onPipelineComplete ( error ) {
             console.log( 'built-pipeline-complete' )
-            if ( error ) {
-              if ( typeof error.reportStatus ) {
-                reportStatus( siteName, error.reportStatus.message, error.reportStatus.status )
-                console.log( error.reportStatus.message );
-              }
-            } else {
+            if ( error && error.reportStatus && error.reportStatus.message && error.reportStatus.status ) {
+              reportStatus( siteName, error.reportStatus.message, error.reportStatus.status )
+              console.log( error.reportStatus.message );
+            }
+            else if ( error ) {
+
+            }
+            else {
               reportStatus( siteName, 'Built and uploaded to ' + siteBucket + '.', 0 )
             }
 
@@ -291,8 +292,6 @@ module.exports.start = function (config, logger) {
               var setupBucketTasks = [ args.siteBucket ].map( makeDeployBucketTask )
               async.parallel( setupBucketTasks, function ( error ) {
                 if ( error ) {
-                  console.log( error )
-                  console.log( error.stack )
                   return next( error )
                 }
                 next( null, args )
@@ -303,7 +302,14 @@ module.exports.start = function (config, logger) {
             function makeDeployBucketTask ( siteBucket ) {
               return function makeBucketTask ( makeBucketTaskComplete ) {
                 setupBucket( Object.assign( setupBucketOptions, { siteBucket: siteBucket } ), function ( error, bucketSetupResults ) {
-                  if ( error ) return makeBucketTaskComplete( error )
+                  if ( error ) {
+                    error.reportStatus = {
+                      site: firebaseEscape( siteBucket ),
+                      message: 'Failed to build site, error in setting up bucket.',
+                      status: 1,
+                    }
+                    return makeBucketTaskComplete( error )
+                  }
                   makeBucketTaskComplete()
                 } )
               }
@@ -1038,7 +1044,7 @@ module.exports.start = function (config, logger) {
         console.log(err.message);
         console.log(err.stack);
         reportStatus(siteName, 'Failed to build, errors encountered in build process of ' + siteBucket , 1);
-        jobCallback();
+        jobCallback( err );
       });
 
       domainInstance.run(function() {
