@@ -1,6 +1,6 @@
 {
-  "name": "webhook-server-open",
-  "description": "Web server for webhook",
+  "name": "@risd/webhook-server-open",
+  "description": "Web server for @risd/webhook",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -65,7 +65,7 @@
     "temp": "~0.6.0",
     "through2-concurrent": "^1.1.1",
     "touch": "0.0.3",
-    "webhook-deploy-configuration": "^2.0.2",
+    "webhook-deploy-configuration": "^2.0.4",
     "webhook-elastic-search": "^1.0.1",
     "webhook-site-data": "^2.0.3",
     "win-spawn": "~2.0.0",
