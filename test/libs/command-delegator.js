@@ -37,6 +37,7 @@ var options = [ {
     siteBucket: unescape( siteName )
   },
   handler: function ( handlerPayload, handlerIdentifier, handlerData, handlerClient, handlerCallback ) {
+    console.log( 'handler' )
     this.t.deepEqual( handlerData, this.expectedData, 'The payload is consistent for tube: ' + this.tube )
     handlerCallback()
   }
@@ -45,15 +46,25 @@ var options = [ {
 
 test( 'command-build', function ( t ) {
   t.plan( options.length )
+  t.fail( 'Test does not currently work.' )
+  t.end()
+  console.log( `test-length:${ options.length }` )
 
   options.forEach( function ( opts ) {
     jobQueue.reserveJob( opts.tube, opts.lock, opts.handler.bind( Object.assign( { t: t }, opts ) ) )
   } )
 
   commandor.on( 'ready', function ( commandHandlers ) {
+    console.log( 'ready' )
+    console.lgo( commandHandlers )
     options.forEach( function ( opts ) {
       commandHandlers.queueFirebase( { tube: opts.tube, data: opts.data } )
     } )
+  } )
+
+  commandor.on( 'error', function () {
+    t.fail( 'Command delegator could not connect.' )
+    t.end()
   } )
 } )
 
