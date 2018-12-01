@@ -268,7 +268,7 @@ function usersManagementPath ( options ) {
 }
 
 function siteBucketKeyPath ( options ) {
-  return `buckets/${ options.siteName }`
+  return `buckets/${ escape( options.siteName ) }`
 }
 
 function siteDataKeyPath ( options ) {
@@ -280,5 +280,5 @@ function siteDevKeyPath ( options ) {
 }
 
 function siteBilling ( options ) {
-  return `billing/sites/${ options.siteName }`
+  return `billing/sites/${ escape( options.siteName ) }`
 }
