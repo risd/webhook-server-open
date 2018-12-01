@@ -40,14 +40,14 @@ module.exports = function(grunt) {
     mailgunKey: process.env.MAILGUN_SECRET_KEY,                             // The API key from mailgun
     mailgunDomain: process.env.MAILGUN_DOMAIN,                              // The domain that uses mailgun
     fromEmail: process.env.FROM_EMAIL,                                      // Mailgun will send ALL emails for ALL sites from this email address.
-    elasticServer: process.env.ELASTIC_SEARCH_SERVER,                       // The address of your elastic server
-    elasticUser: process.env.ELASTIC_SEARCH_USER,                           // The read/write user on your elastic server
-    elasticPassword: process.env.ELASTIC_SEARCH_PASSWORD,                   // The password for your elastic user
-    //elasticOptions: {                                                     // This block is completely optional but useful if you need to specify
-    //  port: 9200,                                                         // more elasticsearch options. Possible keys are :
-    //  secure: false,                                                      // port, secure, defaultMethod, params, path, timeout, keepAlive and agent
-    //  defaultMethod: 'GET'                                                // Uncomment this block and fill in your required values if needed
-    //},
+    elastic: {
+      host: process.env.ELASTIC_SEARCH_SERVER,
+      port: 9200,
+      auth: {
+        username: process.env.ELASTIC_SEARCH_USER,
+        password: process.env.ELASTIC_SEARCH_PASSWORD,
+      },
+    },
     googleProjectId: process.env.GOOGLE_PROJECT_ID,                         // Your google project ID. Usually something like whatever-123
     sitesBucket: process.env.SITES_BUCKET,                                  // The name of the build bucket on Google Cloud Storage
     backupBucket: process.env.BACKUPS_BUCKET,                               // The name of the backup bucket on Google Cloud Storage
@@ -74,7 +74,8 @@ module.exports = function(grunt) {
       service_id: process.env.FASTLY_SERVICE_ID,
       ignoreDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
       sslDomains: process.env.FASTLY_SSL_DOMAINS,
-    }
+    },
+    developmentDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {
