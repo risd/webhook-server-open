@@ -5,19 +5,22 @@ var webhookTasks = require( '../Gruntfile.js' )
 
 webhookTasks( grunt )
 
+var unescape = require( '../libs/utils/firebase-unescape.js' )
 var commandDelegator = require( '../libs/commandDelegator.js' )
 var JobQueue = require( '../libs/jobQueue.js' )
 
 var commandor = commandDelegator.start( grunt.config, console.log )
 var jobQueue = JobQueue.init( grunt.config )
 
+var siteName = testOptions.createSiteName;
+
 // accepts command data at a particular node in firebase
 var options = [ {
   tube: 'build',
   data: {
     userid: 'test-user',
-    sitename: 'commencement,1risd,1systems',
-    branch: 'master',
+    sitename: siteName,
+    branch: 'develop',
     buildtime: '1',
     id: 'unique-id',
     contentType: 'content-type',
@@ -25,13 +28,13 @@ var options = [ {
   },
   expectedData: {
     userid: 'test-user',
-    sitename: 'commencement,1risd,1systems',
-    branch: 'master',
+    sitename: siteName,
+    branch: 'develop',
     buildtime: '1',
     id: 'unique-id',
     contentType: 'content-type',
     itemKey: 'item-key',
-    siteBucket: 'commencement.risd.edu'
+    siteBucket: unescape( siteName )
   },
   handler: function ( handlerPayload, handlerIdentifier, handlerData, handlerClient, handlerCallback ) {
     this.t.deepEqual( handlerData, this.expectedData, 'The payload is consistent for tube: ' + this.tube )
