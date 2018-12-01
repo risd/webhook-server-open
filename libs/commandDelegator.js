@@ -89,6 +89,9 @@ function CommandDelegator (config, logger) {
   return this;
 
   function onCommandHandlers ( error, commandHandlers ) {
+    if ( error ) {
+      return self.emit( 'error', error )
+    }
     commandHandlers.forEach( commandHandlersStore.add )
 
     self.emit( 'ready', commandHandlersStore.external() )
@@ -101,12 +104,12 @@ function CommandDelegator (config, logger) {
       client.connect(config.get('beanstalkServer'), function(err, conn) {
         if(err) {
           console.log(err);
-          return process.exit(1);
+          return onConnectionMade( err )
         }
         conn.use(item.tube, function(err, tubename) {
           if(err) {
             console.log(err);
-            return process.exit(1);
+            return onConnectionMade( err )
           }
           var memcachedCommandHandler = handleCommands(conn, item);
           onConnectionMade( null,  Object.assign( { memcachedCommandHandler: memcachedCommandHandler }, item ) )
@@ -115,7 +118,7 @@ function CommandDelegator (config, logger) {
       
       client.on('close', function(err) {
         console.log('Closed connection');
-        return process.exit(1);
+        return onConnectionMade( err )
       });
     }
   }
@@ -138,9 +141,6 @@ function CommandDelegator (config, logger) {
     var queueFirebase = function ( toQueue, callback ) {
       if ( typeof callback !== 'function' ) callback = function noop () {}
 
-      // project::firebase::ref::done
-      // project::firebase::push::done
-      // project::firebase::set::done
       self.root.ref( handlers[ toQueue.tube ].command ).push().set( toQueue.data, callback )
     }
 
