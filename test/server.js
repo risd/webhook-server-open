@@ -13,140 +13,183 @@ var Server = require( '../libs/server.js' )
 var server = Server.start( grunt.config, console.log )
 var serverUrl = `http://localhost:${ server.port }`
 
+var Firebase = require( '../libs/firebase/index.js' )
+var firebase = Firebase( grunt.config().firebase )
+
+var siteName = testOptions.serverSiteName
+var siteToken;
+
+// get site token for site established in the `creator` test
+firebase.siteKey( { siteName: siteName } )
+  .then( setSiteToken )
+  .catch( siteKeyError )
+
+function setSiteToken ( token ) {
+  siteToken = token;
+  runTests( testObjects() )
+}
+
+function siteKeyError ( error ) {
+  console.log( error )
+  process.exit( 1 )
+}
+
 function siteToken () {
   return {
-    site: 'commencement,1risd,1systems',
-    token: 'd1b96975-edd0-4f8c-af62-cf05d134f28a',
+    site: siteName,
+    token: siteToken,
   }
 }
 
-// RequestOptions : {}
-// ResponseTest : expectedValue => testInjector => makeAssertions
-// ResponseTest.testCount : Int
-// tests : [ req : RequestOptions, res : [ResponseTest] ]
-var tests = [
-  {
-    name: 'GET /',
-    req: {
-      method: 'GET',
-      uri: serverUrlForPath( '/' ),
-    },
-    res: [ statusCode( 200 ) ],
-  },
-  {
-    name: 'GET /backup-snapshot/',
-    req: {
-      method: 'GET',
-      uri: serverUrlForPath( '/backup-snapshot/' ),
-      qs: Object.assign( {
-        timestamp: '1539893985031',
-      }, siteToken() ),
-    },
-    res: [ statusCode( 200 ), jsonBody( siteDataShape ), ],
-  },
-  {
-    name: 'GET /backup-snapshot/ fail',
-    req: {
-      method: 'GET',
-      uri: serverUrlForPath( '/backup-snapshot/' ),
-      qs: {},
-    },
-    res: [ statusCode( 500 ) ],
-  },
-  {
-    name: 'POST /upload-url/',
-    req: {
-      method: 'POST',
-      uri: serverUrlForPath( '/upload-url/' ),
-      json: true,
-      body: Object.assign( {
-        resize_url: true,
-        url: 'https://lh3.googleusercontent.com/G6Tkw7hXhmR34zpkXA3nBHZ05tgAb2OewVO5NOrv5LUovd-UIqtaZ3rOoNemzXosxFt4HrQXshJ3UIbDuwQOf2sIjQJcuuGeSalc4QG1E1s=s760',
-      }, siteToken() ),
-    },
-    res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
-  },
-  {
-    name: 'POST /upload-file/', 
-    req: {
-      method: 'POST',
-      uri: serverUrlForPath( '/upload-file/' ),
-      headers: {
-          'Content-Type': 'multipart/form-data',
+// RequestOptions : { method, uri, ... }
+// ResponseTest : ExpectedValue => TestInjector => MakeAssertions
+// TestInjector.testCount : Int
+// testObjects => [ req : RequestOptions, res : [ResponseTest] ]
+function testObjects () {
+  return [
+    {
+      name: 'GET /',
+      req: {
+        method: 'GET',
+        uri: serverUrlForPath( '/' ),
       },
-      multipart: [ {
-        'Content-Disposition': 'form-data; name="payload"; filename="img.png"',
-        'Content-Type': mime.lookup( 'img.png' ),
-        body: fs.readFileSync( path.join( __dirname, 'files', 'img.png' ) ),
-      }, {
-        'Content-Disposition': 'form-data; name="site"',
-        body: siteToken().site,
-      }, {
-        'Content-Disposition': 'form-data; name="token"',
-        body: siteToken().token,
-      }, {
-        'Content-Disposition': 'form-data; name="resize_url"',
-        body: "true"
-      } ],
+      res: [ statusCode( 200 ) ],
     },
-    res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
-  },
-  {
-    name: 'POST /search/',
-    req: {
-      method: 'POST',
-      uri: serverUrlForPath( '/search/' ),
-      json: true,
-      body: Object.assign( {
-        query: 'home',
-      }, siteToken() ),
+    {
+      name: 'GET /backup-snapshot/',
+      req: {
+        method: 'GET',
+        uri: serverUrlForPath( '/backup-snapshot/' ),
+        qs: Object.assign( {
+          timestamp: '1539893985031',
+        }, siteToken() ),
+      },
+      res: [ statusCode( 200 ), jsonBody( siteDataShape ), ],
     },
-    res: [ statusCode( 200 ), jsonBody( searchResultsShape ) ],
-  },
-  {
-    name: 'POST /search/index/',
-    req: {
-      method: 'POST',
-      uri: serverUrlForPath( '/search/index/' ),
-      json: true,
-      body: Object.assign( {}, siteToken(), searchDocument() ),
+    {
+      name: 'GET /backup-snapshot/ fail',
+      req: {
+        method: 'GET',
+        uri: serverUrlForPath( '/backup-snapshot/' ),
+        qs: {},
+      },
+      res: [ statusCode( 500 ) ],
     },
-    res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
-  },
-  {
-    name: 'POST /search/delete/',
-    req: {
-      method: 'POST',
-      uri: serverUrlForPath( '/search/delete/' ),
-      json: true,
-      body: Object.assign( {}, siteToken(), searchDocument() ),
+    {
+      name: 'POST /upload-url/',
+      req: {
+        method: 'POST',
+        uri: serverUrlForPath( '/upload-url/' ),
+        json: true,
+        body: Object.assign( {
+          resize_url: true,
+          url: 'https://lh3.googleusercontent.com/G6Tkw7hXhmR34zpkXA3nBHZ05tgAb2OewVO5NOrv5LUovd-UIqtaZ3rOoNemzXosxFt4HrQXshJ3UIbDuwQOf2sIjQJcuuGeSalc4QG1E1s=s760',
+        }, siteToken() ),
+      },
+      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
     },
-    res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
-  },
-  // method : POST, url : /search/delete/type/, json : true, body : { site, token, typeName }
-  // method : POST, url : /search/delete/index/, json : true, body : { site, token }
-  // {
-  //   name: 'POST /upload/',
-  //   req: {
-  //     method: 'POST',
-  //     uri: serverUrlForPath( '/upload/' ),
-  //     json: true,
-  //     body: Object.assign( {
-  //       branch: 'feature/test',
-  //       payload: 'file.zip'
-  //     }, siteToken() ),
-  //   }
-  //   res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
-  // },
-]
+    {
+      name: 'POST /upload-file/', 
+      req: {
+        method: 'POST',
+        uri: serverUrlForPath( '/upload-file/' ),
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+        multipart: [ {
+          'Content-Disposition': 'form-data; name="payload"; filename="img.png"',
+          'Content-Type': mime.lookup( 'img.png' ),
+          body: fs.readFileSync( path.join( __dirname, 'files', 'img.png' ) ),
+        }, {
+          'Content-Disposition': 'form-data; name="site"',
+          body: siteToken().site,
+        }, {
+          'Content-Disposition': 'form-data; name="token"',
+          body: siteToken().token,
+        }, {
+          'Content-Disposition': 'form-data; name="resize_url"',
+          body: "true"
+        } ],
+      },
+      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
+    },
+    {
+      name: 'POST /search/',
+      req: {
+        method: 'POST',
+        uri: serverUrlForPath( '/search/' ),
+        json: true,
+        body: Object.assign( {
+          query: 'home',
+        }, siteToken() ),
+      },
+      res: [ statusCode( 200 ), jsonBody( searchResultsShape ) ],
+    },
+    {
+      name: 'POST /search/index/',
+      req: {
+        method: 'POST',
+        uri: serverUrlForPath( '/search/index/' ),
+        json: true,
+        body: Object.assign( {}, siteToken(), searchDocument() ),
+      },
+      res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
+    },
+    {
+      name: 'POST /search/delete/',
+      req: {
+        method: 'POST',
+        uri: serverUrlForPath( '/search/delete/' ),
+        json: true,
+        body: Object.assign( {}, siteToken(), searchDocument() ),
+      },
+      res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
+    },
+    {
+      name: 'POST /search/delete/type/',
+      req: {
+        method: 'POST',
+        uri: serverUrlForPath( '/search/delete/type/' ),
+        json: true,
+        body: Object.assign( {}, siteToken(), searchDocument() ),
+      },
+      res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
+    },
+    {
+      name: 'POST /search/delete/index/',
+      req: {
+        method: 'POST'
+        uri: serverUrlForPath( '/search/delete/index/' ),
+        json: true,
+        body: siteToken()
+      },
+      res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
+    },
+    // {
+    //   name: 'POST /upload/',
+    //   req: {
+    //     method: 'POST',
+    //     uri: serverUrlForPath( '/upload/' ),
+    //     json: true,
+    //     body: Object.assign( {
+    //       branch: 'feature/test',
+    //       payload: 'file.zip'
+    //     }, siteToken() ),
+    //   }
+    //   res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
+    // },
+  ]
+}
 
-tests.forEach( function makeTest ( testSpec ) {
-  test( testSpec.name, function ( t ) {
-    var testCount = testSpec.res.reduce( resCount, 0 )
-    t.plan( testCount )
-    runTest( t )( testSpec )
-  } )  
-} )
+function runTests ( testObjects ) {
+  testObjects.forEach( function makeTest ( testSpec ) {
+    test( testSpec.name, function ( t ) {
+      var testCount = testSpec.res.reduce( resCount, 0 )
+      t.plan( testCount )
+      runTest( t )( testSpec )
+    } )  
+  } )
+}
 
 test.onFinish( process.exit )
 

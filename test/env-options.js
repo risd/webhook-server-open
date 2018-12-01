@@ -32,6 +32,7 @@ function EnvOptions ( options ) {
     siteIndexSiteName: process.env.CREATE_SITE_NAME,
     siteIndexUserId: process.env.CREATE_USER_ID,
     firebaseAdminSiteName: process.env.CREATE_SITE_NAME,
+    serverSiteName: process.env.CREATE_SITE_NAME,
   }
 
   Object.assign( envOptions, options )
