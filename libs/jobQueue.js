@@ -57,6 +57,16 @@ module.exports.init = function (config) {
   self.reserveJob = function(tube, lockRoot, cb) {
     var client = new beanstalkd.Client();
 
+    client.on( 'error', function ( error ) {
+      console.log( error )
+      callback( error )
+    } )
+
+    client.on( 'close', function(err) {
+        console.log('Closed connection');
+        process.exit(1);
+    } )
+
     // Connect to beanstalk
     client.connect(config.get('beanstalkServer'), function(err, conn) {
       if(err) {
@@ -129,11 +139,6 @@ module.exports.init = function (config) {
         }); 
       });
     })
-
-    client.on('close', function(err) {
-        console.log('Closed connection');
-        process.exit(1);
-    });
   };
 
 
