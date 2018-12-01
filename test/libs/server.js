@@ -19,20 +19,25 @@ var firebase = Firebase( grunt.config().firebase )
 var siteName = testOptions.serverSiteName
 var siteToken;
 
-// get site token for site established in the `creator` test
-firebase.siteKey( { siteName: siteName } )
-  .then( setSiteToken )
-  .catch( siteKeyError )
+test( 'get-key-for-server-queries', function ( t ) {
+  t.plan( 1 )
+  // get site token for site established in the `creator` test
+  firebase.siteKey( { siteName: siteName } )
+    .then( setSiteToken )
+    .catch( siteKeyError )
 
-function setSiteToken ( token ) {
-  siteToken = token;
-  runTests( testObjects() )
-}
+  function setSiteToken ( token ) {
+    siteToken = token.val();
+    runTests( testObjects() )
+    t.pass( 'Started tests' )
+  }
 
-function siteKeyError ( error ) {
-  console.log( error )
-  process.exit( 1 )
-}
+  function siteKeyError ( error ) {
+    t.fail( 'Could not start tests' )
+    console.log( error )
+    process.exit( 1 )
+  }  
+} )
 
 function siteTokenFn () {
   return {
@@ -99,7 +104,7 @@ function testObjects () {
         multipart: [ {
           'Content-Disposition': 'form-data; name="payload"; filename="img.png"',
           'Content-Type': mime.lookup( 'img.png' ),
-          body: fs.readFileSync( path.join( __dirname, 'files', 'img.png' ) ),
+          body: fs.readFileSync( path.join( __dirname, '..', 'files', 'img.png' ) ),
         }, {
           'Content-Disposition': 'form-data; name="site"',
           body: siteTokenFn().site,
