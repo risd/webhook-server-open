@@ -374,9 +374,14 @@ function ensureCname ( options ) {
       }, options )
 
       createCnameRecord( cnameOptions, function ( error, cname ) {
-        row.cname = cname;
         console.log( 'site-setup:ensure-cname:done' )
-        console.log( error )
+        if ( error ) {
+          console.log( error )
+          row.cname = null
+        }
+        else {
+          row.cname = cname;
+        }
         next( null, row );
       } )
     } else {
@@ -403,88 +408,49 @@ function createCnameRecord ( options, callback ) {
 
   var cloudflare = Cloudflare( options.client )
 
-  var cname = false;
+  var siteBucket = options.siteBucket;
+  var usesFastly = options.usesFastly;
 
-  return miss.pipe(
-    usingArguments( options ),  // { client, siteBucket, usesFastly }
-    getZoneId(),                // adds { zoneId }
-    getOrCreateCname(),         // if { zoneId }, adds { cname }
-    sink( function ( row ) {
-      console.log( 'create-cname-record:sink' )
-      cname = row.cname;
-    } ),
-    function onComplete ( error ) {
-      if ( error ) return callback( error )
-      callback( null, cname )
-    } )
+  var baseRecordOptions = { type: 'CNAME', proxied: true }
+  var googleRecordContent =  { content: 'c.storage.googleapis.com', };
+  var fastlyRecordContent =  { content: 'nonssl.global.fastly.net', };
 
-  function getZoneId () {
+  var recordValues = Object.assign( {
+        name: siteBucket,
+      },
+      baseRecordOptions,
+      usesFastly ? fastlyRecordContent : googleRecordContent )
 
-    return miss.through.obj( function ( row, enc, next ) {
-      console.log( 'create-cname-record:get-zone-id' )
-      cloudflare.getZone( row.siteBucket ).then( handleZone ).catch( handleZoneError )
+  cloudflare.getZone( siteBucket )
+    .then( handleZone )
+    .then( handleCname )
+    .then( returnCname )
+    .catch( handleCnameError )
 
-      function handleZone ( zone ) {
-        if ( zone === false ) {
-          row.zoneId = zone;
-        } else {
-          row.zoneId = zone.id;
-        }
-        next( null, row )
-      }
-
-      function handleZoneError ( error ) {
-        next( error )
-      }
-    } )
+  function returnCname ( cname ) {
+    callback( null, cname ) 
   }
 
-  function getOrCreateCname () {
-    var baseRecordOptions = { type: 'CNAME', proxied: true }
-    var googleRecordContent =  { content: 'c.storage.googleapis.com', };
-    var fastlyRecordContent =  { content: 'nonssl.global.fastly.net', };
+  function handleCnameError ( error ) {
+     callback( error )
+  }
 
-    return miss.through.obj( function ( row, enc, next ) {
-      console.log( 'create-cname-record:get-or-create' )
-      if ( !row.zoneId ) {
-        row.cname = false;
-        next( null, row )
-      }
+  function handleZone ( zone ) {
+    Object.assign( recordValues, { zone_id: zone.id } )
+    return cloudflare.getCnameForSiteName( siteBucket, zone )
+  }
 
-      var recordValues = Object.assign( {
-            name: row.siteBucket,
-            zone_id: row.zoneId,
-          },
-          baseRecordOptions,
-          row.usesFastly ? fastlyRecordContent : googleRecordContent )
-
-      cloudflare.getCnameForSiteName( row.siteBucket )
-        .then( handleCname )
-        .then( returnCname )
-        .catch( handleCnameError )
-
-      function returnCname ( cname ) {
-        row.cname = cname;
-        next( null, row ) 
-      }
-
-      function handleCname ( existingRecord ) {
-        if ( existingRecord && existingRecord.content !== recordValues.content ) {
-          existingRecord.content = recordValues.content
-          return updateRecord( existingRecord )
-        }
-        else if ( ! existingRecord ) {
-          return createRecord( recordValues )
-        }
-        else if ( existingRecord ) {
-          return Promise.resolve( existingRecord )
-        }
-      }
-
-      function handleCnameError ( error ) {
-         next( error ) 
-      }
-    } )
+  function handleCname ( existingRecord ) {
+    if ( existingRecord && existingRecord.content !== recordValues.content ) {
+      existingRecord.content = recordValues.content
+      return updateRecord( existingRecord )
+    }
+    else if ( ! existingRecord ) {
+      return createRecord( recordValues )
+    }
+    else if ( existingRecord ) {
+      return Promise.resolve( existingRecord )
+    }
   }
 
   function createRecord ( recordValues, withRecord ) {

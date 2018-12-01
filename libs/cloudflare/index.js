@@ -9,7 +9,7 @@ function WHCloudFlare ( options ) {
   if ( options && options.client ) {
     options = options.client;
   }
-  
+
   this._client = new Cloudflare( options )
 }
 
@@ -89,8 +89,15 @@ function deleteCname ( cnameRecord ) {
   return this._client.deleteDNS( cnameRecord )
 }
 
-function getCnameForSiteName ( siteName ) {
-  return this.getZone( siteName )
+function getCnameForSiteName ( siteName, zone ) {
+  if ( siteName && zone ) {
+    var resolveZone = Promise.resolve( zone )
+  }
+  else if ( siteName ) {
+    var resolveZone = this.getZone( siteName )
+  }
+  
+  return resolveZone
     .then( this.getCnames.bind( this ) )
     .then( pluckCnameForSiteName( siteName ) )
 
