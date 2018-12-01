@@ -35,15 +35,14 @@ module.exports.start = function (config, logger) {
 
   var self = this;
 
+  var elasticOptions = config().elastic;
+
   var searchOptions = {
-    host: config.get('elasticServer'),
-    username: config.get('elasticUser'),
-    password: config.get('elasticPassword'),
+    host: elasticOptions.host,
+    username: elasticOptions.auth.username,
+    password: elasticOptions.auth.password,
   }
   var search = WebHookElasticSearch( searchOptions )
-
-  console.log( 'searchOptions' )
-  console.log( searchOptions )
 
   var firebase = Firebase( config().firebase )
   this.root = firebase.database()
