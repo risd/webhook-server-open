@@ -15,6 +15,7 @@ var request = require('request');
 var fs = require('fs');
 var mkdirp = require('mkdirp');
 var async = require('async');
+var Elastic = require( './elastic-search/index' )
 var Firebase = require('./firebase/index');
 var wrench = require('wrench');
 var path = require('path');
@@ -22,7 +23,6 @@ var cloudStorage = require('./cloudStorage.js');
 var backupExtractor = require('./backupExtractor.js');
 var temp = require('temp');
 var mime = require('mime');
-var ElasticSearchClient = require('elasticsearchclient');
 var archiver   = require('archiver');
 var _ = require('lodash');
 var Deploys = require( 'webhook-deploy-configuration' );
@@ -53,22 +53,7 @@ module.exports.start = function(config, logger)
 
   var app = express();
 
-  var serverName = config.get('elasticServer').replace('http://', '').replace('https://', '');
-  serverName = serverName.split(':')[0];
-  var elasticOptions = {
-      host: serverName,
-      port: 9200,
-      auth: {
-        username: config.get('elasticUser'),
-        password: config.get('elasticPassword')
-    }
-  };
-  if (config.get('elasticOptions'))
-  {
-    _.extend(elasticOptions, config.get('elasticOptions'));
-  }
-
-  var elastic = new ElasticSearchClient(elasticOptions);
+  var elastic = Elastic( config().elastic );
 
   var firebaseOptions = Object.assign(
     { initializationName: 'create-worker' },
@@ -384,70 +369,6 @@ module.exports.start = function(config, logger)
     return [ '//', config.get( 'uploadsBucket' ), '/webhook-uploads/', encodeURIComponent( fileName ) ].join( '' )
   }
 
-  /*
-  * Performs a search against elastic for the given query on the given typeName
-  *
-  * @param site     The site to perform the search for
-  * @param query    The query being executed
-  * @param page     The page to return
-  * @param typeName The type to restrict search to (null if all)
-  * @param callback Function to call with results
-  */
-  function searchElastic (site, query, page, typeName, callback) {
-
-    if(!query.endsWith('*')) {
-      query = query + '*';
-    }
-
-    if(!query.startsWith('*')) {
-      query = '*' + query;
-    }
-
-    if(page < 1) {
-      page = 1;
-    }
-
-    var qryObj = {
-        "query" : {
-            "query_string" : { 
-              "fields" : ["name^5", "_all"],
-              "query" : query 
-            }
-        },
-        "from": (page - 1) * 10,
-        "size": 10,
-        "fields": ['name','__oneOff'],
-        "highlight" : { "fields" : { "*" : {} }, "encoder": "html" }
-    };
-
-    console.log( 'elastic-search' )
-    console.log( 'site:' + site )
-    console.log( 'typeName:' + typeName )
-    console.log( 'qryObj:' + JSON.stringify( qryObj ) )
-
-    if(typeName) {
-      elastic.search(site, typeName, qryObj)
-          .on('data', function(data) {
-            console.log( 'result:' + data )
-            
-            data = JSON.parse(data);
-            callback(null, data);
-          }).on('error', function(err) {
-            callback(err, null);
-          })
-          .exec();
-    } else {
-      elastic.search(site, qryObj)
-          .on('data', function(data) {
-            data = JSON.parse(data);
-            callback(null, data);
-          }).on('error', function(err) {
-            callback(err, null);
-          })
-          .exec();
-    }
-  }
-
   // Handles search requests
   // Post data includes site, token, query,  page, and typeName
   // Site and Token are the sitename and token for the site search is being performed on
@@ -463,7 +384,7 @@ module.exports.start = function(config, logger)
     async.series( [
       siteBillingActive.bind( null, site ),
       siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticSearchQuery.bind( null, { site: site, typeName: typeName, query: query, page: page } )
+      elasticSearchQuery.bind( null, { siteName: site, typeName: typeName, query: query, page: page } )
     ], handleResponseForQuery )
 
     function handleResponseForQuery ( error, seriesResults ) {
@@ -473,18 +394,19 @@ module.exports.start = function(config, logger)
     }
 
     function elasticSearchQuery ( options, callback ) {
-      var site = options.site
-      var typeName = options.typeName
-      var query = options.query
-      var page = options.page
+      elastic.search( options )
+          .then( handleSearch )
+          .catch( handleSearchError )
 
-      var callbackErrorValue = null
-
-      searchElastic(unescapeSite(site), query, page, typeName, function(err, data) {
-        if ( err ) return callback( { statusCode: 500, message: 'Could not search elastic.' } )
+      function handleSearch ( data ) {
         if ( ! data.hits ) return callback( null, { hits : {} } )
         else return callback ( null, { hits : data.hits.hits } )
-      });
+      }
+
+      function handleSearchError ( error ) {
+        console.log( error )
+        callback( { statusCode: 500, message: 'Could not search elastic.' } )
+      }
     }
   }
 
@@ -505,41 +427,17 @@ module.exports.start = function(config, logger)
     async.series( [
       siteBillingActive.bind( null, site ),
       siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticSearchIndexItem.bind( null, { site: site, typeName: typeName, id: id, doc: data, oneOff: oneOff } )
+      elasticSearchIndexItem.bind( null, { siteName: site, typeName: typeName, id: id, doc: data, oneOff: oneOff } )
     ], handleResponseForSeries.bind( null, res ) )
 
     function elasticSearchIndexItem ( options, callback ) {
-      var site = options.site
-      var typeName = options.typeName
-      var id = options.id
-      var doc = options.doc
-      var oneOff = options.oneOff
+      elastic.index( options )
+        .then( callback )
+        .catch( handleSearchIndexError )
 
-      var callbackErrorValue = null
-      
-      var parsed = JSON.parse(doc);
-      parsed.__oneOff = oneOff;
-      
-      elastic.index(unescapeSite(site), typeName, parsed, id)
-        .on('data', function( indexedResponse ) {
-          if ( typeof indexedResponse === 'string' ) {
-            indexedData = JSON.parse( indexedResponse )
-          }
-          else if ( typeof indexedResponse === 'object' ) {
-            indexedData = Object.create( indexedResponse )
-          }
-
-          if ( indexedData.error ) {
-            callbackErrorValue = { statusCode: 500, message: indexedData.error }
-          }
-        })
-        .on('error', function ( error ) {
-          callbackErrorValue = { statusCode: 500, message: 'Could not index item for site.' }
-        })
-        .on('done', function () {
-          callback( callbackErrorValue )
-        })
-        .exec();
+      function handleSearchIndexError () {
+        callback( { statusCode: 500, message: 'Could not index item for site.' } )
+      }
     }
   }
 
@@ -558,22 +456,17 @@ module.exports.start = function(config, logger)
     async.series( [
       siteBillingActive.bind( null, site ),
       siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticDeleteSearchItem.bind( null, { site: site, typeName: typeName, id: id } )
+      elasticDeleteSearchItem.bind( null, { siteName: site, typeName: typeName, id: id } )
     ], handleResponseForSeries.bind( null, res ) )
 
     function elasticDeleteSearchItem ( options, callback ) {
-      var site = options.site
-      var typeName = options.typeName
-      var id = options.id
-      var callbackErrorValue = null
-      elastic.deleteDocument(unescapeSite(site), typeName, id)
-        .on('error', function ( error ) {
-          callbackErrorValue = { statusCode: 500, message: 'Could not delete content-type item for site.' }
-        })
-        .on('done', function() {
-          callback( callbackErrorValue )
-        })
-        .exec()
+      elastic.deleteDocument( options )
+        .then( callback )
+        .catch( handleDeleteDocumentError )
+
+      function handleDeleteDocumentError () {
+        callback( { statusCode: 500, message: 'Could not delete content-type item for site.' } )
+      }
     }
   }  
 
@@ -591,21 +484,18 @@ module.exports.start = function(config, logger)
     async.series( [
       siteBillingActive.bind( null, site ),
       siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticContentTypeDeleteIndex.bind( null, { site: site, typeName: typeName } )
+      elasticContentTypeDeleteIndex.bind( null, { siteName: site, typeName: typeName } )
     ], handleResponseForSeries.bind( null, res ) )
 
     function elasticContentTypeDeleteIndex ( options, callback ) {
-      var site = options.site
-      var typeName = options.typeName
-      var callbackErrorValue = null
-      elastic.deleteMapping(unescapeSite(site), typeName)
-        .on('error', function ( error ) {
-          callbackErrorValue = { statusCode: 500, message: 'Could not delete content-type index for site.' }
-        })
-        .on('done', function() {
-          callback( callbackErrorValue )
-        })
-        .exec();
+      elastic.deleteType( options )
+        .then( callback )
+        .catch( handleContentTypeDeleteIndexError )
+
+      function handleContentTypeDeleteIndexError ( error ) {
+        console.log( error )
+        callback( { statusCode: 500, message: 'Could not delete content-type index for site.' } )
+      }
     }
   }
 
@@ -620,19 +510,17 @@ module.exports.start = function(config, logger)
     async.series( [
       siteBillingActive.bind( null, site ),
       siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticDeleteIndex.bind( null, site ),
+      elasticDeleteIndex.bind( null, { siteName: site } ),
     ], handleResponseForSeries.bind( null, res ) )
 
-    function elasticDeleteIndex ( site, callback ) {
-      var callbackErrorValue = null;
-      elastic.deleteIndex(unescapeSite(site))
-        .on('error', function ( error ) {
-          callbackErrorValue = { statusCode: 500, message: 'Could not delete site index.' }
-        })
-        .on('done', function() {
-          callback( callbackErrorValue )
-        })
-        .exec()
+    function elasticDeleteIndex ( options, callback ) {
+      elastic.deleteIndex( options )
+        .then( callback )
+        .catch( handleDeleteIndexError )
+
+      function handleDeleteIndexError ( error ) {
+        callback( { statusCode: 500, message: 'Could not delete site index.' } )
+      }
     }
   }
 
