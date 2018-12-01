@@ -1,11 +1,11 @@
-var testOptions = require( './env-options.js' )()
+var testOptions = require( '../env-options.js' )()
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
-var webhookTasks = require( '../Gruntfile.js' )
+var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
-var siteIndex = require( '../libs/siteIndex.js' )
+var siteIndex = require( '../../libs/siteIndex.js' )
 
 test( 'index-site-with-no-data', function ( t ) {
   t.plan( 1 )

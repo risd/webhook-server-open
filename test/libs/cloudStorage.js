@@ -1,11 +1,11 @@
-var testOptions = require( './env-options.js' )()
-var webhookTasks = require( '../Gruntfile.js' )
+var testOptions = require( '../env-options.js' )()
+var webhookTasks = require( '../../Gruntfile.js' )
 var grunt = require( 'grunt' )
 var test = require( 'tape' )
 
 webhookTasks( grunt )
 
-var cloudStorage = require( '../libs/cloudStorage.js' )
+var cloudStorage = require( '../../libs/cloudStorage.js' )
 
 test( 'upload-compressed-object', function ( t ) {
   t.plan( 3 )

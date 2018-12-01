@@ -1,11 +1,11 @@
 var test = require( 'tape' )
 
 var grunt = require( 'grunt' );
-var webhookTasks = require( '../Gruntfile.js' );
+var webhookTasks = require( '../../Gruntfile.js' );
 
 webhookTasks( grunt );
 
-var createCnameRecord = require( '../libs/creator.js' ).createCnameRecord;
+var createCnameRecord = require( '../../libs/creator.js' ).createCnameRecord;
 
 var cloudflareOptions = grunt.config.get( 'cloudflare' )
 var cnameRecordOptions = {

@@ -1,12 +1,12 @@
-var testOptions = require( './env-options.js' )()
+var testOptions = require( '../env-options.js' )()
 var grunt = require( 'grunt' )
 var async = require( 'async' )
 var test = require( 'tape' )
-var webhookTasks = require( '../Gruntfile.js' )
+var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
-var deleteSite = require( '../libs/delete.js' )
+var deleteSite = require( '../../libs/delete.js' )
 
 var siteName = testOptions.createSiteName;
 

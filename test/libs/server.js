@@ -1,19 +1,19 @@
-var testOptions = require( './env-options.js' )()
+var testOptions = require( '../env-options.js' )()
 var fs = require( 'fs' )
 var mime = require( 'mime' )
 var path = require( 'path' )
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
 var request = require( 'request' )
-var webhookTasks = require( '../Gruntfile.js' )
+var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
-var Server = require( '../libs/server.js' )
+var Server = require( '../../libs/server.js' )
 var server = Server.start( grunt.config, console.log )
 var serverUrl = `http://localhost:${ server.port }`
 
-var Firebase = require( '../libs/firebase/index.js' )
+var Firebase = require( '../../libs/firebase/index.js' )
 var firebase = Firebase( grunt.config().firebase )
 
 var siteName = testOptions.serverSiteName

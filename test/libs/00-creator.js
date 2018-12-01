@@ -1,15 +1,15 @@
-var testOptions = require( './env-options.js' )()
+var testOptions = require( '../env-options.js' )()
 var test = require( 'tape' )
 var async = require( 'async' )
 var grunt = require( 'grunt' )
 var Deploys = require( 'webhook-deploy-configuration' )
-var webhookTasks = require( '../Gruntfile.js' )
+var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
-var creator = require( '../libs/creator.js' )
-var Firebase = require( '../libs/firebase/index.js' )
-var firebaseEscape = require( '../libs/utils/firebase-escape.js' )
+var creator = require( '../../libs/creator.js' )
+var Firebase = require( '../../libs/firebase/index.js' )
+var firebaseEscape = require( '../../libs/utils/firebase-escape.js' )
 
 grunt.config.merge( { suppressJobQueue: true } )
 

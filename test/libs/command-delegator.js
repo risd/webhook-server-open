@@ -1,13 +1,13 @@
-var testOptions = require( './env-options.js' )()
+var testOptions = require( '../env-options.js' )()
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
-var webhookTasks = require( '../Gruntfile.js' )
+var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
-var unescape = require( '../libs/utils/firebase-unescape.js' )
-var commandDelegator = require( '../libs/commandDelegator.js' )
-var JobQueue = require( '../libs/jobQueue.js' )
+var unescape = require( '../../libs/utils/firebase-unescape.js' )
+var commandDelegator = require( '../../libs/commandDelegator.js' )
+var JobQueue = require( '../../libs/jobQueue.js' )
 
 var commandor = commandDelegator.start( grunt.config, console.log )
 var jobQueue = JobQueue.init( grunt.config )
