@@ -34,7 +34,7 @@ function siteKeyError ( error ) {
   process.exit( 1 )
 }
 
-function siteToken () {
+function siteTokenFn () {
   return {
     site: siteName,
     token: siteToken,
@@ -62,7 +62,7 @@ function testObjects () {
         uri: serverUrlForPath( '/backup-snapshot/' ),
         qs: Object.assign( {
           timestamp: '1539893985031',
-        }, siteToken() ),
+        }, siteTokenFn() ),
       },
       res: [ statusCode( 200 ), jsonBody( siteDataShape ), ],
     },
@@ -84,7 +84,7 @@ function testObjects () {
         body: Object.assign( {
           resize_url: true,
           url: 'https://lh3.googleusercontent.com/G6Tkw7hXhmR34zpkXA3nBHZ05tgAb2OewVO5NOrv5LUovd-UIqtaZ3rOoNemzXosxFt4HrQXshJ3UIbDuwQOf2sIjQJcuuGeSalc4QG1E1s=s760',
-        }, siteToken() ),
+        }, siteTokenFn() ),
       },
       res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
     },
@@ -102,10 +102,10 @@ function testObjects () {
           body: fs.readFileSync( path.join( __dirname, 'files', 'img.png' ) ),
         }, {
           'Content-Disposition': 'form-data; name="site"',
-          body: siteToken().site,
+          body: siteTokenFn().site,
         }, {
           'Content-Disposition': 'form-data; name="token"',
-          body: siteToken().token,
+          body: siteTokenFn().token,
         }, {
           'Content-Disposition': 'form-data; name="resize_url"',
           body: "true"
@@ -121,7 +121,7 @@ function testObjects () {
         json: true,
         body: Object.assign( {
           query: 'home',
-        }, siteToken() ),
+        }, siteTokenFn() ),
       },
       res: [ statusCode( 200 ), jsonBody( searchResultsShape ) ],
     },
@@ -131,7 +131,7 @@ function testObjects () {
         method: 'POST',
         uri: serverUrlForPath( '/search/index/' ),
         json: true,
-        body: Object.assign( {}, siteToken(), searchDocument() ),
+        body: Object.assign( {}, siteTokenFn(), searchDocument() ),
       },
       res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
     },
@@ -141,7 +141,7 @@ function testObjects () {
         method: 'POST',
         uri: serverUrlForPath( '/search/delete/' ),
         json: true,
-        body: Object.assign( {}, siteToken(), searchDocument() ),
+        body: Object.assign( {}, siteTokenFn(), searchDocument() ),
       },
       res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
     },
@@ -151,17 +151,17 @@ function testObjects () {
         method: 'POST',
         uri: serverUrlForPath( '/search/delete/type/' ),
         json: true,
-        body: Object.assign( {}, siteToken(), searchDocument() ),
+        body: Object.assign( {}, siteTokenFn(), searchDocument() ),
       },
       res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
     },
     {
       name: 'POST /search/delete/index/',
       req: {
-        method: 'POST'
+        method: 'POST',
         uri: serverUrlForPath( '/search/delete/index/' ),
         json: true,
-        body: siteToken()
+        body: siteTokenFn()
       },
       res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
     },
@@ -174,7 +174,7 @@ function testObjects () {
     //     body: Object.assign( {
     //       branch: 'feature/test',
     //       payload: 'file.zip'
-    //     }, siteToken() ),
+    //     }, siteTokenFn() ),
     //   }
     //   res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
     // },
