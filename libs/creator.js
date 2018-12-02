@@ -8,7 +8,8 @@
 */
 
 // Requires
-var firebase = require('firebase');
+var Firebase = require('./firebase/index.js');
+var Cloudflare = require('./cloudflare/index.js');
 var colors = require('colors');
 var _ = require('lodash');
 var uuid = require('node-uuid');
@@ -41,50 +42,58 @@ module.exports.start = function (config, logger) {
 
   var jobQueue = JobQueue.init(config);
   var self = this;
-  var firebaseUrl = config.get('firebase') || '';
 
-  this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com');
+  var firebaseOptions = Object.assign(
+    { initializationName: 'create-worker' },
+    config().firebase )
 
-  self.root.auth(config.get('firebaseSecret'), function(err) {
-    if(err) {
-      console.log(err.red);
-      process.exit(1);
-    }
+  // project::firebase::initialize::done
+  var firebase = Firebase( firebaseOptions )
+  this.root = firebase.database()
 
-    console.log('Waiting for commands'.red);
+  console.log('Waiting for commands'.red);
 
-    // Wait for create commands from firebase
-    jobQueue.reserveJob('create', 'create', createSite);
-  });
+  // Wait for create commands from firebase
+  jobQueue.reserveJob('create', 'create', createSite);
+
+  return createSite;
 
   function createSite (payload, identifier, data, client, callback) {
     var userid = data.userid;
     var site = data.sitename;
 
     console.log('Processing Command For '.green + site.red);
-    self.root.child('management/sites/' + site).once('value', function(siteData) {
+
+    // project::firebase::ref::done
+    self.root.ref('management/sites/' + site).once('value', function(siteData) {
       var siteValues = siteData.val();
 
       // IF site already has a key, we alraedy created it, duplicate job
       if(siteValues.key)
       {
         console.log('Site already has key');
-        callback();
+
+        callback( new Error( 'site-exists' ) );
       }
       // Else if the site owner is requesting, we need to make it
       else if(_(siteValues.owners).has(escapeUserId(userid)))
       {
-        self.root.child('management/sites/' + site + '/error/').set(false, function(err) {
+        // project::firebase::ref::done
+        self.root.ref('management/sites/' + site + '/error/').set(false, function(err) {
           // We setup the site, add the user as an owner (if not one) and finish up
-          setupSite(site, siteValues, siteData, siteData.ref(), userid, function(err) {
+          setupSite(site, siteValues, siteData, siteData.ref, userid, function(err) {
             if(err) {
-              self.root.child('management/sites/' + site + '/error/').set(true, function(err) {
-                console.log('Error Creating Site For '.green + site.red);
-                callback();
+              var errorMessage = 'Error Creating Site For '.green + site.red;
+              // project::firebase::ref::done
+              self.root.ref('management/sites/' + site + '/error/').set(true, function(err) {
+                if ( err ) return callback( err )
+                return callback( new Error( errorMessage.stripColors ) );  
               });
             } else {
-              self.root.child('management/users/' + escapeUserId(userid) + '/sites/owners/' + site).set(true, function(err) {
+              // project::firebase::ref::done
+              self.root.ref('management/users/' + escapeUserId(userid) + '/sites/owners/' + site).set(true, function(err) {
                 console.log('Done Creating Site For '.green + site.red);
+                if (err) return callback( err )
                 callback();
               });
             }
@@ -92,11 +101,12 @@ module.exports.start = function (config, logger) {
         });
       } else {
         // Someone is trying to do something they shouldn't
-        console.log('Site does not exist or no permissions');
-        callback();
+        var errorMessage = 'Site does not exist or no permissions'
+        console.log( errorMessage );
+        callback( new Error( 'Site does not exist or no permissions' ) );
       }
     }, function(err) {
-      callback();
+      callback( err );
     });
   }
 
@@ -116,28 +126,31 @@ module.exports.start = function (config, logger) {
 
     var siteBucket = unescapeSite(site);
 
-    console.log('setting up site')
-    console.log(siteBucket)
-    console.log(key)
-
     var generateKey = function () {
       return miss.through.obj(function (row, enc, next) {
         if ( row.bucketExists === true && row.siteKey.length > 0 ) {
           console.log( 'site-setup:generate-key:', row.siteBucket )
 
+          // project::firebase::ref::done
+          // project::firebase::set::done
           siteRef.child('key').set(row.siteKey, function(err) {
             console.log('site-setup:generate-key:setting-billing:')
             console.log(err)
+            if ( err ) return next( err )
 
             // Set some billing info, not used by self-hosting, but required to run
-            siteRef.root().child('billing/sites/' + row.siteName).set({
+            // project::firebase::child::done
+            // project::firebase::set::done
+            self.root.ref('billing/sites/' + row.siteName).set({
               'plan-id': 'mainplan',
               'email': userid,
               'status': 'paid',
               'active': true,
               'endTrial' : Date.now()
             }, function(err) {
-              console.log( 'site-setup:generate-key:' )
+              console.log( 'site-setup:generate-key:error' )
+              console.log( err )
+              if ( err ) return next( err )
               next( null, row );
             });
           });
@@ -156,6 +169,7 @@ module.exports.start = function (config, logger) {
           // specifically for generating the key
           siteKey:      key,
           siteName:     site,
+          ensureCname:  true,
         }]),
         getBucket(),
         createBucket(),
@@ -178,20 +192,23 @@ module.exports.start = function (config, logger) {
   function createData() {
     return miss.through.obj( function ( row, enc, next ) {
       console.log( 'create-data:start' )
-      var data = {}
-      data[ row.siteKey ] = {
-        dev: {
-          data: {},
-          contentType: {},
-          settings: {},
-        }
+      var devData = {
+        data: {},
+        contentType: {},
+        settings: {},
       }
-      self.root.child( 'buckets' ).child( row.siteName ).set( data, function onComplete ( error ) {
-        console.log( 'create-data:end:error' )
-        console.log( error )
-        if ( error ) return next( error )
-        next( null, row )
-      } )
+      console.log( row.siteName )
+      console.log( row.siteKey )
+      console.log( devData )
+      // project::firebase::ref::done
+      // project::firebase::set::done
+      self.root.ref( `buckets/${ row.siteName }/${ row.siteKey }/dev` )
+        .set( devData, function onComplete ( error ) {
+          console.log( 'create-data:end:error' )
+          console.log( error )
+          if ( error ) return next( error )
+          next( null, row )
+        } )
     } )
   }
 };
@@ -230,7 +247,8 @@ function setupBucket ( options, callback ) {
     createdBucket: false,
     cloudStorage: options.cloudStorage,
   }
-  return miss.pipe(
+
+  var pipeline = [
     setupSiteWith([ bucketToSetup ]),
     getBucket(),
     createBucket(),
@@ -239,10 +257,15 @@ function setupBucket ( options, callback ) {
     ensureCdn( options.fastly ),
     ensureCname( options.cloudflare ),
     sink(),
-    function ( error ) {
-      if ( error ) return callback( error )
-      else return callback( null, bucketToSetup )
-    })
+    handlePipeline,
+  ]
+
+  miss.pipe.apply( null, pipeline )
+
+  function handlePipeline ( error ) {
+    if ( error ) return callback( error )
+    else return callback( null, bucketToSetup )
+  }
 }
 
 
@@ -316,6 +339,18 @@ function updateAcls () {
     row.cloudStorage.buckets.updateAcls( row.siteBucket, function (err, body) {
       console.log( err )
       console.log( body )
+      if ( err && typeof err === 'object' ) {
+        error.step = 'update-acls'
+        return next( error )
+      }
+      else if ( err && typeof err === 'number' ) {
+        var error = new Error( err )
+        error.step = 'update-acls'
+        return next( error )
+      }
+      else if ( err ) {
+        return next( err )
+      }
       next( null, row )
     } )
 
@@ -330,9 +365,20 @@ function updateIndex () {
     row.cloudStorage.buckets.updateIndex(
       row.siteBucket,
       'index.html', '404.html',
-      function ( error, body ) {
-        if ( error ) { error.step = 'updateIndex'; return next( error, null ) }
-        else next( null, row )
+      function ( err, body ) {
+        if ( err && typeof err === 'object' ) {
+          error.step = 'update-acls'
+          return next( error )
+        }
+        else if ( err && typeof err === 'number' ) {
+          var error = new Error( err )
+          error.step = 'update-acls'
+          return next( error )
+        }
+        else if ( err ) {
+          return next( err )
+        }
+        next( null, row )
       } )
   });
 }
@@ -357,10 +403,14 @@ function ensureCname ( options ) {
       }, options )
 
       createCnameRecord( cnameOptions, function ( error, cname ) {
-        row.cname = cname;
         console.log( 'site-setup:ensure-cname:done' )
-        console.log( error )
-        console.log( row )
+        if ( error ) {
+          console.log( error )
+          row.cname = null
+        }
+        else {
+          row.cname = cname;
+        }
         next( null, row );
       } )
     } else {
@@ -391,173 +441,73 @@ function ensureCname ( options ) {
 function createCnameRecord ( options, callback ) {
   console.log( 'create-cname-record:start' )
 
-  var Cloudflare = require('cloudflare');
+  var cloudflare = Cloudflare( options.client )
 
-  var client = new Cloudflare( options.client )
+  var siteBucket = options.siteBucket;
+  var usesFastly = options.usesFastly;
 
-  var cname = false;
+  var baseRecordOptions = { type: 'CNAME', proxied: true }
+  var googleRecordContent =  { content: 'c.storage.googleapis.com', };
+  var fastlyRecordContent =  { content: 'nonssl.global.fastly.net', };
 
-  return miss.pipe(
-    usingArguments( options ),  // { client, siteBucket, domains }
-    getZoneId(),                // adds { zoneId }
-    getOrCreateCname(),         // if { zoneId }, adds { cname }
-    sink( function ( row ) {
-      console.log( 'create-cname-record:sink' )
-      cname = row.cname;
-    } ),
-    function onComplete ( error ) {
-      if ( error ) return callback( error )
-      callback( null, cname )
-    } )
+  var recordValues = Object.assign( {
+        name: siteBucket,
+      },
+      baseRecordOptions,
+      usesFastly ? fastlyRecordContent : googleRecordContent )
 
-  function getZoneId () {
+  cloudflare.getZone( siteBucket )
+    .then( handleZone )
+    .then( handleCname )
+    .then( returnCname )
+    .catch( handleCnameError )
 
-    return miss.through.obj( function ( row, enc, next ) {
-      console.log( 'create-cname-record:get-zone-id' )
-      var domain = domainForBucket( row.siteBucket )
-
-      getZoneFn( domain, function ( error, zone ) {
-        if ( error ) return next( error )
-        if ( zone === false ) {
-          row.zoneId = zone;
-        } else {
-          row.zoneId = zone.id;
-        }
-        next( null, row )
-      } )
-    } )
-
-    function domainForBucket ( bucket ) {
-      return bucket.split( '.' ).slice( -2 ).join( '.' )
-    }
-
-    function getZoneFn ( domain, withZone ) {
-      
-      client.browseZones( { name: domain } )
-        .then( function ( zones ) {
-          var seekingZones = zones.result.filter( function ( zone ) { return zone.name === domain } )
-
-          if ( seekingZones.length === 1 ) {
-            return withZone( null, seekingZones[ 0 ] )
-          } else {
-            return withZone( null, false )
-          }
-        } )
-        .catch( function ( error ) {
-          return withZone( error )
-        } )
-    }
+  function returnCname ( cname ) {
+    callback( null, cname ) 
   }
 
-  function getOrCreateCname () {
-    var baseRecordOptions = { type: 'CNAME', proxied: true }
+  function handleCnameError ( error ) {
+     callback( error )
+  }
 
-    return miss.through.obj( function ( row, enc, next ) {
-      console.log( 'create-cname-record:get-or-create' )
-      if ( !row.zoneId ) {
-        row.cname = false;
-        next( null, row )
-      }
-      
-      gatherCnames( row.zoneId, function ( error, cnames ) {
-        if ( error ) return next( error )
+  function handleZone ( zone ) {
+    Object.assign( recordValues, { zone_id: zone.id } )
+    return cloudflare.getCnameForSiteName( siteBucket, zone )
+  }
 
-        var recordValues = Object.assign( {
-            name: row.siteBucket,
-            zone_id: row.zoneId,
-          },
-          baseRecordOptions,
-          cnameForDomain( row.domains, row.siteBucket ) )
-
-        var existingRecord = valueInArray( cnames, nameKey, row.siteBucket )
-
-        if ( !existingRecord ) {
-          // does not exist, lets make it
-          return createRecord( recordValues, returnCname )
-        }
-        else if ( existingRecord.content !== recordValues.content ) {
-          // exists, but has dated content, lets update it
-          existingRecord.content = recordValues.content;
-          return updateRecord( existingRecord, returnCname )
-        }
-        else return returnCname( null, existingRecord )
-
-        function returnCname ( error, cname ) {
-          row.cname = cname;
-          next( null, row )
-        }
-      } )
-    } )
-
-    function valueInArray ( arr, keyFn, seekingValue ) {
-      var index = arr.map( keyFn ).indexOf( seekingValue )
-      if ( index === -1 ) return undefined;
-      return arr[ index ]
+  function handleCname ( existingRecord ) {
+    if ( existingRecord && existingRecord.content !== recordValues.content ) {
+      existingRecord.content = recordValues.content
+      return updateRecord( existingRecord )
     }
-
-    function nameKey ( record ) {
-      return record.name;
+    else if ( ! existingRecord ) {
+      return createRecord( recordValues )
+    }
+    else if ( existingRecord ) {
+      return Promise.resolve( existingRecord )
     }
   }
 
   function createRecord ( recordValues, withRecord ) {
-
-    var dnsCnameRecord = Cloudflare.DNSRecord.create( Object.assign( {}, recordValues ) );
-
-    client.addDNS( dnsCnameRecord )
-      .then( function ( cname ) {
-        return withRecord( null, cname )
-      } )
-      .catch( function ( error ) {
-        error.step = 'createCnameRecord:createRecord';
-        withRecord( error )
-      } )
+    return new Promise( function ( resolve, reject ) {
+      cloudflare.createCname( recordValues )
+        .then( resolve )
+        .catch( function ( error ) {
+          error.step = 'createCnameRecord:createRecord';
+          reject( error )
+        } )
+    } )
   }
 
   function updateRecord ( record, withRecord ) {
-
-    client.editDNS( record )
-      .then( function ( cname ) {
-        return withRecord( null, cname )
-      } )
-      .catch( function ( error ) {
-        error.step = 'createCnameRecord:updateRecord';
-        withRecord( error )
-      } )
-  }
-
-  function gatherCnames ( zone_id, returnCname ) {
-
-    var gatherOptions = { type: 'CNAME' }
-    var cnameSources = [];
-
-    function pluckCnamesFromRecords ( records ) {
-      cnameSources = cnameSources.concat( records )
-    }
-
-    function getPageOfCnames ( pageOptions, withPage ) {
-      if ( !pageOptions ) pageOptions = {};
-
-      client.browseDNS( zone_id, Object.assign( gatherOptions, pageOptions ) )
-        .then( function ( response ) {
-          pluckCnamesFromRecords( response.result )
-          withPage( null, { page: response.page, totalPages: response.totalPages, } )
-        } )
+    return new Promise( function ( resolve, reject ) {
+      cloudflare.updateCname( record )
+        .then( resolve )
         .catch( function ( error ) {
-          withPage( error )
+          error.step = 'createCnameRecord:updateRecord';
+          reject( error )
         } )
-
-    }
-
-    function paginate ( error, pagination ) {
-      if ( error ) return withCnames( error )
-
-      if ( pagination.page < pagination.totalPages ) return getPageOfCnames( { page: pagination.page + 1 }, paginate )
-
-      else return returnCname( null, cnameSources )
-    }
-
-    return getPageOfCnames( { page: 1 }, paginate )
+    } )
   }
 }
 

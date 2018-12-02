@@ -50,7 +50,7 @@ commandor.on( 'ready', function ( commandHandlers ) {
   }
 
   function handleCmd ( cmdArgs ) {
-    commandHandlers( cmdArgs.cmdType, cmdArgs.data() )
+    commandHandlers.queueMemcached( { tube: cmdArgs.cmdType, data: cmdArgs.data() } )
   }
 
 } )

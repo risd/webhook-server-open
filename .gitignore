@@ -15,7 +15,7 @@ results
 npm-debug.log
 node_modules
 
-libs/keyfile.key
+libs/keyfile.key*
 service-accounts
 .env
 .env.test

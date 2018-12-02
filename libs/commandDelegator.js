@@ -1,4 +1,4 @@
-'use strict';
+
 
 /**
 * The command delegator is a program that moves jobs queued up in firebase into beanstalk. We move
@@ -9,7 +9,7 @@
 
 var events = require('events');
 var util = require('util');
-var firebase = require('firebase');
+var Firebase = require('./firebase/index.js');
 var colors = require('colors');
 var _ = require('lodash');
 var async = require('async');
@@ -55,48 +55,46 @@ function CommandDelegator (config, logger) {
   // Memcached is used for locks, to avoid setting the same job
   var memcached = new Memcached(config.get('memcachedServers'));
   var self = this;
-  var firebaseUrl = config.get('firebase') || '';
-  this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/');
 
-  var deploys = Deploys( this.root.child( 'buckets' ) )
+  // project::firebase::initialize::done
+  var firebase = Firebase( config().firebase )
+  this.root = firebase.database()
+
+  // project::firebase::deploys-integration::done
+  var deploys = Deploys( this.root )
 
   // Where in firebase we look for commands, plus the name of the locks we use in memcached
   var commandUrls = [
-    { commands: 'management/commands/build/', lock: 'build', tube: 'build' },
-    { commands: 'management/commands/create/', lock: 'create', tube: 'create' },
-    { commands: 'management/commands/verification/', lock: 'verification', tube: 'verification' },
-    { commands: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
-    { commands: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
-    { commands: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
-    { commands: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
-    { commands: 'management/commands/redirects/', lock: 'redirects', tube: 'redirects' },
-    { commands: 'management/commands/domainMap/', lock: 'domainMap', tube: 'domainMap' },
+    { command: 'management/commands/build/', lock: 'build', tube: 'build' },
+    { command: 'management/commands/create/', lock: 'create', tube: 'create' },
+    // no sign of what this is, or what it should do
+    // { command: 'management/commands/verification/', lock: 'verification', tube: 'verification' },
+    { command: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
+    { command: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
+    { command: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
+    { command: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
+    { command: 'management/commands/redirects/', lock: 'redirects', tube: 'redirects' },
+    { command: 'management/commands/domainMap/', lock: 'domainMap', tube: 'domainMap' },
   ];
 
   var commandHandlersStore = commandHandlersInterface();
 
-  self.root.auth(config.get('firebaseSecret'), function(err) {
-    if(err) {
-      console.log(err.red);
-      process.exit(1);
-    }
+  // For each command we listen on a seperate tube and firebase url
+  console.log('Starting clients'.red);
 
-    // For each command we listen on a seperate tube and firebase url
-    console.log('Starting clients'.red);
+  var commandTasks = commandUrls.map( connectionForCommandTasks );
 
-    var commandTasks = commandUrls.map( connectionForCommandTasks );
-
-    return async.parallel( commandTasks, onCommandHandlers )
-  });
+  async.parallel( commandTasks, onCommandHandlers )
 
   return this;
 
   function onCommandHandlers ( error, commandHandlers ) {
-    commandHandlers.forEach( function ( handler ) {
-      commandHandlersStore.add(  handler.tube, handler.commandHandler )
-    } )
+    if ( error ) {
+      return self.emit( 'error', error )
+    }
+    commandHandlers.forEach( commandHandlersStore.add )
 
-    self.emit( 'ready', commandHandlersStore.queue )
+    self.emit( 'ready', commandHandlersStore.external() )
   }
 
   function connectionForCommandTasks ( item ) {
@@ -106,21 +104,21 @@ function CommandDelegator (config, logger) {
       client.connect(config.get('beanstalkServer'), function(err, conn) {
         if(err) {
           console.log(err);
-          return process.exit(1);
+          return onConnectionMade( err )
         }
         conn.use(item.tube, function(err, tubename) {
           if(err) {
             console.log(err);
-            return process.exit(1);
+            return onConnectionMade( err )
           }
-          var commandHandler = handleCommands(conn, item);
-          onConnectionMade( null, { tube: item.tube, commandHandler: commandHandler })
+          var memcachedCommandHandler = handleCommands(conn, item);
+          onConnectionMade( null,  Object.assign( { memcachedCommandHandler: memcachedCommandHandler }, item ) )
         });
       });
       
       client.on('close', function(err) {
         console.log('Closed connection');
-        return process.exit(1);
+        return onConnectionMade( err )
       });
     }
   }
@@ -128,21 +126,34 @@ function CommandDelegator (config, logger) {
   function commandHandlersInterface () {
     var handlers = {};
     
-    var add = function ( tube, handler ) {
-      handlers[ tube ] = handler;
+    var add = function ( command ) {
+      handlers[ command.tube ] = command;
     }
 
-    var queue = function ( tube, commandData ) {
+    var queueMemcached = function ( toQueue ) {
       try {
-        handlers[ tube ]( commandData )
+        handlers[ toQueue.tube ].memcachedCommandHandler( toQueue.data )
       } catch ( error ) {
         throw error;
       }
     }
 
+    var queueFirebase = function ( toQueue, callback ) {
+      if ( typeof callback !== 'function' ) callback = function noop () {}
+
+      self.root.ref( handlers[ toQueue.tube ].command ).push().set( toQueue.data, callback )
+    }
+
+    var external = function () {
+      return {
+        queueMemcached: queueMemcached,
+        queueFirebase: queueFirebase,
+      }
+    }
+
     return {
       add: add,
-      queue: queue,
+      external: external,
     }
   }
 
@@ -185,17 +196,23 @@ function CommandDelegator (config, logger) {
   // as jobs are added we queue them up ten listen again.
   function handleCommands(client, item) { 
     console.log('Waiting on commands for ' + item.tube);
-    self.root.child(item.commands).on('child_added', onCommandSnapshot, onCommandSnapshotError);
+
+    // project::firebase::ref::done
+    // project::firebase::on--child_added::done
+    self.root.ref(item.command).on('child_added', onCommandSnapshot, onCommandSnapshotError);
 
     return handleCommandData;
 
     function onCommandSnapshot ( snapshot ) {
 
       var payload = snapshot.val();
-      var identifier = snapshot.name();
+      var identifier = snapshot.key;
       
       // We remove the data immediately to avoid duplicates
-      snapshot.ref().remove();
+      // project::firebase::ref::done
+      // project::firebase::child::done
+      // project::firebase::remove::done
+      self.root.ref(item.command).child(snapshot.key).remove()
 
       var commandData = {
         payload: payload,
@@ -236,9 +253,15 @@ function CommandDelegator (config, logger) {
           if ( payload.siteBucket ) {
             var siteBuckets = [ payload.siteBucket ]
           }
+          else if ( payload.branch ) {
+            var siteBuckets = configuration.deploys
+              .filter( function ( deploy ) { return deploy.branch === payload.branch } )
+              .map( function ( deploy ) { return deploy.bucket } )
+          }
           else {
             var siteBuckets = configuration.deploys.map( function ( deploy ) { return deploy.bucket } )
           }
+
           siteBuckets = _.uniq( siteBuckets )
 
           return siteBuckets.map( toBuildCommandArgs ).forEach( queueCommandForArgs )
@@ -313,6 +336,7 @@ function CommandDelegator (config, logger) {
 
         function onQueueComplete (error) {
           if (error) {
+            console.log( error )
             console.log('command not queued');
           } else {
             console.log('command queued')

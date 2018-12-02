@@ -1,6 +1,6 @@
 var _ = require( 'lodash' )
 var async = require( 'async' )
-var firebase = require( 'firebase' )
+var Firebase = require( './firebase/index.js' )
 var FastlyWebhook = require( './fastly/index' )
 var JobQueue = require( './jobQueue.js' )
 
@@ -10,35 +10,37 @@ module.exports.start = function ( config, logger ) {
   var jobQueue = JobQueue.init( config )
   var cdn = FastlyWebhook( config.get( 'fastly' ) )
 
-  var firebaseName = config.get( 'firebase' )
-  this.root = new firebase( 'https://' + firebaseName + '.firebaseio.com/' )
+  // project::firebase::initialize::done
+  var firebase = Firebase( config().firebase )
+  this.root = firebase.database()
 
-  var reportStatus = function(site, message, status) {
-    var messagesRef = self.root.root().child('/management/sites/' + site + '/messages/');
-    messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: 'DOMAINS' }, function() {
+  var reportStatus = function(site, message, status, code) {
+    if ( ! code ) code = 'DOMAINS'
+    // project::firebase::ref::done
+    var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
+    // project::firebase::push::done
+    messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: code }, function() {
+      // project::firebase::ref::done
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
         if(size > 50) {
-          messagesRef.startAt().limit(1).once('child_added', function(snap) {
-            snap.ref().remove();
+          // project::firebase::startAt::done
+          // project::firebase::limiteToFirst::done
+          // project::firebase::once--child_added::done
+          // project::firebase::child::done
+          // project::firebase::remove::done
+          messagesRef.startAt().limitToFirst(1).once('child_added', function(snap) {
+            messagesRef.child(snap.key).remove();
           });
         }
       });
     });
   }
 
-  self.root.auth( config.get( 'firebaseSecret' ), function ( err ) {
-    if ( err ) {
-      console.log( err )
-      process.exit( 1 )
-    }
+  console.log( 'Waiting for commands' )
 
-    console.log( 'Waiting for commands' )
-
-    jobQueue.reserveJob( 'domainMap', 'domainMap', domainMapper )
-
-  } )
+  jobQueue.reserveJob( 'domainMap', 'domainMap', domainMapper )
 
   return domainMapper;
 

@@ -5,7 +5,7 @@ require('colors');
 var fs = require('fs');
 var _ = require('lodash');
 var domain = require('domain');
-var firebase = require('firebase');
+var Firebase = require('./firebase/index.js');
 var JobQueue = require('./jobQueue.js');
 var WebHookElasticSearch = require( 'webhook-elastic-search' )
 var WebhookSiteData = require( 'webhook-site-data' )
@@ -34,27 +34,20 @@ module.exports.start = function (config, logger) {
   var jobQueue = JobQueue.init(config);
 
   var self = this;
-  var firebaseUrl = config.get('firebase') || '';
 
-  this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/buckets');
+  var elasticOptions = config().elastic;
 
   var searchOptions = {
-    host: config.get('elasticServer'),
-    username: config.get('elasticUser'),
-    password: config.get('elasticPassword'),
+    host: elasticOptions.host,
+    username: elasticOptions.auth.username,
+    password: elasticOptions.auth.password,
   }
   var search = WebHookElasticSearch( searchOptions )
 
-  console.log( 'searchOptions' )
-  console.log( searchOptions )
+  var firebase = Firebase( config().firebase )
+  this.root = firebase.database()
 
-  var siteDataOptions = {
-    firebase: {
-      name: config.get('firebase'),
-      secret: config.get('firebaseSecret'),
-    },
-  }
-  var whSiteData = WebhookSiteData( siteDataOptions )
+  var whSiteData = WebhookSiteData( { firebase: this.root } )
 
   /*
   *  Reports the status to firebase, used to display messages in the CMS
@@ -64,32 +57,24 @@ module.exports.start = function (config, logger) {
   *  @param status  The status code to send (same as command line status codes)
   */
   var reportStatus = function(site, message, status) {
-    var messagesRef = self.root.root().child('/management/sites/' + site + '/messages/');
+    var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
     messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: 'SITE_INDEX' }, function() {
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
         if(size > 50) {
-          messagesRef.startAt().limit(1).once('child_added', function(snap) {
-            snap.ref().remove();
+          messagesRef.startAt().limitToFirst(1).once('child_added', function(snap) {
+            messagesRef.child(snap.key).remove();
           });
         }
       });
     });
   };
 
-  self.root.auth(config.get('firebaseSecret'), function(err) {
-    if(err) {
-      console.log(err.red);
-      process.exit(1);
-    }
+  console.log('Waiting for commands'.red);
 
-    console.log('Waiting for commands'.red);
-
-    // Wait for a searhc index job, extract info from payload
-    jobQueue.reserveJob('siteSearchReindex', 'siteSearchReindex', siteSearchReindexJob);
-
-  });
+  // Wait for a searhc index job, extract info from payload
+  jobQueue.reserveJob('siteSearchReindex', 'siteSearchReindex', siteSearchReindexJob);
 
   return siteSearchReindexJob;
 
@@ -107,16 +92,15 @@ module.exports.start = function (config, logger) {
 
     console.log('Processing Command For '.green + site.red);
 
-    self.root.root().child('management/sites/' + site).once('value', function(siteData) {
+    self.root.ref('management/sites/' + site).once('value', function(siteData) {
       var siteValues = siteData.val();
 
       // If the site does not exist, may be stale build, should no longer happen
       if(!siteValues) {
-        jobCallback();
-        return;
+        return jobCallback( new Error( `No site with name ${ site }` ) )
       }
 
-      var siteName = unescapeSite( siteData.name() );
+      var siteName = unescapeSite( siteData.key )
 
       // Run a domain so we can survive any errors
       var domainInstance = domain.create();
@@ -132,6 +116,9 @@ module.exports.start = function (config, logger) {
         
         search.siteEntries( siteName, function ( error, siteIndex ) {
           whSiteData.get( { siteName: siteName, key: siteValues.key }, function ( error, retrievedSiteData ) {
+            function noSiteDataError () { return new Error( `No data for ${ siteName }.` ) }
+            if ( error ) return jobCallback( noSiteDataError() )
+            if ( ! retrievedSiteData || ! retrievedSiteData.data || ! retrievedSiteData.contentType ) return jobCallback( noSiteDataError() )
 
             var updateIndexOptions = {
               siteName: siteName,
@@ -153,7 +140,7 @@ module.exports.start = function (config, logger) {
               if ( results.items ) {
                 console.log( 'indexed-items:' + results.items.length )
               }
-              reportStatus(siteData.name(), 'Re-index process complete', 0);
+              reportStatus(siteData.key, 'Re-index process complete', 0);
               jobCallback( error )
 
             } )

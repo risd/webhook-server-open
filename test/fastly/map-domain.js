@@ -1,4 +1,4 @@
-var testOptions = require( './env-options.js' )()
+var testOptions = require( '../env-options.js' )()
 
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
@@ -8,7 +8,7 @@ var fastlyWebhook = require( '../../libs/fastly/index.js' )
 webhookTasks( grunt )
 
 var cdn = fastlyWebhook( grunt.config().fastly )
-var mapOptions = { maskDomain: process.env.FASTLY_MAP_DOMAIN_KEY, contentDomain: process.env.FASTLY_MAP_DOMAIN_VALUE }
+var mapOptions = { maskDomain: testOptions.fastlyMapDomainKey, contentDomain: testOptions.fastlyMapDomainValue }
 
 test( 'map-domain', function ( t ) {
   t.plan( 2 )

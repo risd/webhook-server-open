@@ -15,4 +15,4 @@ build_worker4: npm run build-worker
 # timeout_worker_2: npm run timeout-worker
 # timeout_worker_3: npm run timeout-worker
 # timeout_worker_4: npm run timeout-worker
-domain_mapper: npm run domain-mapper
+# domain_mapper: npm run domain-mapper
