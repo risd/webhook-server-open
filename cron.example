@@ -10,4 +10,4 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
 # m h dom mon dow  command
 0 12    * * *    cd /home/webhook/webhook-server-open/ && npm run backup-cron
-0 4    * * *    cd /home/webhook/webhook-server-open/ && npm run flush-build-queue > "ran-flush-build-queue-$(date)"
+0 4    * * *    cd /home/webhook/webhook-server-open/ && npm run flush-build-queue
