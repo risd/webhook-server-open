@@ -336,6 +336,7 @@ function CommandDelegator (config, logger) {
 
         function onQueueComplete (error) {
           if (error) {
+            console.log( error )
             console.log('command not queued');
           } else {
             console.log('command queued')
