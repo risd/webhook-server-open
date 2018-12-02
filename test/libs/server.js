@@ -17,25 +17,35 @@ var Firebase = require( '../../libs/firebase/index.js' )
 var firebase = Firebase( grunt.config().firebase )
 
 var siteName = testOptions.serverSiteName
+// get these variables based on the database
 var siteToken;
+var backupTimestamp;
 
-test( 'get-key-for-server-queries', function ( t ) {
+test( 'get-vars-for-server-queries', function ( t ) {
   t.plan( 1 )
   // get site token for site established in the `creator` test
   firebase.siteKey( { siteName: siteName } )
     .then( setSiteToken )
-    .catch( siteKeyError )
+    .then( setBackupTimestamp )
+    .catch( handleError )
 
   function setSiteToken ( token ) {
     siteToken = token.val();
+    return firebase.backups()
+  }
+
+  function setBackupTimestamp ( backupsSnapshot ) {
+    var backups = backupsSnapshot.val()
+    if ( backups === null ) return handleError( new Error( 'No backups set. Run the backup test before running the server test.' ) )
+    backupTimestamp = backups[ Object.keys( backups )[ Object.keys( backups ).length - 1 ] ]
+
     runTests( testObjects() )
     t.pass( 'Started tests' )
   }
 
-  function siteKeyError ( error ) {
+  function handleError ( error ) {
     t.fail( 'Could not start tests' )
-    console.log( error )
-    process.exit( 1 )
+    t.end()
   }  
 } )
 
@@ -66,7 +76,7 @@ function testObjects () {
         method: 'GET',
         uri: serverUrlForPath( '/backup-snapshot/' ),
         qs: Object.assign( {
-          timestamp: '1539893985031',
+          timestamp: backupTimestamp,
         }, siteTokenFn() ),
       },
       res: [ statusCode( 200 ), jsonBody( siteDataShape ), ],
