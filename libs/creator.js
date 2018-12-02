@@ -333,6 +333,18 @@ function updateAcls () {
     row.cloudStorage.buckets.updateAcls( row.siteBucket, function (err, body) {
       console.log( err )
       console.log( body )
+      if ( err && typeof err === 'object' ) {
+        error.step = 'update-acls'
+        return next( error )
+      }
+      else if ( err && typeof err === 'number' ) {
+        var error = new Error( err )
+        error.step = 'update-acls'
+        return next( error )
+      }
+      else if ( err ) {
+        return next( err )
+      }
       next( null, row )
     } )
 
@@ -347,9 +359,20 @@ function updateIndex () {
     row.cloudStorage.buckets.updateIndex(
       row.siteBucket,
       'index.html', '404.html',
-      function ( error, body ) {
-        if ( error ) { error.step = 'updateIndex'; return next( error, null ) }
-        else next( null, row )
+      function ( err, body ) {
+        if ( err && typeof err === 'object' ) {
+          error.step = 'update-acls'
+          return next( error )
+        }
+        else if ( err && typeof err === 'number' ) {
+          var error = new Error( err )
+          error.step = 'update-acls'
+          return next( error )
+        }
+        else if ( err ) {
+          return next( err )
+        }
+        next( null, row )
       } )
   });
 }
