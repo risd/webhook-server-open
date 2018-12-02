@@ -6,7 +6,7 @@ var ElasticSearch = require( './elastic-search/index.js' )
 
 module.exports = DeleteSite;
 
-// todo, add removal of elastic search indexing
+// todo, add cloud storage bucket removal
 
 function DeleteSite ( options ) {
   if ( ! ( this instanceof DeleteSite ) ) return new DeleteSite( options )
