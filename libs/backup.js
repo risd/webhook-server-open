@@ -27,13 +27,12 @@ module.exports.start = function (config, logger, callback) {
   var self = this;
 
   var firebase = Firebase( config().firebase )
-  this.root = firebase.database()
 
   var options = {
     backupBucket: config.get( 'backupBucket' ),
     backupTimestamp: Date.now(),
     firebase: config.get( 'firebase' ),
-    removeBackup: { timestamp: false, id: false },
+    removeBackup: { timestamp: false, key: false },
   }
 
   async.series( [
@@ -42,7 +41,7 @@ module.exports.start = function (config, logger, callback) {
     createBackup,
     storeBackupTimestampReference,
     checkRemoveOldestBackup, // adds { removeBackupOfTimestamp? } to options
-    removeBackupId,
+    removeBackupKey,
     removeBackupTimestamp,
   ], callback )
 
@@ -70,44 +69,53 @@ module.exports.start = function (config, logger, callback) {
         cacheControl: "no-cache"
       } )
     }, function onComplete ( error, response, body ) {
+      if ( error ) return next( error )
       options.uploadUrl = response.headers.location;
       next()
     } )
   }
 
   function createBackup ( next ) {
-    // project::firebase::export::done
-    var url = `https://${ options.firebase.name }.firebaseio.com/.json?auth=${ options.firebase.secretKey }&format=export`
-    request.get( url ).pipe( request.put( options.uploadUrl, next ) )
+    firebase.backupUrl().then( handleBackupUrl )
+    
+    function handleBackupUrl ( backupUrl ) {
+      request.get( backupUrl ).pipe( request.put( options.uploadUrl, next ) )
+    }
   }
 
   function storeBackupTimestampReference ( next ) {
-    // project::firebase::push::done
-    self.root.ref( 'management/backups/' ).push( options.backupTimestamp, next )
+    firebase.backups( { push: true }, options.backupTimestamp, next )
   }
 
   function checkRemoveOldestBackup ( next ) {
-    // project::firebase::once::done
-    self.root.ref( 'management/backups/' ).once( 'value', function( snapshot ) {
-      var data = snapshot.val()
+    firebase.backups().then( handleBackups ).catch( next )
 
-      var ids = _.keys( data )
+    function handleBackups ( backupsSnapshot) {
+      var backups = backupsSnapshot.val()
 
-      if( ids.length > 30 ) {
-        var oldestId = ids[ 0 ]
-        var oldestTimestamp = data[ oldestId ]
+      // no backups set
+      if ( backups === null ) return next()
 
-        options.removeBackup.id = oldestId;
-        options.removeBackup.timestamp = oldestTimestamp;
+      var backupKeys = _.keys( backups )
+
+      if ( backupKeys.length > 30 ) {
+        var oldestBackupKey = backupKeys[ 0 ]
+        var oldestBackupTimestamp = backups[ oldestBackupKey ]
+
+        options.removeBackup.key = oldestBackupKey;
+        options.removeBackup.timestamp = oldestBackupTimestamp;
       }
 
       next()
-    } )
+    }
   }
 
-  function removeBackupId ( next ) {
-    if ( options.removeBackup.id === false ) return next()
-    self.root.ref( 'management/backups/' + options.removeBackup.id ).remove( next )
+  function removeBackupKey ( next ) {
+    console.log( 'removeBackupKey' )
+    if ( options.removeBackup.key === false ) return next()
+    firebase.backups( { key: options.removeBackup.key }, null )
+      .then( next )
+      .catch( next )
   }
 
   function removeBackupTimestamp ( next ) {
@@ -116,8 +124,9 @@ module.exports.start = function (config, logger, callback) {
 
     function deleteHandler ( error ) {
       // if the error is a 204 error, ths means that there was no backup to remove
-      if ( error && error !== 204 ) return next( error )
-      next()
+      if ( error && error === 204 ) return next()
+      else if ( error ) return next( error )
+      else return next()
     }
   }
 }

@@ -52,6 +52,8 @@ WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
 WHFirebase.prototype.allUsers = WebhookUsers;
 WHFirebase.prototype.resetUserPasswordLink = WebhookUserPasswordResetLink;
 WHFirebase.prototype.deleteSite = WebhookSiteDelete;
+WHFirebase.prototype.backupUrl = WebhookSiteBackupURL;
+WHFirebase.prototype.backups = WebhookBackups;
 
 // helper - for initialization
 
@@ -214,6 +216,39 @@ function WebhookSiteDelete ( options ) {
   }
 }
 
+function WebhookBackups ( options, value, pushCallback ) {
+  var keyPath = backupManagementPath( options )
+  if ( options && options.key && value === null ) {
+    // set, remove backup key
+    return firebaseDatabaseSetValueForKeyPath( this._app, keyPath, value )
+  }
+  else if ( options && options.push && value && pushCallback ) {
+    // set, push key
+    return firebaseDatabasePushValueForKeyPath( this._app, keyPath, value, pushCallback )
+  }
+  else if ( options && options.key && typeof value === 'undefined' ) {
+    // get, backup timestamp
+    return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+  }
+  else if ( typeof options === 'undefined' && typeof value === 'undefined' ) {
+    // get all backup keys
+    return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+  }
+  else {
+    return this._app.Promise.reject( new Error( 'Could not return a promise for options proivded to WebhookBackups.' ) )
+  }
+}
+
+function WebhookSiteBackupURL () {
+  var uri = `https://${ this._firebaseName }.firebaseio.com/.json?format=export`
+  return this._getAccessToken().then( urlForToken )
+
+  function urlForToken ( token ) {
+    uri += `&access_token=${ token }`
+    return Promise.resolve( uri )
+  }
+}
+
 // helpers - interfaces into data
 
 function firebaseDatabaseSetValueForKeyPath ( firebase, keyPath, value ) {
@@ -239,7 +274,21 @@ function firebaseDatabaseOnceValueForKeyPath ( firebase, keyPath ) {
   return firebase.database().ref( keyPath ).once( 'value' )
 }
 
+function firebaseDatabasePushValueForKeyPath ( firebase, keyPath, value, callback ) {
+  return firebase.database().ref( keyPath ).push( value, callback )
+}
+
 // helpers - construct paths
+
+function backupManagementPath ( options ) {
+  var base = `management/backups`
+  if ( options && options.key ) {
+    return `${ base }/${ options.key }`
+  }
+  else {
+    return base;
+  }
+}
 
 function siteManagementPath ( options ) {
   var base = `management/sites`
