@@ -5,6 +5,10 @@ var test = require( 'tape' )
 
 webhookTasks( grunt )
 
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
 grunt.config.merge( { suppressJobQueue: true } )
 
 var redirector = require( '../../libs/redirects.js' ).start( grunt.config, grunt.log )

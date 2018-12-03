@@ -6,6 +6,10 @@ var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
 var DomainMapper = require( '../../libs/domain-mapper.js' )
 var Firebase = require( '../../libs/firebase/index.js' )
 var firebaseEscape = require( '../../libs/utils/firebase-escape.js' )
