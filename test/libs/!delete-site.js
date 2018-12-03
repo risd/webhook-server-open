@@ -6,6 +6,10 @@ var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
 var deleteSite = require( '../../libs/delete.js' )
 
 var siteName = testOptions.createSiteName;

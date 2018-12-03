@@ -15,9 +15,8 @@ results
 npm-debug.log
 node_modules
 
-libs/keyfile.key*
 service-accounts
-.env
-.env.test
-google-compute-engine-id.json
+.env*
+!.env.example
+!.env.test.example
 beanstalk

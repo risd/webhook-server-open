@@ -5,6 +5,10 @@ var test = require( 'tape' )
 
 webhookTasks( grunt )
 
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
 var inviter = require( '../../libs/invite.js' )
 
 grunt.config.merge( { suppressJobQueue: true } )

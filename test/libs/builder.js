@@ -5,6 +5,10 @@ var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
 var builder = require( '../../libs/builder.js' )
 
 grunt.config.merge( { suppressJobQueue: true } )

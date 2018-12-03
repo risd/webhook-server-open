@@ -5,6 +5,10 @@ var Cloudflare = require( '../../libs/cloudflare/index.js' )
 
 webhookTasks( grunt );
 
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
 
 var cloudflareOptions = grunt.config.get( 'cloudflare' )
 var cnameRecordOptions = {

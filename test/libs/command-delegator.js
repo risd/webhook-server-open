@@ -5,6 +5,10 @@ var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
 var unescape = require( '../../libs/utils/firebase-unescape.js' )
 var commandDelegator = require( '../../libs/commandDelegator.js' )
 var JobQueue = require( '../../libs/jobQueue.js' )
