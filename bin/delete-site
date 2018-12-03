@@ -1,0 +1,29 @@
+#!/usr/bin/env node
+
+var grunt = require( 'grunt' );
+var webhookTasks = require( '../Gruntfile.js' );
+var deleteSite = require( '../libs/delete.js' )
+
+webhookTasks( grunt );
+
+var site = process.argv[ 2 ]
+
+if ( ! site ) {
+  console.log( `Delete site requires a site name to be passed in.` )
+  process.exit()
+}
+
+var deletor = deleteSite( grunt.config() )
+deletor.delete( site )
+  .then( handleDelete )
+  .catch( handleDeleteError )
+
+function handleDelete () {
+  console.log( `${ site } deleted` )
+  process.exit( 0 )
+}
+function handleDeleteError ( error ) {
+  console.log( `Could not delete ${ site }` )
+  console.log( error )
+  process.exit( 1 )
+}

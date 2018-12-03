@@ -4,7 +4,7 @@
 var fs = require('fs');
 var url = require( 'url' )
 var assert = require( 'assert' )
-var firebase = require('firebase');
+var Firebase = require('./firebase/index.js');
 var colors = require('colors');
 var _ = require('lodash');
 var uuid = require('node-uuid');
@@ -37,13 +37,12 @@ var cachePurge = utils.cachePurge;
 var addMaskDomain = utils.addMaskDomain;
 var addPurgeProxy = utils.addPurgeProxy;
 
-var escapeUserId = function(userid) {
-  return userid.replace(/\./g, ',1');
-};
+var firebaseEscape = require( './utils/firebase-escape.js' )
+var firebaseUnescape = require( './utils/firebase-unescape.js' )
 
-var unescapeSite = function(site) {
-  return site.replace(/,1/g, '.');
-}
+// var escapeUserId = function(userid) {
+//   return userid.replace(/\./g, ',1');
+// };
 
 function noop () {}
 
@@ -64,9 +63,10 @@ module.exports.start = function (config, logger) {
   var jobQueue = JobQueue.init(config);
 
   var self = this;
-  var firebaseUrl = config.get('firebase') || '';
 
-  this.root = new firebase('https://' + firebaseUrl +  '.firebaseio.com/buckets');
+  // project::firebase::initialize::done
+  var firebase = Firebase( config().firebase )
+  this.root = firebase.database()
 
   var buildFolderRoot = '../build-folders';
   var setupBucketOptions = {
@@ -86,19 +86,22 @@ module.exports.start = function (config, logger) {
    */
   var reportStatus = function(site, message, status, code) {
     if ( ! code ) code = 'BUILT'
-    var messagesRef = self.root.root().child('/management/sites/' + site + '/messages/');
+    // project::firebase::ref::done
+    var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
+    // project::firebase::push::done
     messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: code }, function() {
+      // project::firebase::once--value::done
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
         if(size > 50) {
-          messagesRef.startAt().limit(1).once('child_added', function(snap) {
-            snap.ref().remove();
+          messagesRef.startAt().limitToFirst(1).once('child_added', function(snap) {
+            messagesRef.child(snap.key).remove();
           });
         }
       });
     });
-  };
+  }
 
   /**
    * Downloads the site archive from cloud storage
@@ -136,18 +139,14 @@ module.exports.start = function (config, logger) {
     }
   }
 
-  self.root.auth(config.get('firebaseSecret'), function(err) {
-    if(err) {
-      console.log(err.red);
-      process.exit(1);
-    }
 
-    console.log('Waiting for commands'.red);
+  // Initialize ----
+  console.log('Waiting for commands'.red);
 
-    // Wait for a build job, extract info from payload
-    jobQueue.reserveJob('build', 'build', buildJob);
+  // Wait for a build job, extract info from payload
+  jobQueue.reserveJob('build', 'build', buildJob);
 
-  });
+
 
   function buildJob (payload, identifier, data, client, jobCallback) {
     console.log('Triggered command!');
@@ -162,12 +161,12 @@ module.exports.start = function (config, logger) {
     var site = data.sitename;
     var siteBucket = data.siteBucket;
     var branch = data.branch;
-    var deploys = data.deploys;
     var noDelay = data.noDelay || false;
 
     console.log('Processing Command For '.green + site.red);
 
-    self.root.root().child('management/sites/' + site).once('value', function(siteData) {
+    // project::firebase::ref::done
+    self.root.ref('management/sites/' + site).once('value', function(siteData) {
       var siteValues = siteData.val();
 
       // If the site does not exist, may be stale build, should no longer happen
@@ -179,7 +178,7 @@ module.exports.start = function (config, logger) {
       // Create build-folders if it isnt there
       mkdirp.sync('../build-folders/');
 
-      var siteName = siteData.name();
+      var siteName = siteData.key;
       var buildFolderRoot = '../build-folders';
       var buildFolder = buildFolderRoot + '/' + Deploys.utilities.nameForSiteBranch( site, siteBucket );
 
@@ -193,7 +192,7 @@ module.exports.start = function (config, logger) {
       function processSite(buildFolder, processSiteCallback) { 
         console.log( 'process-site:', buildFolder )
         // Only admin or the site owners can trigger a build
-        if(_(siteValues.owners).has(escapeUserId(userid)) || _(siteValues.users).has(escapeUserId(userid)) || userid === 'admin')
+        if(_(siteValues.owners).has(firebaseEscape(userid)) || _(siteValues.users).has(firebaseEscape(userid)) || userid === 'admin')
         {
           console.log( 'setup-pipeline' )
           // If build time is defined, we build it now, then put in a job back to beanstalk with a delay
@@ -236,12 +235,14 @@ module.exports.start = function (config, logger) {
           // emits an error, this is called and the stream is closed.
           function onPipelineComplete ( error ) {
             console.log( 'built-pipeline-complete' )
-            if ( error ) {
-              if ( typeof error.reportStatus ) {
-                reportStatus( siteName, error.reportStatus.message, error.reportStatus.status )
-                console.log( error.reportStatus.message );
-              }
-            } else {
+            if ( error && error.reportStatus && error.reportStatus.message && error.reportStatus.status ) {
+              reportStatus( siteName, error.reportStatus.message, error.reportStatus.status )
+              console.log( error.reportStatus.message );
+            }
+            else if ( error ) {
+
+            }
+            else {
               reportStatus( siteName, 'Built and uploaded to ' + siteBucket + '.', 0 )
             }
 
@@ -277,12 +278,13 @@ module.exports.start = function (config, logger) {
               runInDir( 'npm', args.buildFolder, [ 'install', '--production' ], function ( error ) {
                 if ( error ) {
                   console.log( error );
-                  error.reportStatus = {
+                  var installError = new Error( 'Could not complete npm install' ) 
+                  installError.reportStatus = {
                     site: args.siteName,
-                    message: 'Failed to build, errors encountered in build process',
+                    message: 'Failed to build, errors in installation of site dependencies for ' + siteBucket,
                     status: 1,
                   }
-                  return next( error )
+                  return next( installError )
                 }
                 else next( null, args )
               } )
@@ -295,8 +297,6 @@ module.exports.start = function (config, logger) {
               var setupBucketTasks = [ args.siteBucket ].map( makeDeployBucketTask )
               async.parallel( setupBucketTasks, function ( error ) {
                 if ( error ) {
-                  console.log( error )
-                  console.log( error.stack )
                   return next( error )
                 }
                 next( null, args )
@@ -307,7 +307,14 @@ module.exports.start = function (config, logger) {
             function makeDeployBucketTask ( siteBucket ) {
               return function makeBucketTask ( makeBucketTaskComplete ) {
                 setupBucket( Object.assign( setupBucketOptions, { siteBucket: siteBucket } ), function ( error, bucketSetupResults ) {
-                  if ( error ) return makeBucketTaskComplete( error )
+                  if ( error ) {
+                    error.reportStatus = {
+                      site: firebaseEscape( siteBucket ),
+                      message: 'Failed to build site, error in setting up bucket.',
+                      status: 1,
+                    }
+                    return makeBucketTaskComplete( error )
+                  }
                   makeBucketTaskComplete()
                 } )
               }
@@ -565,6 +572,7 @@ module.exports.start = function (config, logger) {
                   return function forFile ( buildFile ) {
                     return siteBuckets.map( function ( siteBucket ) {
                       var bucket = siteBucket.maskDomain ? siteBucket.maskDomain : siteBucket.contentDomain
+
                       return {
                         buildFolder: args.buildFolder,
                         command: 'grunt',
@@ -1024,8 +1032,9 @@ module.exports.start = function (config, logger) {
           }
 
         } else {
-          console.log('Site does not exist or no permissions');
-          processSiteCallback( null );
+          var message = 'Site does not exist or no permissions'
+          console.log( 'Site does not exist or no permissions' );
+          processSiteCallback( new Error( message ) );
         }
       }
 
@@ -1038,7 +1047,7 @@ module.exports.start = function (config, logger) {
         console.log(err.message);
         console.log(err.stack);
         reportStatus(siteName, 'Failed to build, errors encountered in build process of ' + siteBucket , 1);
-        jobCallback();
+        jobCallback( err );
       });
 
       domainInstance.run(function() {

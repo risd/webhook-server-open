@@ -57,6 +57,16 @@ module.exports.init = function (config) {
   self.reserveJob = function(tube, lockRoot, cb) {
     var client = new beanstalkd.Client();
 
+    client.on( 'error', function ( error ) {
+      console.log( error )
+      callback( error )
+    } )
+
+    client.on( 'close', function(err) {
+        console.log('Closed connection');
+        process.exit(1);
+    } )
+
     // Connect to beanstalk
     client.connect(config.get('beanstalkServer'), function(err, conn) {
       if(err) {
@@ -129,11 +139,6 @@ module.exports.init = function (config) {
         }); 
       });
     })
-
-    client.on('close', function(err) {
-        console.log('Closed connection');
-        process.exit(1);
-    });
   };
 
 
@@ -213,6 +218,7 @@ module.exports.init = function (config) {
   * @param callback   The callback to call when unlocked
   */
   self.unlockJob = function(client, lock, identifier, payload, callback) {
+    console.log( `unlock-job:${ lock }_${ identifier }_processing` )
     // Make sure identifier is legal memcached string I guess
     memcached.del(lock + '_' + identifier + '_processing', function(err) {
       if (callback) callback();
@@ -230,6 +236,7 @@ module.exports.init = function (config) {
   * @param complete   Function to call after unlock succeeds
   */
   self.lockJob = function(client, lock, identifier, payload, callback, complete) {
+    console.log( `lock-job:${ lock }_${ identifier }_processing` )
     var lockId = lock + '_' + identifier + '_processing';
     memcached.add(lockId, 1, jobLifetime, function(err) {
       if(err) {

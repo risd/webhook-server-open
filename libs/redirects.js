@@ -10,7 +10,7 @@ var url = require( 'url' )
 var crypto = require( 'crypto' )
 var request = require( 'request' )
 var FastlyWebhook = require( './fastly/index' )
-var firebase = require( 'firebase' )
+var Firebase = require( './firebase/index' )
 var JobQueue = require('./jobQueue.js')
 var Deploys = require( 'webhook-deploy-configuration' )
 var miss = require( 'mississippi' )
@@ -37,37 +37,38 @@ module.exports.start = function ( config, logger ) {
 
   var fastly = FastlyWebhook( config.get( 'fastly' ) )
 
-  var firebaseUrl = config.get( 'firebase' ) || '';
-  this.root = new firebase( 'https://' + firebaseUrl +  '.firebaseio.com/' );
+  var firebaseOptions = Object.assign(
+    { initializationName: 'redirects-worker' },
+    config().firebase )
 
-  var deploys = Deploys( this.root.child( 'buckets' ) )
+  // project::firebase::initialize::done
+  var firebase = Firebase( firebaseOptions )
+  this.root = firebase.database()
+
+  var deploys = Deploys( this.root )
 
   var reportStatus = function(site, message, status) {
-    var messagesRef = self.root.root().child('/management/sites/' + site + '/messages/');
+    // project::firebase::ref::done
+    var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
+    // project::firebase::push::done
     messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: 'REDIRECTS' }, function() {
+      // project::firebase::once--value::done
       messagesRef.once('value', function(snap) {
         var size = _.size(snap.val());
 
         if(size > 50) {
           messagesRef.startAt().limit(1).once('child_added', function(snap) {
-            snap.ref().remove();
+            messagesRef.child(snap.key).remove();
           });
         }
       });
     });
   }
 
-  self.root.auth( config.get( 'firebaseSecret' ), function(err) {
-    if( err ) {
-      console.log( err.red )
-      process.exit( 1 )
-    }
+  console.log( 'Waiting for commands'.red )
 
-    console.log( 'Waiting for commands'.red )
-
-    // Wait for create commands from firebase
-    jobQueue.reserveJob( 'redirects', 'redirects', redirects )
-  } )
+  // Wait for create commands from firebase
+  jobQueue.reserveJob( 'redirects', 'redirects', redirects )
 
   return redirects;
 
@@ -105,7 +106,7 @@ module.exports.start = function ( config, logger ) {
         return deploy.bucket;
       }
 
-      // { domain } => boolean
+      // domain => boolean
       var isNotDevelopmentDomain = function ( domain ) {
         return ! domain.endsWith( developmentDomain )
       }
@@ -185,7 +186,9 @@ module.exports.start = function ( config, logger ) {
 
       function getSiteKey ( taskComplete ) {
         console.log( 'get-site-key' )
-        self.root.child( 'management/sites/' + site ).once( 'value', onSiteData, onSiteError )
+        // project::firebase::ref::done
+        // project::firebase::once--value::done
+        self.root.ref( 'management/sites/' + site ).once( 'value', onSiteData, onSiteError )
 
         function onSiteData ( siteData ) {
           var siteValues = siteData.val()
@@ -202,7 +205,10 @@ module.exports.start = function ( config, logger ) {
       }
 
       function getRedirects ( siteKey, taskComplete ) {
-        self.root.child( 'buckets' ).child( site ).child( siteKey ).child( 'dev/settings/redirect' )
+        // project::firebase::ref::done
+        // project::firebase::child::done
+        // project::firebase::once--value::done
+        self.root.ref( 'buckets' ).child( site ).child( siteKey ).child( 'dev/settings/redirect' )
           .once( 'value', onRedirects, onRedirectsError )
 
         function onRedirects ( redirectsData ) {

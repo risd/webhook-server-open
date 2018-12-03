@@ -3,10 +3,11 @@
 # verify with
 # $ crontab -l
 # update with
-# $ crontab -e /path/to/backup-cron.example
+# $ crontab /path/to/cron.example
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
 # m h dom mon dow  command
 0 12    * * *    cd /home/webhook/webhook-server-open/ && npm run backup-cron
+0 4    * * *    cd /home/webhook/webhook-server-open/ && npm run flush-build-queue

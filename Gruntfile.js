@@ -15,6 +15,8 @@
 *    extractKey       - A utility to extract the SSH key for a google service acccount
 */
 
+require('dotenv').config({ silent: true });
+
 var builder = require('./libs/builder.js');
 var siteIndexer = require('./libs/siteIndex.js');
 var redirects = require('./libs/redirects.js');
@@ -28,30 +30,30 @@ var previewBuilder = require('./libs/preview-builder.js');
 var domainMapper = require('./libs/domain-mapper.js');
 var timeoutWorker = require('./libs/timeout-worker.js');
 
-require('dotenv').config({ silent: true });
-
 module.exports = function(grunt) {
   // Project configuration.
   grunt.initConfig({
-    firebase: process.env.FIREBASE,                                             // The name of your firebase
-    firebaseSecret: process.env.FIREBASE_KEY,                                    // Your firebase's API key
-    mailgunKey: process.env.MAILGUN_SECRET_KEY,                                           // The API key from mailgun
-    mailgunDomain: process.env.MAILGUN_DOMAIN,                                           // The domain that uses mailgun
-    fromEmail: process.env.FROM_EMAIL,                               // Mailgun will send ALL emails for ALL sites from this email address.
-    elasticServer: process.env.ELASTIC_SEARCH_SERVER,                               // The address of your elastic server
-    elasticUser: process.env.ELASTIC_SEARCH_USER,                                       // The read/write user on your elastic server
-    elasticPassword: process.env.ELASTIC_SEARCH_PASSWORD,                           // The password for your elastic user
-    //elasticOptions: {                                                 // This block is completely optional but useful if you need to specify
-    //  port: 9200,                                                     // more elasticsearch options. Possible keys are :
-    //  secure: false,                                                  // port, secure, defaultMethod, params, path, timeout, keepAlive and agent
-    //  defaultMethod: 'GET'                                            // Uncomment this block and fill in your required values if needed
-    //},
-    googleProjectId: process.env.GOOGLE_PROJECT_ID,                                 // Your google project ID. Usually something like whatever-123
-    sitesBucket: process.env.SITES_BUCKET,                             // The name of the build bucket on Google Cloud Storage
-    backupBucket: process.env.BACKUPS_BUCKET,                          // The name of the backup bucket on Google Cloud Storage
-    uploadsBucket: process.env.UPLOADS_BUCKET,                         // The name of the bucket to push all file uploads to
-    googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,  // The email of your projects Service Acccount
-    newrelicEnabled: false,                                             // Set to true to enable NewRelic monitoring (also make sure that a newrelic.js file exists)
+    firebase: {
+      name: process.env.FIREBASE,                                           // The name of your firebase
+      serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,          // Your firebase's service account key
+    },
+    mailgunKey: process.env.MAILGUN_SECRET_KEY,                             // The API key from mailgun
+    mailgunDomain: process.env.MAILGUN_DOMAIN,                              // The domain that uses mailgun
+    fromEmail: process.env.FROM_EMAIL,                                      // Mailgun will send ALL emails for ALL sites from this email address.
+    elastic: {
+      host: process.env.ELASTIC_SEARCH_SERVER,
+      port: 9200,
+      auth: {
+        username: process.env.ELASTIC_SEARCH_USER,
+        password: process.env.ELASTIC_SEARCH_PASSWORD,
+      },
+    },
+    googleProjectId: process.env.GOOGLE_PROJECT_ID,                         // Your google project ID. Usually something like whatever-123
+    sitesBucket: process.env.SITES_BUCKET,                                  // The name of the build bucket on Google Cloud Storage
+    backupBucket: process.env.BACKUPS_BUCKET,                               // The name of the backup bucket on Google Cloud Storage
+    uploadsBucket: process.env.UPLOADS_BUCKET,                              // The name of the bucket to push all file uploads to
+    googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,               // The email of your projects Service Acccount
+    newrelicEnabled: false,                                                 // Set to true to enable NewRelic monitoring (also make sure that a newrelic.js file exists)
     memcachedServers: [
       'localhost:11211'
     ],
@@ -71,7 +73,8 @@ module.exports = function(grunt) {
       token: process.env.FASTLY_TOKEN,
       service_id: process.env.FASTLY_SERVICE_ID,
       domains: parseJson( process.env.FASTLY_DOMAINS, [] ),
-    }
+    },
+    developmentDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {
@@ -134,6 +137,12 @@ module.exports = function(grunt) {
   grunt.registerTask('timeoutWorker', 'Timeout in order to test proper queue management.', function () {
     var done = this.async();
     timeoutWorker.start(grunt.config, grunt.log);
+  })
+
+  grunt.registerTask('flushBuildQueue', 'Stop build workers, flush build queue, and restart build workers.', function () {
+    var done = this.async()
+    var flusher = require('./libs/flush-queue.js')
+    flusher.start(grunt.config, grunt.log, done)
   })
 
   grunt.registerTask('echoConfig', 'Logs out the current config object.', function () {
