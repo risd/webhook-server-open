@@ -17,7 +17,8 @@ node_modules
 
 libs/keyfile.key*
 service-accounts
-.env
-.env.test
+.env*
+!.env.example
+!.env.test.example
 google-compute-engine-id.json
 beanstalk
