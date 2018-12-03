@@ -5,6 +5,10 @@ var webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
+grunt.config.merge( {
+  suppressJobQueue: true,
+} )
+
 var siteIndex = require( '../../libs/siteIndex.js' )
 
 test( 'index-site-with-no-data', function ( t ) {
