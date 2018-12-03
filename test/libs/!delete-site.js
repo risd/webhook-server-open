@@ -24,7 +24,6 @@ test( 'delete-site', function ( t ) {
   }
 
   function handleDeleteError ( error ) {
-    console.log( error )
     t.fail( `Could not delete site ${ siteName }.` )
   }
 

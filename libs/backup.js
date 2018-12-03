@@ -111,7 +111,6 @@ module.exports.start = function (config, logger, callback) {
   }
 
   function removeBackupKey ( next ) {
-    console.log( 'removeBackupKey' )
     if ( options.removeBackup.key === false ) return next()
     firebase.backups( { key: options.removeBackup.key }, null )
       .then( next )

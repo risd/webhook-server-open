@@ -10,7 +10,7 @@ module.exports = DeleteSite;
 
 function DeleteSite ( options ) {
   if ( ! ( this instanceof DeleteSite ) ) return new DeleteSite( options )
-    
+
   this._firebase = Firebase( options.firebase )
   this._fastly = Fastly( options.fastly )
   this._cloudflare = Cloudflare( options.cloudflare )
