@@ -19,6 +19,10 @@ var SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS = 'host_risddotedu_force_https';
 var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
 var GZIP_BASIC = 'gzip_basic';
 
+// todo
+// update force_https to be based on process.env.FASTLY_DOMAINS values
+// that have a `forceSSL` value set to true
+
 module.exports = FastlyWebhookService;
 
 function FastlyWebhookService ( options ) {

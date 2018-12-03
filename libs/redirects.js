@@ -18,6 +18,11 @@ var throughConcurrent = require( 'through2-concurrent' )
 var utils = require( './utils.js' )
 var isAscii = require( 'is-ascii' );
 
+// todo
+// update the `isNotDevelopmentDomain` to use the Fastly domains
+// configuration. If fastly.addressForDomain is not false, create
+// the redirect
+
 // Util streams
 var usingArguments = utils.usingArguments;
 var sink = utils.sink;
