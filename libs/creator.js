@@ -488,7 +488,7 @@ function createCnameRecord ( options, callback ) {
     }
   }
 
-  function createRecord ( recordValues, withRecord ) {
+  function createRecord ( recordValues ) {
     return new Promise( function ( resolve, reject ) {
       cloudflare.createCname( recordValues )
         .then( resolve )
@@ -499,7 +499,7 @@ function createCnameRecord ( options, callback ) {
     } )
   }
 
-  function updateRecord ( record, withRecord ) {
+  function updateRecord ( record ) {
     return new Promise( function ( resolve, reject ) {
       cloudflare.updateCname( record )
         .then( resolve )
