@@ -32,6 +32,7 @@ function WebhookSiteDelete ( siteName ) {
 
       function handleDeploys ( error, deployConfiguration ) {
         if ( error ) {
+          console.log( 'Could not get deploys for site.' )
           reject( error )
         }
         else {
@@ -53,6 +54,10 @@ function WebhookSiteDelete ( siteName ) {
 
   function deleteCnameForSiteNameTask ( siteName ) {
     return self._cloudflare.deleteCnameForSiteName( siteName )
+      .catch( function () {
+        console.log( 'Could not find a CNAME to remove.' )
+        return Promise.resolve()
+      } )
   }
 
   function deleteCDNDomain ( siteName ) {
