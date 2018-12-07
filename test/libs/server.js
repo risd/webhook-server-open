@@ -6,6 +6,15 @@ var test = require( 'tape' )
 var grunt = require( 'grunt' )
 var request = require( 'request' )
 var webhookTasks = require( '../../Gruntfile.js' )
+var cloudStorage = require( '../../libs/cloudStorage.js' )
+
+var deleteUploadOptions = function ( url ) {
+  var bucket = grunt.config.get('uploadsBucket')
+  return {
+    bucket: bucket,
+    remote: url.split( bucket )[ 1 ].slice( 1 ),
+  }
+}
 
 webhookTasks( grunt )
 
@@ -126,7 +135,29 @@ function testObjects () {
           body: "true"
         } ],
       },
-      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
+      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ), ensureFileExists() ],
+    },
+    {
+      name: 'POST /upload-file/ with spaces no resize url', 
+      req: {
+        method: 'POST',
+        uri: serverUrlForPath( '/upload-file/' ),
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+        multipart: [ {
+          'Content-Disposition': 'form-data; name="payload"; filename="img name .png"',
+          'Content-Type': mime.lookup( 'img.pdf' ),
+          body: fs.readFileSync( path.join( __dirname, '..', 'files', 'img.png' ) ),
+        }, {
+          'Content-Disposition': 'form-data; name="site"',
+          body: siteTokenFn().site,
+        }, {
+          'Content-Disposition': 'form-data; name="token"',
+          body: siteTokenFn().token,
+        } ],
+      },
+      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ), ensureFileExists() ],
     },
     {
       name: 'POST /search/',
@@ -216,6 +247,33 @@ function statusCode ( expected ) {
     }
   }
   injectTest.testCount = 1;
+  return injectTest;
+}
+
+function ensureFileExists () {
+  function injectTest ( t ) {
+    return function testResponse ( testName, error, response, body ) {
+      var result = JSON.parse( body )
+      t.assert( typeof result.url === 'string', `File uploaded: ${ result.url }` ) 
+
+      if ( result.url.startsWith( '//' ) )
+        result.url = `http:${ result.url }`
+
+      request( result.url, handleFileCheck )
+
+      function handleFileCheck ( error, response, body ) {
+        t.assert( ! error, 'File reachable check finished without error.' )
+        t.assert( response.statusCode === 200, 'File reachable check status code 200' )
+        var deleteOptions = deleteUploadOptions( result.url )
+        cloudStorage.objects.del( deleteOptions.bucket, deleteOptions.remote, handleFileDelete )
+      }
+
+      function handleFileDelete ( error ) {
+        t.assert( error === 204, 'Uploaded file deleted.' )
+      }
+    }
+  }
+  injectTest.testCount = 4;
   return injectTest;
 }
 
