@@ -692,7 +692,7 @@ module.exports.start = function(config, logger)
   }
 
   function timestampedUploadsPathForFileName ( fileName ) {
-    return `webhook-uploads/${ new Date().getTime() }_${ fileName }`
+    return `webhook-uploads/${ new Date().getTime() }_${ fileName.replace( / /g, '-' ) }`
   }
 
   function valueDoesNotExistErrorHandler ( callbackFn ) {

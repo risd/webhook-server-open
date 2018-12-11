@@ -16,35 +16,35 @@ var fromEmail = grunt.config().fromEmail;
 
 Error.stackTraceLimit = Infinity;
 
-test( 'firebase-reset-site-keys', function ( t ) {
-  t.plan( 3 )
+// test( 'firebase-reset-site-keys', function ( t ) {
+//   t.plan( 3 )
   
-  resetSiteKeys( { firebase: firebase }, handleResetKeys )
+//   resetSiteKeys( { firebase: firebase }, handleResetKeys )
 
-  function handleResetKeys ( error, siteNamesKeys ) {
-    t.assert( error === null, 'Finish without error' )
-    t.assert( Array.isArray( siteNamesKeys ), 'Site name keys is an array' )
-    t.assert( allSitesUpdated( siteNamesKeys ), 'All site keys updated' )
-  }
+//   function handleResetKeys ( error, siteNamesKeys ) {
+//     t.assert( error === null, 'Finish without error' )
+//     t.assert( Array.isArray( siteNamesKeys ), 'Site name keys is an array' )
+//     t.assert( allSitesUpdated( siteNamesKeys ), 'All site keys updated' )
+//   }
 
-  function allSitesUpdated ( siteNamesKeys ) {
-    return siteNamesKeys.length === siteNamesKeys.filter( updated  ).length
-  }
+//   function allSitesUpdated ( siteNamesKeys ) {
+//     return siteNamesKeys.length === siteNamesKeys.filter( updated  ).length
+//   }
 
-  function updated ( siteNameKeys ) {
-    return successfullyMigrated( siteNameKeys ) || noCurrentSiteKey( siteNameKeys )
-  }
+//   function updated ( siteNameKeys ) {
+//     return successfullyMigrated( siteNameKeys ) || noCurrentSiteKey( siteNameKeys )
+//   }
 
-  function successfullyMigrated ( siteNameKeys ) {
-    return ( siteNameKeys.migratedData === true &&
-            siteNameKeys.removedOldData === true &&
-            siteNameKeys.newSiteKeySet === true )
-  }
+//   function successfullyMigrated ( siteNameKeys ) {
+//     return ( siteNameKeys.migratedData === true &&
+//             siteNameKeys.removedOldData === true &&
+//             siteNameKeys.newSiteKeySet === true )
+//   }
 
-  function noCurrentSiteKey ( siteNameKeys ) {
-    return siteNameKeys.currentSiteKey === undefined
-  }
-} )
+//   function noCurrentSiteKey ( siteNameKeys ) {
+//     return siteNameKeys.currentSiteKey === undefined
+//   }
+// } )
 
 // test( 'firebase-reset-user-passwords', function ( t ) {
 //   t.plan( 1 )
