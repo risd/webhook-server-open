@@ -275,7 +275,7 @@ module.exports.start = function (config, logger) {
           function installDependencies () {
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'install-dependencies' )
-              runInDir( 'npm', args.buildFolder, [ 'install', '--production' ], function ( error ) {
+              runInDir( 'npm', args.buildFolder, [ 'install', '--production=true' ], function ( error ) {
                 if ( error ) {
                   console.log( error );
                   var installError = new Error( 'Could not complete npm install' ) 
@@ -587,7 +587,7 @@ module.exports.start = function (config, logger) {
                   return {
                     buildFolder: args.buildFolder,
                     command: 'grunt',
-                    commandArgs: [ 'build-static', '--production=true', '--emitter' ],
+                    commandArgs: [ 'build-static', '--production=true', '--emitter=true' ],
                     bucket: siteBucket
                   }
                 }
@@ -600,7 +600,7 @@ module.exports.start = function (config, logger) {
 
               function buildFlags ( cachedData ) {
                 return function buildFlagsForFile ( siteBucket, file ) {
-                  return [ '--inFile=' + file, '--data=' + cachedData, '--production=true', '--settings={"site_url":"'+ protocolForDomain( siteBucket ) +'"}', '--emitter' ]
+                  return [ '--inFile=' + file, '--data=' + cachedData, '--production=true', '--settings={"site_url":"'+ protocolForDomain( siteBucket ) +'"}', '--emitter=true' ]
                 }
               }
             }            
@@ -849,7 +849,7 @@ module.exports.start = function (config, logger) {
                     '--inFile=pages/robots.txt',
                     '--production=true',
                     '--data=.build/robots-data.json',
-                    '--emitter'
+                    '--emitter=true'
                   ]
 
                   var builtRobotsPath = path.join( builtFolder, builtFile )
