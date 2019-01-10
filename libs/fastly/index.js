@@ -1265,7 +1265,13 @@ function serviceConfigurationUpdater () {
 
       function putUpdate ( updateArgs, subTaskComplete ) {
         if ( typeof updateArgs === 'function' ) return updateArgs(); // no update case, updateArgs is callback
-        return apiRequest.apply( self, updateArgs.concat( [ subTaskComplete ] ) )
+        return apiRequest.apply( self, updateArgs.concat( [ logger ] ) )
+        function logger ( error, results) {
+          console.log( 'logger' )
+          console.log( error )
+          console.log( results )
+          subTaskComplete( error, results )
+        }
       }
     }
   }
@@ -1404,6 +1410,8 @@ function snippetArguments ( name, options ) {
   // if they are the same, then do not update.
   // if they are different, return arguments for a put request
   function checkUpdate ( cdnSnippet ) {
+    console.log( 'check-update' )
+    console.log( cdnSnippet )
     var sameContent = cdnSnippet.content === snippetOptions.content;
 
     if ( sameContent ) {
@@ -1413,7 +1421,7 @@ function snippetArguments ( name, options ) {
     else {
       var putBody = {}
       if ( ! sameContent ) putBody.content = snippetOptions.content;
-      
+      console.log( 'putArgsFn' )
       return putArgsFn;
 
       // options : { service_id, snippet_id }
@@ -1423,6 +1431,10 @@ function snippetArguments ( name, options ) {
         var method = 'PUT';
         var url = [ '/service', service_id, args.type, snippet_id ].join( '/' )
         var body = putBody;
+        console.log( 'put-args' )
+        console.log( method )
+        console.log( url )
+        console.log( body )
         return [ method, url, body ]
       }
     }
@@ -1458,10 +1470,12 @@ function snippetArguments ( name, options ) {
         priority: 98,
         content: `
         declare local var.host_path STRING;
+        declare local var.redirect_location STRING;
+
         set var.host_path = req.http.host req.url.path;
-        if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ) ) {
-          declare local var.redirect_location STRING;
-          set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path );
+
+        if (  table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ) ) {
+          set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path );  
 
           if ( ! var.redirect_location ~ "^http" ) {
             set var.redirect_location = "http://" var.redirect_location;
@@ -1470,7 +1484,28 @@ function snippetArguments ( name, options ) {
           set req.http.x-redirect-location = var.redirect_location;
 
           error 301;
-        }`.trim(),
+        }
+        else {
+          declare local var.host_url STRING;
+          set var.host_url = req.http.host req.url;
+          
+          if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_url ) ) {
+            set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_url );
+
+            if ( ! var.redirect_location ~ "^http" ) {
+              set var.redirect_location = "http://" var.redirect_location;
+            }
+
+            if ( req.url.qs ) {
+              set var.redirect_location = var.redirect_location "?" req.url.qs;
+            }
+
+            set req.http.x-redirect-location = var.redirect_location;
+
+            error 301;
+          }
+        }
+        `.trim(),
       }
     }
     snippets[ SNIPPET_RECV_TRAILING_SLASH ] = function () {
@@ -1479,7 +1514,8 @@ function snippetArguments ( name, options ) {
         dynamic: 1,
         type: 'recv',
         priority: 99,
-        content: `if ( req.url !~ {"(?x)
+        content: `
+        if ( req.url !~ {"(?x)
             (?:/$) # last character isn\'t a slash
             | # or
             (?:/\\?) # query string isn\'t immediately preceded by a slash
@@ -1488,10 +1524,12 @@ function snippetArguments ( name, options ) {
             (?:/[^./]+$) # last path segment doesn\'t contain a . no query string
             | # or
             (?:/[^.?]+\\?) # last path segment doesn\'t contain a . with a query string
+            | # or
+            (?:/[^.?]+\\#) # last path segment doesn\'t contain a . with an anchor string
           "} ) {
           set req.http.x-redirect-location = req.url "/";
           error 301;
-        }`,
+        }`.trim(),
       }
     }
     snippets[ SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ] = function () {

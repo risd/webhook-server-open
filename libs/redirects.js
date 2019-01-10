@@ -112,8 +112,8 @@ module.exports.start = function ( config, logger ) {
       }
 
       // domain => boolean
-      var isNotDevelopmentDomain = function ( domain ) {
-        return ! domain.endsWith( developmentDomain )
+      var isFastlyDomain = function ( domain ) {
+        return fastly.isFastlyDomain( domain )
       }
 
       // siteName, taskComplete => taskComplete( error | null, domains : string[] | undefined )
@@ -136,7 +136,7 @@ module.exports.start = function ( config, logger ) {
 
           return async.parallel( replaceTasks, function ( error, updatedDomains ) {
             if ( error ) return taskComplete( error )
-            taskComplete( null, updatedDomains.filter( isNotDevelopmentDomain ) )
+            taskComplete( null, updatedDomains.filter( isFastlyDomain ) )
           } )
 
           function toReplaceTask ( domain ) {
