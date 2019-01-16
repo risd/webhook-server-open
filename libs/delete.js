@@ -3,6 +3,7 @@ var Fastly = require( './fastly/index.js' )
 var Cloudflare = require( './cloudflare/index.js' )
 var Firebase = require( './firebase/index.js' )
 var ElasticSearch = require( './elastic-search/index.js' )
+var cloudStorage = require( './cloudStorage.js' )
 
 module.exports = DeleteSite;
 
@@ -48,6 +49,7 @@ function WebhookSiteDelete ( siteName ) {
       .concat( buckets.map( deleteCDNDomain ) )
       .concat( self._firebase.deleteSite( { siteName: siteName } ) )
       .concat( self._elastic.deleteSite( { siteName: siteName } ) )
+      .concat( buckets.map( deleteStorageBucketTask ) )
 
     return Promise.all( deletors )
   }
@@ -65,6 +67,22 @@ function WebhookSiteDelete ( siteName ) {
       self._fastly.removeDomain( siteName, function ( error ) {
         if ( error ) reject( error )
         else resolve()
+      } )
+    } )
+  }
+
+  function deleteStorageBucketTask ( siteName ) {
+    console.log( 'delete', siteName )
+    return new Promise( function ( resolve, reject ) {
+      cloudStorage.objects.deleteAll( siteName, function ( error ) {
+        if ( error ) {
+          return reject( error )
+        }
+
+        cloudStorage.buckets.del( siteName, function ( error ) {
+          if ( error === 204 ) return resolve()
+          else return reject( error )
+        } )
       } )
     } )
   }
