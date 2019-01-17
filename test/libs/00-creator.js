@@ -64,7 +64,7 @@ test( 'set-deploy', function ( t ) {
       key: token.val(),
       deploy: {
         branch: testOptions.createDeployBranch,
-        bucket: testOptions.createDeployBucket
+        bucket: testOptions.createDeployBucket,
       },
     }
     deploys.setBucket( setterOptions, function ( error ) {
