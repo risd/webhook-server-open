@@ -688,6 +688,7 @@ function removeDomains ( domains, complete ) {
     var removeHostRedirectArguments = removeRootRedirectArguments.concat( removeWwwRedirectArguments )
 
     return function removeHostRedirectsTask ( taskComplete ) {
+      console.log( 'map-host-redirects-remove-task' )
       return async.waterfall( [ getDictionaryId, redirectHostDictionaryUpdate ], taskComplete )
     }
 
@@ -918,7 +919,6 @@ function setSnippetRedirects ( options, complete ) {
     var service_id = self._service_id;
     var version = self.version();
 
-    console.log( 'create-operations' )
     var host = options.host;
     var redirects = options.redirects;
     var isHostRedirect = isRedirectForHost( host )
@@ -1000,7 +1000,10 @@ function setSnippetRedirects ( options, complete ) {
 
   // cdnOperations => results
   function executeOperations ( cdnOperations, taskComplete ) {
-    console.log( 'execute-operations' )
+    if ( cdnOperations.length === 0 ) {
+      return taskComplete()
+    }
+
     return async.parallelLimit( cdnOperations.map( executeTask ), 10, taskComplete )
 
     function executeTask ( operation ) {
@@ -1463,6 +1466,15 @@ function snippetArguments ( name, options ) {
       }
     }
     snippets[ SNIPPET_RECV_REDIRECT_URLS ] = function () {
+      /**
+       * Handles setting an `x-redirect-location` uri to redirect to
+       * based on the DICTIONARY_REDIRECT_URLS table, which stores
+       * 1:1 redirects.
+       * This system does not currently handle query parameters interally,
+       * so it just passes them along.
+       * Hash URL paths are assumed to lead somewhere on the final page, so
+       * they too are passed along.
+       */
       return {
         name: SNIPPET_RECV_REDIRECT_URLS,
         dynamic: 1,
@@ -1474,36 +1486,26 @@ function snippetArguments ( name, options ) {
 
         set var.host_path = req.http.host req.url.path;
 
-        if (  table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ) ) {
-          set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path );  
+        set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ); 
 
+        if ( std.strlen( var.redirect_location ) == 0 ) {
+          declare local var.host_url STRING;
+          set var.host_url = req.http.host req.url;
+          set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_url );
+        }
+
+        if ( std.strlen( var.redirect_location ) > 0 ) {
           if ( ! var.redirect_location ~ "^http" ) {
             set var.redirect_location = "http://" var.redirect_location;
+          }
+
+          if ( std.strlen( req.url.qs ) > 0 ) {
+            set var.redirect_location = var.redirect_location "?" req.url.qs;
           }
 
           set req.http.x-redirect-location = var.redirect_location;
 
           error 301;
-        }
-        else {
-          declare local var.host_url STRING;
-          set var.host_url = req.http.host req.url;
-          
-          if ( table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_url ) ) {
-            set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_url );
-
-            if ( ! var.redirect_location ~ "^http" ) {
-              set var.redirect_location = "http://" var.redirect_location;
-            }
-
-            if ( req.url.qs ) {
-              set var.redirect_location = var.redirect_location "?" req.url.qs;
-            }
-
-            set req.http.x-redirect-location = var.redirect_location;
-
-            error 301;
-          }
         }
         `.trim(),
       }

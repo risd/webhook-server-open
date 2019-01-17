@@ -72,7 +72,6 @@ function WebhookSiteDelete ( siteName ) {
   }
 
   function deleteStorageBucketTask ( siteName ) {
-    console.log( 'delete', siteName )
     return new Promise( function ( resolve, reject ) {
       cloudStorage.objects.deleteAll( siteName, function ( error ) {
         if ( error ) {
