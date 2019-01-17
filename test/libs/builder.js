@@ -17,11 +17,11 @@ test( 'builder', function ( t ) {
   t.plan( 1 )
 
   var command = {
-    identifier: `${testOptions.buildSiteName}_${testOptions.buildBucketName}`,
+    identifier: `${testOptions.createSiteName}_${testOptions.buildBucketName}`,
     payload: {
       userid: testOptions.buildUserId,
-      sitename: testOptions.buildSiteName,
-      siteBucket: testOptions.buildBucketName,
+      sitename: testOptions.createSiteName,
+      siteBucket: testOptions.createDeployBucket,
       branch: testOptions.buildDeployBranch,
     }
   }
