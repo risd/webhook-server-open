@@ -65,6 +65,8 @@ function WebhookSiteDelete ( siteName ) {
   function deleteCDNDomain ( siteName ) {
     return new Promise( function ( resolve, reject ) {
       self._fastly.removeDomain( siteName, function ( error ) {
+        console.log( 'delete-cdn-domain' )
+        console.log( error )
         if ( error ) reject( error )
         else resolve()
       } )
@@ -74,12 +76,15 @@ function WebhookSiteDelete ( siteName ) {
   function deleteStorageBucketTask ( siteName ) {
     return new Promise( function ( resolve, reject ) {
       cloudStorage.objects.deleteAll( siteName, function ( error ) {
+        console.log( error )
         if ( error ) {
           return reject( error )
         }
 
         cloudStorage.buckets.del( siteName, function ( error ) {
-          if ( error === 204 ) return resolve()
+          if ( ( error && error === 204 ) ) return resolve()
+          else if ( ( error && error === 404 ) ) return resolve()
+          else if ( ! error ) return resolve()
           else return reject( error )
         } )
       } )

@@ -280,13 +280,13 @@ var objectsAPI = {
     objectsAPI.list( bucket, qs, handleList )
 
     function handleList ( error, results ) {
-      if ( error ) return callback( error )
+      if ( error && error !== 404 ) return callback( error )
 
-      if ( results.items && Array.isArray( results.items ) ) {
+      if ( results && results.items && Array.isArray( results.items ) ) {
         completeList = completeList.concat( results.items )  
       }
 
-      if ( results.nextPageToken ) {
+      if ( results && results.nextPageToken ) {
         var nextOptions = Object.assign( qs, {
           pageToken: results.nextPageToken,
         } )
@@ -502,6 +502,8 @@ var objectsAPI = {
 
     function handleItems ( error, items ) {
       if ( error ) return error;
+
+      if ( items.length === 0 ) callback()
 
       var deleteTasks = items.map( itemToDeleteTask )
       async.parallelLimit( deleteTasks, 10, handleAllDeleted )
