@@ -693,10 +693,12 @@ function removeDomains ( domains, complete ) {
     }
 
     function getDictionaryId ( taskComplete ) {
+      console.log( 'get-dictionary-id' )
       self.dictionaryId( DICTIONARY_REDIRECT_HOSTS, taskComplete )
     }
 
     function redirectHostDictionaryUpdate ( dictionaryId, taskComplete ) {
+      console.log( `redirect-host-dictionary-update:${ dictionaryId }` )
       var redirectDictionaryItemArguments = { id: dictionaryId, operations: operations }
       var updator = serviceConfigurationUpdater.apply( self )
       updator.mapVersionlessTask( apiDictionaryItemArguments( redirectDictionaryItemArguments ) )( taskComplete )
@@ -755,6 +757,7 @@ function setRedirects ( options, complete ) {
 
   function setSnippetRedirectTasks ( args ) {
     return function task ( taskComplete ) {
+      console.log( 'set-snippet-redirects' )
       setSnippetRedirects.apply( self, [ args, debugCallback( 'snippets', taskComplete ) ] )
     }
   }
@@ -904,13 +907,14 @@ function setSnippetRedirects ( options, complete ) {
 
   // () => cdnSnippets : [ { name : string, content : string, ... } ]
   function getCdnRedirectSnippets ( taskComplete ) {
-    console.log( 'get-cdn' )
     var apiRequest = self.request;
     var service_id = self._service_id;
     var version = self.version();
 
     var url = [ '/service', service_id, 'version', version, 'snippet' ].join( '/' )
-
+    
+    console.log( `get-cdn:${ url }` )
+    
     apiRequest( 'GET', url, taskComplete )
   }
 
@@ -926,6 +930,8 @@ function setSnippetRedirects ( options, complete ) {
     return operationsMaker;
 
     function operationsMaker ( cdnSnippets, taskComplete ) {
+      console.log( 'operations-maker' )
+
       var hostRedirects = cdnSnippets.filter( isHostRedirect )
 
       var cdnOperations = redirects.map( createOperations( hostRedirects ) ).filter( isNotFalse )
@@ -1134,8 +1140,14 @@ function serviceConfigurationUpdater () {
       var service_id = self._service_id;
 
       var url = [ '/service', service_id, args.type, args.id, args.property ].join( '/' )
+      
+      console.log( `map-version-less-task:${ url }` )
+
       self.request( 'GET', url, function ( error, items ) {
         if ( error ) return taskComplete( error )
+        
+        console.log( `map-version-less-task:items` )
+
         var itemOperations = args.operations( items )
 
         if ( itemOperations.length === 0 ) return taskComplete( null, null )
@@ -1151,6 +1163,8 @@ function serviceConfigurationUpdater () {
           var operationsSubset = itemOperations.slice( startSubset, endSubset )
           patchTasks = patchTasks.concat( [ patchOperations( operationsSubset ) ] )
         }
+
+        console.log( `patch-tasks:${ patchTasks.length }` )
 
         if ( patchTasks.length === 1 ) return patchTasks[ 0 ]( taskComplete )
 
@@ -1414,7 +1428,6 @@ function snippetArguments ( name, options ) {
   // if they are different, return arguments for a put request
   function checkUpdate ( cdnSnippet ) {
     console.log( 'check-update' )
-    console.log( cdnSnippet )
     var sameContent = cdnSnippet.content === snippetOptions.content;
 
     if ( sameContent ) {
