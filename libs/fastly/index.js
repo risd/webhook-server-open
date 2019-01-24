@@ -1542,7 +1542,13 @@ function snippetArguments ( name, options ) {
             | # or
             (?:/[^.?]+\\#) # last path segment doesn\'t contain a . with an anchor string
           "} ) {
-          set req.http.x-redirect-location = req.url "/";
+
+          set req.http.x-redirect-location = "http://" req.http.host req.url.path "/";
+
+          if ( std.strlen( req.url.qs ) > 0 ) {
+            set req.http.x-redirect-location = req.http.x-redirect-location "?" req.url.qs;
+          }
+
           error 301;
         }`.trim(),
       }
