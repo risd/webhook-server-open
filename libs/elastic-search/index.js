@@ -82,19 +82,42 @@ function Search ( options ) {
 
   return new Promise ( function ( resolve, reject ) {
     
+    
     client.search( args )
-      .then( function ( data ) {
-        if ( typeof data === 'string' ) {
-          resolve( JSON.parse( data ) ) 
+      .then( function ( searchResponse ) {
+        if ( typeof searchResponse === 'string' ) {
+          searchResponse = JSON.parse( searchResponse )
         }
-        else {
-          resolve( data )
+
+        if ( searchResponse && searchResponse.hits && searchResponse.hits.hits ) {
+          var results = searchResponse.hits.hits.map( prepForCMS )
         }
+        else if ( searchResponse && ! research.hits ) {
+          var results = []
+        }
+
+        resolve( results )
       } )
       .catch( function ( error ) {
         reject( error )
       } )
   } )
+
+  function prepForCMS ( result ) {
+    // map our custom type back to the CMS expected `_type` key
+    result._type = result._source.contentType;
+    // map our nested doc.name field to the CMS expected highlight name field
+    result.highlight = {
+      name: result.highlight[ 'doc.name' ]
+        ? result.highlight[ 'doc.name' ]
+        : [ result._source.doc.name ],
+    }
+    result.fields = {
+      name: result._source.doc.name,
+      __oneOff: result._source.oneOff,
+    }
+    return result;
+  }
 }
 
 function Index ( options ) {
@@ -123,8 +146,7 @@ function Index ( options ) {
   }
 
   return new Promise( function ( resolve, reject ) {
-console.log( 'index-args' )
-console.log( args )
+
     client.index( args )
       .then( function ( indexedResponse ) {
         console.log( 'indexedResponse' )

@@ -398,9 +398,13 @@ module.exports.start = function(config, logger)
           .then( handleSearch )
           .catch( handleSearchError )
 
-      function handleSearch ( data ) {
-        if ( ! data.hits ) return callback( null, { hits : {} } )
-        else return callback ( null, { hits : data.hits.hits } )
+      function handleSearch ( results ) {
+        console.log( 'handle-search' )
+        console.log( results )
+        if ( results.error ) {
+          console.log( results.error )
+        }
+        callback( null, { hits: results }  )
       }
 
       function handleSearchError ( error ) {
