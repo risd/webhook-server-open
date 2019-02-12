@@ -111,6 +111,7 @@ module.exports.start = function (config, logger) {
         
         search.siteEntries( siteName, function ( error, siteIndex ) {
 
+          // if no siteIndex is found, lets assume we can make it.
           if ( ! siteIndex ) siteIndex = []
           
           whSiteData.get( { siteName: siteName, key: siteValues.key }, function ( error, retrievedSiteData ) {
