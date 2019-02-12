@@ -110,6 +110,8 @@ module.exports.start = function (config, logger) {
       domainInstance.run(function() {
         
         search.siteEntries( siteName, function ( error, siteIndex ) {
+
+          if ( ! siteIndex ) siteIndex = []
           
           whSiteData.get( { siteName: siteName, key: siteValues.key }, function ( error, retrievedSiteData ) {
             function noSiteDataError () { return new Error( `No data for ${ siteName }.` ) }
