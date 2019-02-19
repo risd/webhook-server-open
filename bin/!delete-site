@@ -7,9 +7,17 @@ var deleteSite = require( '../libs/delete.js' )
 webhookTasks( grunt );
 
 var site = process.argv[ 2 ]
+var please = process.argv[ 3 ]
 
 if ( ! site ) {
   console.log( `Delete site requires a site name to be passed in.` )
+  process.exit()
+}
+
+if ( ! please ) {
+  console.log( `Must include `please` after the command. As in:
+  
+  ./bin/delete-site site-name please` )
   process.exit()
 }
 
