@@ -6,7 +6,7 @@ var firebaseUnescape = require( '../libs/utils/firebase-unescape.js' )
 var developmentDomain = process.env.DEVELOPMENT_DOMAIN;
 
 function formatSiteName ( siteName ) {
-  siteName = firebaseEscape( siteName )
+  siteName = firebaseUnescape( siteName )
   if ( siteName.indexOf( developmentDomain ) === -1 ) {
     siteName = `${ siteName }.${ developmentDomain }`
   }
