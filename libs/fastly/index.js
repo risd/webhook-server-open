@@ -43,7 +43,7 @@ function FastlyWebhookService ( options ) {
   // version is active starts as true.
   // only made false base internally updating the state
   this._version_is_active = true;
-  // domain configuration : [ { domain, address, forceSSL } ] 
+  // domain configuration : [ { domain, address, forceSSL } ]
   this._domains = ensureArray( options.domains )
 
   var fastly = Fastly( token )
@@ -60,7 +60,9 @@ FastlyWebhookService.prototype.version = getSetVersion;
 FastlyWebhookService.prototype.initialize = initializeService;
 FastlyWebhookService.prototype.domain = addDomains;
 FastlyWebhookService.prototype.removeDomain = removeDomains;
+FastlyWebhookService.prototype.hasFastlyDomainConfiguration = hasFastlyDomainConfiguration;
 FastlyWebhookService.prototype.isFastlyDomain = isFastlyDomain;
+FastlyWebhookService.prototype.isSecureDomain = isSecureDomain;
 FastlyWebhookService.prototype.addressForDomain = addressForDomain;
 FastlyWebhookService.prototype.redirects = setRedirects;
 FastlyWebhookService.prototype.mapDomain = mapDomain;
@@ -71,7 +73,7 @@ FastlyWebhookService.prototype.activate =activator;
 /**
  * Activate the current service_id & version if it is not
  * currently active.
- * 
+ *
  * @param  {function} complete The callback function to invoke when complete.
  */
 function activator ( complete ) {
@@ -81,14 +83,14 @@ function activator ( complete ) {
   }
 
   if ( this._version_is_active === true ) return complete( null, serviceOptions )
-  
+
   var self = this;
   var activateOptions = Object.assign( { request: this.request }, serviceOptions )
 
   return activateVersion( activateOptions, function ( error, version ) {
     if ( error ) return complete( error )
     self._version_is_active = true;
-  
+
     return complete( null, serviceOptions )
   } )
 }
@@ -98,7 +100,7 @@ function activator ( complete ) {
  * is configured to handle interfacing with webhook fastly modules.
  * Internally manage the version so that new versions can be
  * activated as they are made.
- * 
+ *
  * @param  {string} service_id  The `service_id` to initialize
  * @param  {function} complete  Called when the service has been initialized.
  *                              Returns ( error, ServiceVersion )
@@ -108,10 +110,10 @@ function initializeService ( service_id, complete ) {
   if ( typeof service_id === 'function' ) complete = service_id;
 
   var self = this;
-  
+
   // if any errors occur, bail and complete early
   var ifSuccess = handleError( complete )
-  
+
   return this._activeVersion( ifSuccess( configureService( self.activate.bind( self, complete ) ) ) )
 
   function configureService ( continuation ) {
@@ -146,7 +148,7 @@ function initializeService ( service_id, complete ) {
  * within our abstraction.
  *
  * service_id : string? => complete : function => { service_id : string, version : string }
- * 
+ *
  * @param  {string?} service_id Optionally pass in a service_id
  * @param  {function} complete  The callback function to invoke with the
  *                              current service_id &. version
@@ -186,9 +188,9 @@ function getServiceActiveVersion ( service_id, complete ) {
  *
  * If a current version is not set, acquire it, and clone it for
  * more development to occur on the newly cloned version.
- * 
+ *
  * complete : function? => ( taskFn => { service_id, version } | undefined )
- * 
+ *
  * @param  {[type]} complete [description]
  * @return {[type]}          [description]
  */
@@ -240,10 +242,10 @@ function ensureDevelopmentVersion ( complete ) {
 /**
  * Activate the version using the service id and API request function.
  * Callback with the result of the API call
- * 
+ *
  * @param  {object} options
  * @param  {function} options.request   The API function to call
- * @param  {string} options.service_id  The service to call the activate API function on 
+ * @param  {string} options.service_id  The service to call the activate API function on
  * @param  {string} options.version     The version to call the activate API function on
  * @param  {function} complete Callback ( error, version : { number : number, service_id : string } )
  */
@@ -254,28 +256,68 @@ function activateVersion ( options, complete ) {
   var url = [ '/service', service_id, 'version', version, 'activate' ].join( '/' )
   return request( 'PUT', url, complete );
 }
-  
+
+/**
+ * Given a domain, return its configuration if it exists; else return null.
+ *
+ * @param {string} domain
+ * @return {object|null}
+ */
+function hasFastlyDomainConfiguration ( domain ) {
+  var domainConfigurations = this._domains.filter( isIncluded );
+
+  function isIncluded ( included ) {
+    return minimatch( domain, included.domain );
+  }
+
+  if ( domainConfigurations.length === 1 ) {
+    return domainConfigurations[ 0 ]
+  } else {
+    return null;
+  }
+}
+
 /**
  * Given a domain, return true if it is not a blacklisted domain.
  * Within webhook, we have development domains, that do not get
  * placed under fastly, and instead or handled directly through
  * cloudflare.
- * 
- * @param  {string}  domain
- * @return {Boolean}
+ *
+ * @param  {string} domain
+ * @return {boolean}
  */
 function isFastlyDomain ( domain ) {
   return this._domains.filter( isIncluded ).length > 0;
 
   function isIncluded ( included ) {
-    return minimatch( domain, included.domain )
+    return minimatch( domain, included.domain );
   }
+}
+
+/**
+ * Given a domain, return true if it is either an SSL-enabled Fastly domain
+ * or a non-Fastly domain.
+ *
+ * @param {string} domain
+ * @return {boolean}
+ */
+function isSecureDomain( domain ) {
+  var isSecure = false;
+  var domainConfiguration = hasFastlyDomainConfiguration.call( this, domain );
+
+  if ( domainConfiguration ) {
+    isSecure = domainConfiguration.forceSSL;
+  } else {
+    isSecure = true;
+  }
+
+  return isSecure;
 }
 
 /**
  * Given a domain, return the associated Fastly IP for the domain.
  * Returns false if the domain is not managed by Fastly.
- * 
+ *
  * @param  {string} domain         The domain whose IP will be retrieved
  * @return {string|false} address  The address behind the Fastly domain
  */
@@ -294,7 +336,7 @@ function addressForDomain ( domain ) {
  * Add domain configuration for the supplied domains.
  * Add domain to host redirect table if it is a `www` subdomain or root domain.
  * The key will be opposite domain, with the value being the domain configured.
- * 
+ *
  * @param {string|[string]} domains  String of domains to configure. Can be a single string, comman separated string, or array of strings representing domain names.
  * @param {function} complete  Called when the domain has been added.
  *                             Returns ( error, [ ServiceConfiguration ] )
@@ -318,7 +360,7 @@ function addDomains ( domains, complete ) {
   tasks = tasks.concat( addDomainTasks )
 
   tasks = tasks.concat( redirectHostOperationsFor( domains ) )
-  
+
   return async.series( tasks, handleCallbackError( complete )( self.activate.bind( self, complete ) ) )
 
   function activeVersionTask ( taskComplete ) {
@@ -329,7 +371,7 @@ function addDomains ( domains, complete ) {
     var addRootRedirectDomains = domains.filter( isWwwDomain )
     var addWwwRedirectDomains = domains.filter( isRootDomain )
     var redirectDomains = addRootRedirectDomains.concat( addWwwRedirectDomains )
-    
+
     if ( redirectDomains.length === 0 ) return [];
 
     var addRootRedirectArguments = addRootRedirectDomains.map( redirectRootArguments )
@@ -374,7 +416,7 @@ function addDomains ( domains, complete ) {
 
         if ( op ) ops = ops.concat( [ Object.assign( { op: op }, operationBase ) ] )
       }
-      
+
       return ops;
     }
   }
@@ -384,7 +426,7 @@ function addDomains ( domains, complete ) {
  * Ensure the dictionary_host_backends table includes
  * the maskDomain as a key, and the content domain as
  * its value.
- * 
+ *
  * @param  {object|array} options[]
  * @param  {string} options[].maskDomain
  * @param  {string} options[].contentDomain
@@ -462,7 +504,7 @@ function mapDomain ( options, complete ) {
 /**
  * Ensure the dictionary_host_backends table does not include
  * the maskDomain as a key.
- * 
+ *
  * @param  {object|array} options[]
  * @param  {string} options[].maskDomain
  * @param  {function} complete The callback function to call upon completion
@@ -535,7 +577,7 @@ function removeMapDomain ( options, complete ) {
  * If there is no mask domain, return undefined.
  *
  * ( contentDomain : string, complete ) => ( error, maskDomain : string | undefined )
- * 
+ *
  * @param  {string} contentDomain The value to find in the dictionary_host_backends table
  * @param  {function} complete    The function to invoke with the maskDomain value.
  */
@@ -730,11 +772,11 @@ function removeDomains ( domains, complete ) {
  * Redirects are saved as dictionary values for one : one redirects,
  * and snippets for regex based redirects.
  *
- * redirect : { pattern : string, destination : string } 
+ * redirect : { pattern : string, destination : string }
  * redirects : [ redirect ]
  * host : string
  * options : { host, redirects }
- * 
+ *
  * @param {object} options
  * @param {string} options.host
  * @param {object} options.redirects
@@ -774,11 +816,11 @@ function setRedirects ( options, complete ) {
 /**
  * Set one : one redirects as dictionary keys and values.
  *
- * redirect : { pattern : string, destination : string } 
+ * redirect : { pattern : string, destination : string }
  * redirects : [ redirect ]
  * host : string
  * options : { host, redirects }
- * 
+ *
  * @param {object} options
  * @param {string} options.host
  * @param {object} options.redirects
@@ -802,7 +844,7 @@ function setDictionaryRedirects ( options, complete ) {
     self.dictionaryId( DICTIONARY_REDIRECT_URLS, function ( error, dictionaryId ) {
       if ( error ) return taskComplete( error )
       taskComplete( null, Object.assign( args, { id: dictionaryId } ) )
-    } )  
+    } )
   }
 
   // ( args : { id, operations } ) => ( error?, statusObject : { status : string } )
@@ -810,7 +852,7 @@ function setDictionaryRedirects ( options, complete ) {
     updator.mapVersionlessTask( apiDictionaryItemArguments( args ) )( taskComplete )
   }
 
-  // ( host, redirects ) => ( dictionaryRedirectsTable : [ item_key : string, item_value : string ] ) => ( operations : [ op : 'create'|'delete'|'update', item_key : string, item_value : string? ] ) 
+  // ( host, redirects ) => ( dictionaryRedirectsTable : [ item_key : string, item_value : string ] ) => ( operations : [ op : 'create'|'delete'|'update', item_key : string, item_value : string? ] )
   function dictionaryOperations ( options ) {
     var host = options.host;
     var cmsRedirects = options.redirects.map( prefix( host ) );
@@ -872,11 +914,11 @@ function setDictionaryRedirects ( options, complete ) {
 /**
  * Set many : one redirects as snippets in fastly.
  *
- * redirect : { pattern : string, destination : string } 
+ * redirect : { pattern : string, destination : string }
  * redirects : [ redirect ]
  * host : string
  * options : { host, redirects }
- * 
+ *
  * @param {object} options
  * @param {string} options.host
  * @param {object} options.redirects
@@ -912,9 +954,9 @@ function setSnippetRedirects ( options, complete ) {
     var version = self.version();
 
     var url = [ '/service', service_id, 'version', version, 'snippet' ].join( '/' )
-    
+
     console.log( `get-cdn:${ url }` )
-    
+
     apiRequest( 'GET', url, taskComplete )
   }
 
@@ -1023,7 +1065,7 @@ function setSnippetRedirects ( options, complete ) {
 
   function snippetNameFactory ( host ) {
     return function snippetNameFor ( redirect ) {
-      return `${ snippetNamePrefix( host ) }_${ hashForContent( snippetContentFor( redirect ) ) }` 
+      return `${ snippetNamePrefix( host ) }_${ hashForContent( snippetContentFor( redirect ) ) }`
 
       function hashForContent( content ) {
         var hash = crypto.createHash('md5').update(content).digest('base64')
@@ -1075,7 +1117,7 @@ function setSnippetRedirects ( options, complete ) {
       }`
     }
   }
-  
+
 }
 
 function dictionaryIdForName ( name, complete ) {
@@ -1107,7 +1149,7 @@ function dictionaryForName ( name, complete ) {
     var dictionaryNameUrl = [ '/service', self._service_id, 'version', self.version(), 'dictionary', name ].join( '/' )
     self.request( 'GET', dictionaryNameUrl, taskComplete )
   }
-  
+
 }
 
 function serviceConfigurationUpdater () {
@@ -1122,7 +1164,7 @@ function serviceConfigurationUpdater () {
    * Gets items from fastly, runs an operations function to
    * produce an array of operations objects, which get patched
    * back into the versionless item.
-   * 
+   *
    * @param  {object} args
    * @param  {String} args.type            ('dictionary'|'acl')
    * @param  {Function} args.operations    Expects the results of the GET function, returns input of PATCH function.
@@ -1140,12 +1182,12 @@ function serviceConfigurationUpdater () {
       var service_id = self._service_id;
 
       var url = [ '/service', service_id, args.type, args.id, args.property ].join( '/' )
-      
+
       console.log( `map-version-less-task:${ url }` )
 
       self.request( 'GET', url, function ( error, items ) {
         if ( error ) return taskComplete( error )
-        
+
         console.log( `map-version-less-task:items` )
 
         var itemOperations = args.operations( items )
@@ -1188,7 +1230,7 @@ function serviceConfigurationUpdater () {
    * Get items from fastly, if result is obtained, run a check to see
    * if the result should be updated. If the get items query fails, post
    * the items.
-   * 
+   *
    * @param  {object} args
    * @param  {string} args.type  ('snippet'|'dictionary'|'domain')
    * @param  {Function} args.checkUpdate ( result => (undefined|function) ) given the result of the get request, return a function that will produce arguments for the update request, or an undefined value to not execute the update.
@@ -1227,9 +1269,9 @@ function serviceConfigurationUpdater () {
 
     return function getSuccessfulResponse ( error, getResult ) {
       if ( typeof args.checkUpdate !== 'function' ) return taskComplete( null, getResult )
-      
+
       var tasks = []
-      
+
       if ( args.type === 'snippet' ) tasks = tasks.concat( [ getSnippet ] )
 
       tasks = tasks.concat( [ checkGetForUpdate, ifUpdateEnsureDevelopementVersion, putUpdate ] )
@@ -1241,7 +1283,7 @@ function serviceConfigurationUpdater () {
       }
 
       function checkGetForUpdate ( cdnSnippet, subTaskComplete ) {
-        // occurs in the case of gzip, where fetching 
+        // occurs in the case of gzip, where fetching
         if ( typeof cdnSnippet === 'function' ) subTaskComplete = cdnSnippet;
 
         try {
@@ -1250,7 +1292,7 @@ function serviceConfigurationUpdater () {
             var updateArgs = updateArgsFn( {
               service_id: service_id,
               snippet_id: getResult.id,
-            } )  
+            } )
           }
           else if ( args.type === 'gzip' ) {
             var updateArgsFn = args.checkUpdate( getResult )
@@ -1262,8 +1304,8 @@ function serviceConfigurationUpdater () {
           else {
             throw new Error( `args.type "${ args.type }" not coded for.` )
           }
-          
-          return subTaskComplete( null, updateArgs )  
+
+          return subTaskComplete( null, updateArgs )
         }
         catch ( error ) {
           return subTaskComplete()
@@ -1303,7 +1345,7 @@ function serviceConfigurationUpdater () {
     var ensureDevelopmentVersion = self._ensureDevelopmentVersion()
     if ( ensureDevelopmentVersion ) {
       return ensureDevelopmentVersion( handleErrorThenSuccess( complete )( postRequestVersioned.bind( self, args, complete ) ) )
-    } 
+    }
     else {
       // already an inactive version to work off of
       return apiRequest.apply( self, [ 'POST', url, args.post, complete ] )
@@ -1499,7 +1541,7 @@ function snippetArguments ( name, options ) {
 
         set var.host_path = req.http.host req.url.path;
 
-        set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path ); 
+        set var.redirect_location = table.lookup( ${ DICTIONARY_REDIRECT_URLS }, var.host_path );
 
         if ( std.strlen( var.redirect_location ) == 0 ) {
           declare local var.host_url STRING;
@@ -1644,7 +1686,7 @@ function getSetVersion ( version ) {
   return this;
 }
 
-/* handleCallback* will take two functions, and be ready to handle the 
+/* handleCallback* will take two functions, and be ready to handle the
    result of an async function using the previous two function inputs.
    These functions maintains the callback ( error, result ) convention. */
 function handleCallbackError ( errorFn ) {
