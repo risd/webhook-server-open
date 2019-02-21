@@ -67,7 +67,7 @@
     "through2-concurrent": "^1.1.1",
     "touch": "0.0.3",
     "webhook-deploy-configuration": "^2.0.4",
-    "webhook-elastic-search": "^2.0.0",
+    "webhook-elastic-search": "^2.0.4",
     "webhook-site-data": "^2.0.3",
     "win-spawn": "~2.0.0",
     "wrench": "~1.5.8"

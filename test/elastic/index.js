@@ -112,35 +112,13 @@ test( 'site-search-with-type', function ( t ) {
       page: 1,
     } )
       .then( function ( results ) {
-        t.ok( results.length === 1, 'Successfully got search results for a content type.' )
+        t.ok( Array.isArray( results ), 'Successfully got search results for a content type.' )
       } )
       .catch( function ( error ) {
         console.log( error )
         t.fail( error, 'Failed to get search results for a content type.' )
       } )
 
-  }
-} )
-
-test( 'site-search-with-type-one-hit', function ( t ) {
-  t.plan( 1 )
-
-  setTimeout( siteSearchWithTypeOneHitTest, testDelay )
-
-  function siteSearchWithTypeOneHitTest () {
-    elasticQuery.search( {
-      siteName: siteName,
-      query: 'providence',
-      typeName: 'teahouses',
-      page: 1,
-    } )
-      .then( function ( results ) {
-        t.ok( results.length === 1, 'Successfully got search results for a content type.' )
-      } )
-      .catch( function ( error ) {
-        console.log( error )
-        t.fail( 'Failed to get search results for a content type.' )
-      } )
   }
 } )
 
