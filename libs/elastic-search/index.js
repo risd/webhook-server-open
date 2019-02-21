@@ -52,8 +52,9 @@ function Search ( options ) {
     queryObject.query = {
       "bool": {
         "must": {
-            "query_string": {
-              // "fields": [ "doc.name^5", "_all" ],
+            "multi_match": {
+              "fields": [ "name^5", "_all" ],
+              "type": "phrase_prefix",
               "query": query,
             },
           },
@@ -67,8 +68,9 @@ function Search ( options ) {
   }
   else {
     queryObject.query = {
-      "query_string" : { 
-        // "fields" : ["doc.name^5", "_all"],
+      "multi_match" : { 
+        "fields" : [ "name^5", "_all" ],
+        "type": "phrase_prefix",
         "query" : query,
       },
     }
@@ -108,12 +110,12 @@ function Search ( options ) {
     result._type = result._source.contentType;
     // map our nested doc.name field to the CMS expected highlight name field
     result.highlight = {
-      name: result.highlight[ 'doc.name' ]
-        ? result.highlight[ 'doc.name' ]
-        : [ result._source.doc.name ],
+      name: result.highlight && result.highlight[ 'name' ]
+        ? result.highlight[ 'name' ]
+        : [ result._source.name ],
     }
     result.fields = {
-      name: result._source.doc.name,
+      name: result._source.name,
       __oneOff: result._source.oneOff,
     }
     return result;
