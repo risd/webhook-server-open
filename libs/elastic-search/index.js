@@ -53,7 +53,7 @@ function Search ( options ) {
       "bool": {
         "must": {
             "multi_match": {
-              "fields": [ "name^5", "_all" ],
+              "fields": [ "name^5", "doc" ],
               "type": "phrase_prefix",
               "query": query,
             },
@@ -69,7 +69,7 @@ function Search ( options ) {
   else {
     queryObject.query = {
       "multi_match" : { 
-        "fields" : [ "name^5", "_all" ],
+        "fields" : [ "name^5", "doc" ],
         "type": "phrase_prefix",
         "query" : query,
       },
