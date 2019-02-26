@@ -10,7 +10,7 @@ var GAPI = require('gapitoken');
 var mime = require('mime');
 var fs   = require('fs');
 var zlib = require('zlib');
-var miss = require('mississippi');
+var async = require('async');
 
 var oauthToken = '';
 var projectName = process.env.GOOGLE_PROJECT_ID || '';
@@ -147,7 +147,8 @@ var cors = [{
   method: [ "GET", "HEAD", "OPTIONS" ],
   maxAgeSeconds: 3600
 }]
-module.exports.buckets = {
+
+var bucketsAPI = {
   // Get a bucket's meta data from google cloud storage
   get: function(bucketName, callback) {
 
@@ -243,9 +244,11 @@ module.exports.buckets = {
   }
 
 };
+module.exports.buckets = bucketsAPI;
 
 // A collection of all functions related to manipulating objects in cloud storage
-module.exports.objects = { 
+
+var objectsAPI = { 
 
   // List all objects in a bucket (name, md5hash)
   list: function(bucket, options, callback) {
@@ -261,6 +264,38 @@ module.exports.objects = {
       url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o',
       qs: qs,
     }, callback);
+  },
+
+  listAll: function (bucket, options, callback) {
+    if ( typeof options === 'function' ) callback = options;
+    if ( !options ) options = {};
+
+    var completeList = []
+
+    var qs = Object.assign( {
+      fields: 'kind,items(name,md5Hash),nextPageToken',
+      delimiter: '',
+    }, options )
+
+    objectsAPI.list( bucket, qs, handleList )
+
+    function handleList ( error, results ) {
+      if ( error && error !== 404 ) return callback( error )
+
+      if ( results && results.items && Array.isArray( results.items ) ) {
+        completeList = completeList.concat( results.items )  
+      }
+
+      if ( results && results.nextPageToken ) {
+        var nextOptions = Object.assign( qs, {
+          pageToken: results.nextPageToken,
+        } )
+        return objectsAPI.list( bucket, nextOptions, handleList )
+      }
+
+      callback( null, completeList )
+    }
+
   },
 
   // list webhook-uploads
@@ -460,6 +495,37 @@ module.exports.objects = {
       url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o/' + encodeURIComponent(filename),
       method: 'DELETE'
     }, callback);
-  }
+  },
+
+  deleteAll: function ( bucket, callback ) {
+    objectsAPI.listAll( bucket, handleItems )
+
+    function handleItems ( error, items ) {
+      if ( error ) return error;
+
+      if ( items.length === 0 ) callback()
+
+      var deleteTasks = items.map( itemToDeleteTask )
+      async.parallelLimit( deleteTasks, 10, handleAllDeleted )
+    }
+
+    function itemToDeleteTask ( item ) {
+      return function deleteTask ( taskComplete ) {
+        objectsAPI.del( bucket, item.name, handleDelete )
+
+        function handleDelete ( error ) {
+           if ( error >= 400 ) return taskComplete( error )
+           taskComplete();
+        }
+      }
+    }
+
+    function handleAllDeleted ( error ) {
+      if ( error ) return callback( error )
+      callback()
+    }
+  },
 
 };
+
+module.exports.objects = objectsAPI;

@@ -54,6 +54,7 @@ WHFirebase.prototype.resetUserPasswordLink = WebhookUserPasswordResetLink;
 WHFirebase.prototype.deleteSite = WebhookSiteDelete;
 WHFirebase.prototype.backupUrl = WebhookSiteBackupURL;
 WHFirebase.prototype.backups = WebhookBackups;
+WHFirebase.prototype.siteRedirects = WebhookSiteRedirects;
 
 // helper - for initialization
 
@@ -249,6 +250,16 @@ function WebhookSiteBackupURL () {
   }
 }
 
+function WebhookSiteRedirects ( options, value ) {
+  var keyPath = siteRedirectPath( options )
+  if ( typeof value !== 'undefined' ) {
+    firebaseDatabaseSetValueForKeyPath( this._app, keyPath, value )
+  }
+  else {
+    firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+  }
+}
+
 // helpers - interfaces into data
 
 function firebaseDatabaseSetValueForKeyPath ( firebase, keyPath, value ) {
@@ -326,6 +337,10 @@ function siteDataKeyPath ( options ) {
 
 function siteDevKeyPath ( options ) {
   return `${ siteDataKeyPath( options ) }/dev`
+}
+
+function siteRedirectPath ( options ) {
+  return `${ siteDevKeyPath( options ) }/settings/redirect`
 }
 
 function siteBilling ( options ) {

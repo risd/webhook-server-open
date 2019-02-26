@@ -62,7 +62,10 @@ test( 'set-deploy', function ( t ) {
     var setterOptions = {
       siteName: testOptions.createSiteName,
       key: token.val(),
-      deploy: { branch: 'develop', bucket: testOptions.createSiteName }
+      deploy: {
+        branch: testOptions.createDeployBranch,
+        bucket: testOptions.createDeployBucket,
+      },
     }
     deploys.setBucket( setterOptions, function ( error ) {
       if ( error ) {

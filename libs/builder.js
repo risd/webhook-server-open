@@ -109,17 +109,17 @@ module.exports.start = function (config, logger) {
    * available, it falls back to downloading {sitename}
    * This is useful for the time between branch deploys on a site.
    * Regardless of what file is pulled down, it is saved with
-   * {sitename}_{branch}.zip, since this is also used for the 
+   * {sitename}_{branch}.zip, since this is also used for the
    * command delegator queue lock id.
    *
    * @param buildFolders The folder to write the archive to
    * @param siteName     For the templates that we want
-   * @param branch      
+   * @param branch
    * @param callback     Callback to call when downloaded
    */
   var downloadSiteZip = function(buildFolders, sitename, branch, callback) {
   	var branchFileName = Deploys.utilities.fileForSiteBranch( sitename, branch )
-    
+
     cloudStorage.objects.get(config.get('sitesBucket'), branchFileName, onDownload)
 
 	  return branchFileName.slice( 0, branchFileName.indexOf( '.zip' ) )
@@ -184,12 +184,12 @@ module.exports.start = function (config, logger) {
 
       /**
        * Do the site build.
-       * 
+       *
        * @param  {string}    buildFolder
        * @param  {Function}  processSiteCallback callback
        * @return {undefined}
        */
-      function processSite(buildFolder, processSiteCallback) { 
+      function processSite(buildFolder, processSiteCallback) {
         console.log( 'process-site:', buildFolder )
         // Only admin or the site owners can trigger a build
         if(_(siteValues.owners).has(firebaseEscape(userid)) || _(siteValues.users).has(firebaseEscape(userid)) || userid === 'admin')
@@ -200,7 +200,7 @@ module.exports.start = function (config, logger) {
           var now = Date.now();
           var buildtime = data.build_time ? Date.parse(data.build_time) : now;
           var buildDiff = Math.floor((buildtime - now)/1000);
-          
+
           var maxParallel = config.get( 'builder' ).maxParallel;
 
           var pipelineArgs = {
@@ -267,18 +267,18 @@ module.exports.start = function (config, logger) {
            * installDependencies. A transform stream that expects an object with:
            * - buildFolder
            * - siteName
-           * 
+           *
            * Using these, it works `npm install` within the `buildFolder`
-           * 
+           *
            * @return {object} stream Transform stream that handles the work.
            */
           function installDependencies () {
             return miss.through.obj( function ( args, enc, next ) {
               console.log( 'install-dependencies' )
-              runInDir( 'npm', args.buildFolder, [ 'install', '--production' ], function ( error ) {
+              runInDir( 'npm', args.buildFolder, [ 'install', '--production=true' ], function ( error ) {
                 if ( error ) {
                   console.log( error );
-                  var installError = new Error( 'Could not complete npm install' ) 
+                  var installError = new Error( 'Could not complete npm install' )
                   installError.reportStatus = {
                     site: args.siteName,
                     message: 'Failed to build, errors in installation of site dependencies for ' + siteBucket,
@@ -301,7 +301,7 @@ module.exports.start = function (config, logger) {
                 }
                 next( null, args )
               } )
-              
+
             } )
 
             function makeDeployBucketTask ( siteBucket ) {
@@ -329,7 +329,7 @@ module.exports.start = function (config, logger) {
            * As files are written by the build processes, they are passed into a
            * sub-stream that will compare their MD5 hash to the file currently in
            * the bucket at that location. If it is different, the built file is uploaded.
-           * 
+           *
            * @param  {object} options
            * @param  {number} options.maxParallel?  Max number of build workers to spawn.
            * @return {object} stream                Transform stream that handles the work.
@@ -365,7 +365,7 @@ module.exports.start = function (config, logger) {
                 maxParallel: maxParallel,
                 purgeProxy: args.purgeProxy,
               }
-              
+
               miss.pipe(
                 usingArguments( { buildFolder: args.buildFolder, siteBuckets: buckets } ),
                 removeBuild(),
@@ -415,9 +415,9 @@ module.exports.start = function (config, logger) {
              * getBuildOrder expects an object with key { buildFolder }, a string
              * for the path in which to run the `build-order` command.
              * The build order is pulled, and compared against the sorted ordrer.
-             * The final sorted ordered is added to the incoming 
+             * The final sorted ordered is added to the incoming
              * adds a key { buildOrder }
-             * 
+             *
              * @return {object} stream  Transform stream that handles the work.
              */
             function getBuildOrder () {
@@ -446,7 +446,7 @@ module.exports.start = function (config, logger) {
                * The stream expects an object `args` with a file path to run the command
                * at the `buildFolder` key  & writes the keys `buildOrder` & `defaultBuildOrder`
                * file path strings to the same `args` object before pushing it into the stream.
-               * 
+               *
                * @return {object} stream  Transforms stream that handles the work.
                */
               function writeBuildOrder () {
@@ -472,7 +472,7 @@ module.exports.start = function (config, logger) {
                * Using the two files, find the differences between them, and concatinate
                * the `defaultBuildOrder` on the `buildOrder`.
                * The sorted build order will be saved as an array at `sortedBuildOrder`
-               * 
+               *
                * @return {object} stream  Transform stream that handles the work.
                */
               function sortBuildOrder ( saveToKey ) {
@@ -587,7 +587,7 @@ module.exports.start = function (config, logger) {
                   return {
                     buildFolder: args.buildFolder,
                     command: 'grunt',
-                    commandArgs: [ 'build-static', '--production=true', '--emitter' ],
+                    commandArgs: [ 'build-static', '--production=true', '--emitter=true' ],
                     bucket: siteBucket
                   }
                 }
@@ -600,17 +600,17 @@ module.exports.start = function (config, logger) {
 
               function buildFlags ( cachedData ) {
                 return function buildFlagsForFile ( siteBucket, file ) {
-                  return [ '--inFile=' + file, '--data=' + cachedData, '--production=true', '--settings={"site_url":"'+ protocolForDomain( siteBucket ) +'"}', '--emitter' ]
+                  return [ '--inFile=' + file, '--data=' + cachedData, '--production=true', '--settings={"site_url":"'+ protocolForDomain( siteBucket ) +'"}', '--emitter=true' ]
                 }
               }
-            }            
+            }
 
             /**
              * runBuildEmitter returns a parallel transform stream that runs build commands
              * in the number of processes defined by the options.
              *
              * Expects objects that have shape { buildFolder, ... }
-             * Where { buildFolder, ... } are passed into streamToCommandArgs and expected 
+             * Where { buildFolder, ... } are passed into streamToCommandArgs and expected
              * to produce an array of arguments for running a build command.
              * Pushes objects that have shape  { builtFile, builtFilePath, bucket: { contentDomain, maskDomain } }
              *
@@ -618,7 +618,7 @@ module.exports.start = function (config, logger) {
              * error is propogated up, including the `errorReportStatus` as the
              * `error.reportStatus` value for reporting back to the CMS that the current build
              * did not complete.
-             * 
+             *
              * @param  {object} options
              * @param  {number} options.maxParallel?         The max number of streams to spawn at once.
              * @param  {object} options.errorReportStatus?   Object to use as the `error.reportStatus` to report the error to the CMS of an incomplete build.
@@ -657,7 +657,7 @@ module.exports.start = function (config, logger) {
                         builtFile = htmlAsIndexFile( builtFile )
                       }
 
-                      stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, bucket: bucket } ) 
+                      stream.push( { builtFile: builtFile, builtFilePath: builtFilePath, bucket: bucket } )
 
                       // non trailing slash redirect
                       if ( builtFile.endsWith( '/index.html' ) ) {
@@ -708,12 +708,12 @@ module.exports.start = function (config, logger) {
             /**
              * Collects all { builtFile } values that pass through, and pushes
              * the same object that comes in.
-             * 
+             *
              * On end, a site map XML file is written and a { builtFile, builtFilePath }
              * object is pushed to present the new file.
              *
              * Site maps are written at {bucket}-sitemap.xml
-             * 
+             *
              * @param  {object} options
              * @param  {string[]} options.buckets[]
              * @param  {string} options.buckets[].contentDomain  The domains to write the urls for.
@@ -757,7 +757,7 @@ module.exports.start = function (config, logger) {
               function createSiteMapTask ( bucket ) {
                 return function siteMapTask ( taskComplete ) {
                   var siteMapDomain = bucket.maskDomain ? bucket.maskDomain : bucket.contentDomain;
-                  
+
                   var siteMapFile = siteMapName( siteMapDomain );
                   var siteMapPath = path.join( builtFolder, siteMapFile )
                   var siteMapContent = siteMapFor( siteMapDomain, urls )
@@ -799,7 +799,8 @@ module.exports.start = function (config, logger) {
             }
 
             function hostWithProtocol( host ) {
-              var protocol = 'http';
+              var isSecure = fastly.isSecureDomain( host );
+              var protocol = isSecure ? 'https' : 'http';
               return [ protocol, host ].join( '://' )
             }
 
@@ -849,7 +850,7 @@ module.exports.start = function (config, logger) {
                     '--inFile=pages/robots.txt',
                     '--production=true',
                     '--data=.build/robots-data.json',
-                    '--emitter'
+                    '--emitter=true'
                   ]
 
                   var builtRobotsPath = path.join( builtFolder, builtFile )
@@ -898,14 +899,14 @@ module.exports.start = function (config, logger) {
           /**
            * deleteRemoteFilesNotInBuild is a transform stream. First it reads all
            * objects from the bucket. Then compares them to local files.
-           * 
+           *
            * If it exists as a local file, it nothing is done.
            * If it does not exist as a local file, it is deleted.
            *
            * Local file comparisons include:
            * - Same name
            * - Same name - '/index.html'
-           * 
+           *
            * @param  {object} options
            * @param  {number} options.maxParallel?  Max number of build workers to spawn.
            * @return {object} stream  Transform stream that will handle the work.
@@ -915,7 +916,7 @@ module.exports.start = function (config, logger) {
             var maxParallel = options.maxParallel || 1;
 
             return miss.through.obj( function ( args, enc, next ) {
-              
+
               console.log( 'delete-remote-files-not-in-build:start' )
 
               var buckets = [ { contentDomain: args.siteBucket, maskDomain: args.maskDomain } ]
@@ -939,7 +940,7 @@ module.exports.start = function (config, logger) {
               var buckets = options.buckets;
               return miss.through.obj( function ( args, enc, next ) {
                 var stream = this;
-                
+
                 var listTasks = buckets.map( pushListTask )
 
                 async.parallel( listTasks, function onDone () { next() } )
@@ -996,7 +997,7 @@ module.exports.start = function (config, logger) {
                       // file exists locally, lets keep it in the bucket
                       fs.close( fd, function () { next() } )
                     } )
-                    
+
                   }
 
                   // file exists locally, lets keep it in the bucket
@@ -1041,7 +1042,7 @@ module.exports.start = function (config, logger) {
       // Run a domain so we can survive any errors
       var domainInstance = domain.create();
 
-      domainInstance.on('error', function(err) { 
+      domainInstance.on('error', function(err) {
         console.log('domain-instance:error');
         console.log(err);
         console.log(err.message);
@@ -1077,7 +1078,7 @@ module.exports.start = function (config, logger) {
                 processSite(buildFolder, jobCallback);
               });
             };
-            
+
             if(fs.existsSync(buildFolder)) {
               runInDir('rm', buildFolder + '/..', ['-rf', buildFolder], function(err) {
                 unzipStuff();

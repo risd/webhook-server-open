@@ -60,7 +60,7 @@ test( 'command-build', function ( t ) {
 
   commandor.on( 'ready', function ( commandHandlers ) {
     console.log( 'ready' )
-    console.lgo( commandHandlers )
+    console.log( commandHandlers )
     options.forEach( function ( opts ) {
       commandHandlers.queueFirebase( { tube: opts.tube, data: opts.data } )
     } )

@@ -37,12 +37,7 @@ module.exports.start = function (config, logger) {
 
   var elasticOptions = config().elastic;
 
-  var searchOptions = {
-    host: elasticOptions.host,
-    username: elasticOptions.auth.username,
-    password: elasticOptions.auth.password,
-  }
-  var search = WebHookElasticSearch( searchOptions )
+  var search = WebHookElasticSearch( elasticOptions )
 
   var firebase = Firebase( config().firebase )
   this.root = firebase.database()
@@ -115,6 +110,10 @@ module.exports.start = function (config, logger) {
       domainInstance.run(function() {
         
         search.siteEntries( siteName, function ( error, siteIndex ) {
+
+          // if no siteIndex is found, lets assume we can make it.
+          if ( ! siteIndex ) siteIndex = []
+          
           whSiteData.get( { siteName: siteName, key: siteValues.key }, function ( error, retrievedSiteData ) {
             function noSiteDataError () { return new Error( `No data for ${ siteName }.` ) }
             if ( error ) return jobCallback( noSiteDataError() )

@@ -140,7 +140,7 @@ module.exports.start = function ( config, logger ) {
       var maxParallel = options.maxParallel;
 
       // multiple - grunt build-template --inFile=templates/{content-type}/individual.html --itemKey={itemKey}
-      // one off  - grunt build-page --inFile=pages/{one-off-path}
+      // one off  - grunt build-page --inFile={one-off-path}
       
       return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
 

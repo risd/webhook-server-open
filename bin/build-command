@@ -1,55 +1,16 @@
 #!/usr/bin/env node
 
 require('dotenv').config()
+var firebaseEscape = require( '../libs/utils/firebase-escape.js' )
+var firebaseUnescape = require( '../libs/utils/firebase-unescape.js' )
+var developmentDomain = process.env.DEVELOPMENT_DOMAIN;
 
-var siteBranchCmdOptions = {
-  edu: {
-    develop: eduDevelop,
-    master: eduMaster,
-    lerna: eduLerna,
-  },
-  edutest: {
-    master: eduTestMaster,
-    develop: eduTestDevelop,
-  },
-  'risd-undergraduate-welcome': {
-    develop: undergradDevelop,
-    master: undergradMaster,
-  },
-  'risd-identity-research': {
-    master: risdIdentityMaster,
-  },
-  'risd-policies': {
-    develop: risdPoliciesDevelop,
-  },
-  'risd-weekend': {
-    develop: risdWeekendDevelop,
-    master: risdWeekendMaster,
-  },
-  'cdcf': {
-    develop: cdcfDevelop,
-    master: cdcfMaster,
-  },
-  'info': {
-    develop: infoDevelop,
-    master: infoMaster,
-  },
-  'liberal-arts-ma': {
-    master: liberalArtsMaMaster,
-    develop: liberalArtsMaDevelop,
-  },
-  'test': {
-    master: testMaster,
-    develop: testDevelop,
-    'develop-edu': testDevelopEdu,
-  },
-  'sei': {
-    master: seiMaster,
-    develop: seiDevelop,
-  },
-  'commencement': {
-    'master-2018': commencement2018Master,
+function formatSiteName ( siteName ) {
+  siteName = firebaseUnescape( siteName )
+  if ( siteName.indexOf( developmentDomain ) === -1 ) {
+    siteName = `${ siteName }.${ developmentDomain }`
   }
+  return siteName;
 }
 
 var cmd = parseArgs( process.argv.slice( 2 ) )
@@ -80,525 +41,96 @@ var jobCallback = function ( error ) {
   process.exit( error ? 1 : 0 )
 }
 
+var args = parseArgs( process.argv.slice( 2 ) )
+if ( ! args ) return printHelp()
+var cmd = cmdForArgs( args )
+
 build( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
 
-// [] -> { siteName, branch } | false
 function parseArgs ( args ) {
-  var cmd = false;
-  var site = args[ 0 ]
-  if ( args[ 0 ] in siteBranchCmdOptions ) {
-    var bucket = args[ 1 ].split( '=' )[ 1 ]
-    if ( bucket in siteBranchCmdOptions[ site ] ) {
-      cmd = siteBranchCmdOptions[ site ][ bucket ]()
+  var siteName = formatSiteName( args[ 0 ] )
+  // [{ flag: value }]
+  var flagObjects = args.slice( 1 ).map( parseFlag ).filter( notNull )
+  
+  // [ flag, flag, ... ]
+  var flags = flagObjects.map( pluckKey )
+
+  var matchingFlags = matchesRequired( flags )
+  if ( ! matchingFlags ) return false;
+
+  return flagObjects.reduce( intoSingleObject, { siteName: siteName } )
+
+  function intoSingleObject ( singleObject, flagObject ) {
+    return Object.assign( singleObject, flagObject )
+  }
+
+  function matchesRequired ( flags ) {
+    var requiredFlags = [ 'branch', 'bucket', 'userid' ]
+    var matching = flags.filter( inRequired )
+
+    if ( matching.length === requiredFlags.length ) return true;
+    else return false;
+
+    function inRequired ( flag ) {
+      return requiredFlags.indexOf( flag ) !== -1;
     }
   }
-  return cmd;
+
+  // --flag=value => { flag: value }
+  function parseFlag ( flagArgument ) {
+    // var flags = [ 'branch', 'bucket', 'userid' ]
+    if ( ! flagArgument.startsWith( '--' ) ) return null;
+    var kvArray = flagArgument.slice( 2 ).split( '=' )
+    var kv = {}
+    kv[ kvArray[ 0 ] ] = kvArray[ 1 ]
+    return kv;
+  }
+
+  function notNull ( value ) {
+    return value !== null;
+  }
+
+  function pluckKey ( flagObject ) {
+    var flags = Object.keys( flagObject )
+    return flags[ 0 ]
+  }
 }
 
 function printHelp () {
-  var msg = `build-command {site-name} --branch={branch}\nPossible values include: \n\t${ possibleCmds().map( cmdList ).join( '\n\t' ) }`
-  return console.log( msg )
+  var msg = `
+    Expected the following usage:
+    ./bin/build-command { siteName } --branch={ branch } --bucket={ bucket } --userid={ userid }
+  `.trim()
+  console.log( msg )
+}
 
-  function cmdList ( cmd ) {
-    return `${ cmd.site } --branch=${ cmd.branch }`
+function cmdForArgs ( options ) {
+  var siteName = options.siteName;
+  var bucket = options.bucket;
+  var branch = options.branch;
+  var userid = options.userid;
+
+  var data = {
+    build_time: new Date(),
+    id: uniqueId(),
+    sitename: firebaseEscape( siteName ),
+    siteBucket: bucket,
+    userid: userid,
+    branch: branch,
+    deploys: [ { branch: branch, bucket: bucket } ]
   }
 
-  function possibleCmds () {
-    return Object.keys( siteBranchCmdOptions )
-      .map( siteNestedBranchCmds )
-      .reduce( concatSiteBranch, [] )
+  var identifier = `${ firebaseUnescape( siteName ) }_${ branch }`
 
-      function siteNestedBranchCmds ( site ) {
-        return { site: site, branches: Object.keys( siteBranchCmdOptions[ site ] ) }
-      }
-
-      function concatSiteBranch ( previous, current ) {
-        return previous.concat( current.branches.map( flattenSiteBranch ) )
-        function flattenSiteBranch ( branch ) {
-          return { site: current.site, branch: branch }
-        }
-      }
+  return {
+    identifier: identifier,
+    payload: data,
   }
 }
 
-function eduMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"edu,1risd,1systems",
-    "siteBucket": "r-19.edu.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-    "deploys": [
-      { branch: 'master', bucket: 'r-19.edu.risd.systems' },
-    ]
-  }
-  var identifier = "edu,1risd,1systems_master"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function eduDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"edu,1risd,1systems",
-    "siteBucket": "edu.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-    "deploys": [
-      { branch: 'develop', bucket: 'edu.risd.systems' },
-    ]
-  }
-  var identifier = "edu,1risd,1systems_develop"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function eduLerna () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"edu,1risd,1systems",
-    "siteBucket": "feature-lerna.edu.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"feature/lerna",
-    "deploys": [
-      { branch: 'feature/lerna', bucket: 'feature-lerna.edu.risd.systems' },
-    ]
-  }
-  var identifier = "edu,1risd,1systems_feature-lerna.edu.risd.systems"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-
-}
-
-function eduTestMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"edutest,1risd,1systems",
-    "siteBucket": "edutest.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-    "deploys": [
-      { branch: 'master', bucket: 'edutest.risd.systems' },
-    ]
-  }
-  var identifier = "edutest,1risd,1systems_master"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function eduTestDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"edutest,1risd,1systems",
-    "siteBucket": "dev.edutest.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-    "deploys": [
-      { branch: 'develop', bucket: 'dev.edutest.risd.systems' },
-    ]
-  }
-  var identifier = "edutest,1risd,1systems_master"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function undergradMaster () {
-
-  var identifier = "risd-undergraduate-welcome,1risd,1systems_develop"
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-undergraduate-welcome,1risd,1systems",
-    "siteBucket": "congratulations.risd.edu",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-    "deploys": [
-      { branch: 'master', bucket: 'congratulations.risd.edu' },
-    ]
-  }
-  var payload = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return payload;
-}
-
-function undergradDevelop () {
-
-  var identifier = "risd-undergraduate-welcome,1risd,1systems_develop"
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-undergraduate-welcome,1risd,1systems",
-    "siteBucket": "congratulations.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-    "deploys": [
-      { branch: 'develop', bucket: 'congratulations.risd.systems' }
-    ]
-  }
-  var payload = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return payload;
-}
-
-function risdIdentityMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-identity-research,1risd,1systems",
-    "siteBucket": "risd-identity-research.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-    "deploys": [
-      { branch: 'master', bucket: 'risd-identity-research.risd.systems' }
-    ]
-  }
-  var identifier = "risd-identity-research,1risd,1systems_master"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function risdPoliciesDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-policies,1risd,1systems",
-    "siteBucket": "risd-policies.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-    "deploys": [
-      { branch: 'develop', bucket: 'risd-policies.risd.systems' },
-    ]
-  }
-  var identifier = "risd-policies,1risd,1systems_develop"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function risdWeekendDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-weekend,1risd,1systems",
-    "siteBucket": "risd-weekend.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-    "deploys": [
-      { branch: 'master', bucket: 'risdweekend.com' },
-      { branch: 'develop', bucket: 'risd-weekend.risd.systems' },
-    ]
-  }
-  var identifier = "risd-weekend,1risd,1systems_risd-weekend.risd.systems"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function risdWeekendMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-weekend,1risd,1systems",
-    "siteBucket": "risdweekend.com",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-    "deploys": [
-      { branch: 'master', bucket: 'risdweekend.com' },
-    ]
-  }
-  var identifier = "risd-weekend,1risd,1systems_master"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function cdcfDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"critical-futures,1risd,1systems",
-    "siteBucket": "critical-futures.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-    "deploys": [
-      { branch: 'develop', bucket: 'critical-futures.risd.systems' },
-    ]
-  }
-  var identifier = "critical-futures,1risd,1systems_develope"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-function cdcfMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"critical-futures,1risd,1systems",
-    "siteBucket": "www.cd-cf.org",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-    "deploys": [
-      { branch: 'master', bucket: 'www.cd-cf.org' },
-    ]
-  }
-  var identifier = "critical-futures,1risd,1systems_master"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function infoDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"info,1risd,1systems",
-    "siteBucket": "info.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-    "deploys": [
-      { branch: 'develop', bucket: 'info.risd.systems' },
-    ]
-  }
-  var identifier = "info,1risd,1systems_develope"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-function infoMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"info,1risd,1systems",
-    "userid":"rrodrigu@risd.edu",
-    "siteBucket": "info.risd.edu",
-    "branch":"master",
-    "deploys": [
-      { branch: 'master', bucket: 'info.risd.edu' },
-    ]
-  }
-  var identifier = "info,1risd,1systems_master"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
-
-function testMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"unique-cli-test,1risd,1systems",
-    "siteBucket": "0002.test.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-  }
-  var identifier = "unique-cli-test,1risd,1systems_0002.test.risd.systems"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;  
-}
-
-function testDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"unique-cli-test,1risd,1systems",
-    "siteBucket": "test.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-  }
-  var identifier = "unique-cli-test,1risd,1systems_test.risd.systems"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;  
-}
-
-function testDevelopEdu () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"unique-cli-test,1risd,1systems",
-    "siteBucket": "webhook-dev.risd.edu",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-  }
-  var identifier = "unique-cli-test,1risd,1systems_webhook-dev.risd.edu"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;  
-}
-
-function liberalArtsMaMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-liberal-arts-ma,1risd,1systems",
-    "siteBucket": "liberalartsmasters.risd.edu",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-  }
-  var identifier = "risd-liberal-arts-ma,1risd,1systems_dev.test.risd.systems"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;  
-}
-
-function liberalArtsMaDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-liberal-arts-ma,1risd,1systems",
-    "siteBucket": "risd-liberal-arts-ma.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-  }
-  var identifier = "risd-liberal-arts-ma,1risd,1systems_dev.test.risd.systems"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;  
-}
-
-function seiMaster () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-sei,1risd,1systems",
-    "siteBucket": "sei.risd.edu",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-  }
-  var identifier = "risd-sei,1risd,1systems_sei.risd.edu"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;  
-}
-
-function seiDevelop () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"risd-sei,1risd,1systems",
-    "siteBucket": "risd-sei.risd.systems",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"develop",
-  }
-  var identifier = "risd-sei,1risd,1systems_risd-sei.risd.systems"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;  
-}
-
-function commencement2018Master () {
-  var data = {
-    "build_time":"2017-04-10T10:10:00-04:00",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "sitename":"commencement,1risd,1systems",
-    "siteBucket": "2018.commencement.risd.edu",
-    "userid":"rrodrigu@risd.edu",
-    "branch":"master",
-  }
-  var identifier = "commencement,1risd,1systems_2018.commencement.risd.edu"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd; 
+function uniqueId() {
+  return Date.now() + 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8);
+    return v.toString(16);
+  });
 }

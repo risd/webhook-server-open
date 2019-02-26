@@ -10,7 +10,7 @@ webhookTasks( grunt )
 Error.stackTraceLimit = Infinity;
 
 test( 'firebase-admin', function ( t ) {
-  t.plan( 9 )
+  t.plan( 12 )
   
   var firebase = Firebase( Object.assign( { initializationName: 'admin-test' }, grunt.config().firebase ) )
   t.assert( typeof firebase === 'object', 'Firebase instance is an object.' )
@@ -57,6 +57,15 @@ test( 'firebase-admin', function ( t ) {
   function handleNonExistentKeySetError () {
     t.fail( 'Setting a non-existent key path to null errors.' )
   }
+
+  var managementKey = db.ref( 'management/sites' ).key
+  t.assert( managementKey === 'sites', 'Acceptable usage of key on management ref' )
+
+  var rootKey = db.ref( 'management/sites' ).root.key
+  t.assert( rootKey === null, 'Root key is null' )
+
+  var refFromRoot = db.ref( 'management/sites' ).root.child( 'management/sites' ).key
+  t.assert( refFromRoot === 'sites', 'Acceptable usage of ref off of the root.' )
 } )
 
 test.onFinish( process.exit )
