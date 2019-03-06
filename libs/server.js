@@ -683,7 +683,7 @@ module.exports.start = function(config, logger)
     var encodedUrl = encodeURIComponentsForURL( removeProtocolFromURL( url ) )
     console.log( 'encodedUrl' )
     console.log( encodedUrl )
-    request( `http://${ config.get('googleProjectId') }.appspot.com/${ encodedUrl  }`, handleResize )
+    request( `https://${ config.get('googleProjectId') }.appspot.com/${ encodedUrl  }`, handleResize )
 
     function handleResize ( error, response, responseBody ) {
       console.log( error )
