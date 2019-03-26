@@ -683,7 +683,7 @@ module.exports.start = function(config, logger)
     var encodedUrl = encodeURIComponentsForURL( removeProtocolFromURL( url ) )
     console.log( 'encodedUrl' )
     console.log( encodedUrl )
-    request( `http://${ config.get('googleProjectId') }.appspot.com/${ encodedUrl  }`, handleResize )
+    request( `https://${ config.get('googleProjectId') }.appspot.com/${ encodedUrl  }`, handleResize )
 
     function handleResize ( error, response, responseBody ) {
       console.log( error )
@@ -691,6 +691,9 @@ module.exports.start = function(config, logger)
       if ( error ) return callback( { statusCode: 500, message: 'Could not get resize url for file.' } )
       var resizeUrl = ''
       if ( response && response.statusCode === 200 ) resizeUrl = responseBody
+      if ( resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0 ) {
+        resizeUrl = `https${ resizeUrl.slice( 4 )}`
+      }
       callback( null, resizeUrl )
     }
   }

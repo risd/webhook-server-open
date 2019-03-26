@@ -110,7 +110,7 @@ function testObjects () {
           url: 'https://lh3.googleusercontent.com/G6Tkw7hXhmR34zpkXA3nBHZ05tgAb2OewVO5NOrv5LUovd-UIqtaZ3rOoNemzXosxFt4HrQXshJ3UIbDuwQOf2sIjQJcuuGeSalc4QG1E1s=s760',
         }, siteTokenFn() ),
       },
-      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ) ],
+      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ), jsonBody( resizeUrlHTTPS ) ],
     },
     {
       name: 'POST /upload-file/', 
@@ -135,7 +135,7 @@ function testObjects () {
           body: "true"
         } ],
       },
-      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ), ensureFileExists() ],
+      res: [ statusCode( 200 ), jsonBody( uploadedFileShape ), ensureFileExists(), jsonBody( resizeUrlHTTPS ) ],
     },
     {
       name: 'POST /upload-file/ with spaces no resize url', 
@@ -243,6 +243,8 @@ test.onFinish( process.exit )
 function statusCode ( expected ) {
   function injectTest ( t ) {
     return function testResponse ( testName, error, response, body ) {
+      console.log( testName )
+      console.log( body )
       t.assert( expected === response.statusCode, `${ testName}: Status code is ${ response.statusCode }, expected ${ expected }.` )
     }
   }
@@ -330,6 +332,11 @@ function searchDocument () {
     typeName: 'pages',
     oneOff: true,
   }
+}
+
+function resizeUrlHTTPS ( obj ) {
+  return obj.hasOwnProperty( 'resize_url' ) &&
+    ( obj.resize_url.indexOf( 'https' ) === 0 )
 }
 
 
