@@ -21,6 +21,7 @@ var uploadIfDifferent = utils.uploadIfDifferent;
 var redirectTemplateForDestination = utils.redirectTemplateForDestination;
 var protocolForDomain = utils.protocolForDomain;
 var addMaskDomain = utils.addMaskDomain;
+var addPurgeProxy = utils.addPurgeProxy;
 
 var unescapeSite = function(site) {
   return site.replace(/,1/g, '.');
@@ -83,6 +84,7 @@ module.exports.start = function ( config, logger ) {
       usingArguments( previewBuildArgs ),
       oneOffTransform(),
       addMaskDomain( config.get( 'fastly' ) ),
+      addPurgeProxy( config.get( 'fastly' ) ),
       runBuildEmitter( runBuildEmitterOptions ),
       uploadIfDifferent(),
       sink(),

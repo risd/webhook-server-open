@@ -113,6 +113,7 @@ function uploadIfDifferent ( options ) {
       builtFilePath: args.builtFilePath,
     }
 
+    if ( args.purgeProxy ) purgeProxy = args.purgeProxy;
     if ( args.bucket ) uploadArgs.bucket = args.bucket;
     if ( args.overrideMimeType ) uploadArgs.overrideMimeType = args.overrideMimeType;
 
