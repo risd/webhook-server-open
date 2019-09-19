@@ -97,8 +97,8 @@ module.exports.start = function ( config, logger ) {
       function onComplete ( error ) {
         if ( error ) return jobCallback( error )
         reportStatus(
-          args.siteName,
-          `Priority build complete for ${ contentType } on ${ args.siteBucket }`, 0, 'PRIORITY' )
+          site,
+          `Priority build complete for ${ contentType } on ${ siteBucket }`, 0, 'PRIORITY' )
         jobCallback()
       } )
 
