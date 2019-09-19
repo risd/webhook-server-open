@@ -10,6 +10,7 @@ var JobQueue = require( './jobQueue.js' )
 var miss = require( 'mississippi' )
 var throughConcurrent = require( 'through2-concurrent' )
 var Deploys = require( 'webhook-deploy-configuration' )
+var Firebase = require('./firebase/index.js');
 var utils = require( './utils.js' )
 var path = require( 'path' )
 var fs = require( 'fs' )
