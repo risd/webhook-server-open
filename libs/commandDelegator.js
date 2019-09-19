@@ -342,6 +342,10 @@ function CommandDelegator (config, logger) {
             console.log('command queued')
           }
 
+          console.log( 'identifier: ', identifier )
+          console.log( 'lockId: ', lockId )
+          console.log( 'memcacheLockId: ', memcacheLockId )
+
           memcached.del(memcacheLockId, function () {
             console.log('memcached:del:', memcacheLockId)
             handlingCommand = handlingCommand - 1;
