@@ -267,7 +267,7 @@ function cachePurge ( options ) {
 
     var purgeUrl = url.resolve( 'http://' + bucket, urlEncode( args.builtFile ) )
     if ( purgeUrl.endsWith( '/index.html' ) ) {
-      purgeUrl = purgeUrl.replace( '/index.html', '/' )
+      purgeUrl = purgeUrl.replace( /index\.html$/g, '/' )
     }
 
     var requestOptions = { method: 'PURGE', url: purgeUrl, followRedirect: false }
