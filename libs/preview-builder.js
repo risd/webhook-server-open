@@ -22,6 +22,7 @@ var redirectTemplateForDestination = utils.redirectTemplateForDestination;
 var protocolForDomain = utils.protocolForDomain;
 var addMaskDomain = utils.addMaskDomain;
 var addPurgeProxy = utils.addPurgeProxy;
+var ReportStatus = require( './utils/firebase-report-status.js' )
 
 var unescapeSite = function(site) {
   return site.replace(/,1/g, '.');
@@ -35,6 +36,10 @@ module.exports.start = function ( config, logger ) {
   var jobQueue = JobQueue.init(config);
 
   var self = this;
+
+  var firebase = Firebase( config().firebase )
+  this.root = firebase.database()
+  var reportStatus = ReportStatus( self.root )
 
   var buildFolderRoot = path.join( '..', '/build-folders' )
 
@@ -90,6 +95,9 @@ module.exports.start = function ( config, logger ) {
       sink(),
       function onComplete ( error ) {
         if ( error ) return jobCallback( error )
+        reportStatus(
+          args.siteName,
+          `Priority build complete for ${ contentType } on ${ args.siteBucket }`, 0, 'PRIORITY' )
         jobCallback()
       } )
 
