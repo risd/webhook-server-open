@@ -36,6 +36,7 @@ var redirectTemplateForDestination = utils.redirectTemplateForDestination;
 var cachePurge = utils.cachePurge;
 var addMaskDomain = utils.addMaskDomain;
 var addPurgeProxy = utils.addPurgeProxy;
+var ReportStatus = require( './utils/firebase-report-status.js' )
 
 var firebaseEscape = require( './utils/firebase-escape.js' )
 var firebaseUnescape = require( './utils/firebase-unescape.js' )
@@ -77,31 +78,8 @@ module.exports.start = function (config, logger) {
 
   var fastly = Fastly( config.get( 'fastly' ) )
 
-  /**
-   *  Reports the status to firebase, used to display messages in the CMS
-   *
-   *  @param site    The name of the site
-   *  @param message The Message to send
-   *  @param status  The status code to send (same as command line status codes)
-   */
-  var reportStatus = function(site, message, status, code) {
-    if ( ! code ) code = 'BUILT'
-    // project::firebase::ref::done
-    var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
-    // project::firebase::push::done
-    messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: code }, function() {
-      // project::firebase::once--value::done
-      messagesRef.once('value', function(snap) {
-        var size = _.size(snap.val());
-
-        if(size > 50) {
-          messagesRef.startAt().limitToFirst(1).once('child_added', function(snap) {
-            messagesRef.child(snap.key).remove();
-          });
-        }
-      });
-    });
-  }
+  
+  var reportStatus = ReportStatus( self.root )
 
   /**
    * Downloads the site archive from cloud storage
