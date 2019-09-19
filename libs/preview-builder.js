@@ -159,6 +159,7 @@ module.exports.start = function ( config, logger ) {
         var errored = false;
         var bucket = { contentDomain: args.siteBucket, maskDomain: args.maskDomain }
         var builder = winSpawn.apply( null, cmdArgs )
+        var purgeProxy = args.purgeProxy
 
         builder.stdout.on( 'data', function readOutput ( buf ) {
           var strs = buf.toString().split( '\n' )
@@ -173,6 +174,7 @@ module.exports.start = function ( config, logger ) {
               stream.push( {
                 builtFile: builtFile,
                 builtFilePath: builtFilePath,
+                purgeProxy: purgeProxy,
                 bucket: bucket } )
             } )
 
