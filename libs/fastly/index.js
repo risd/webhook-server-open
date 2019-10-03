@@ -789,7 +789,7 @@ function setRedirects ( options, complete ) {
   var self = this;
 
   var redirects = options.redirects
-    .filter( patternWithProtocol )
+    .filter( patternWithProtocolOrHost )
     .filter( sameUrl )
 
   async.series( [
@@ -818,9 +818,9 @@ function setRedirects ( options, complete ) {
     return !isRegex( redirect )
   }
 
-  function patternWithProtocol ( redirect ) {
+  function patternWithProtocolOrHost ( redirect ) {
     var parsedPattern = url.parse( redirect.pattern )
-    return parsedPattern.protocol === null
+    return parsedPattern.protocol === null && parsedPattern.host === null
   }
 
   function sameUrl ( redirect ) {
