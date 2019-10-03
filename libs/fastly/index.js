@@ -788,11 +788,13 @@ function removeDomains ( domains, complete ) {
 function setRedirects ( options, complete ) {
   var self = this;
 
-  var redirects = options.redirects.filter( patternWithProtocol )
+  var redirects = options.redirects
+    .filter( patternWithProtocol )
+    .filter( sameUrl )
 
   async.series( [
-    setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: options.redirects.filter( isNotRegex ) } ) ),
-    setSnippetRedirectTasks( Object.assign( {}, options, { redirects: options.redirects.filter( isRegex ) } ) )
+    setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: redirects.filter( isNotRegex ) } ) ),
+    setSnippetRedirectTasks( Object.assign( {}, options, { redirects: redirects.filter( isRegex ) } ) )
   ], complete )
 
   function setDictionaryRedirectsTask ( args ) {
@@ -819,6 +821,16 @@ function setRedirects ( options, complete ) {
   function patternWithProtocol ( redirect ) {
     var parsedPattern = url.parse( redirect.pattern )
     return parsedPattern.protocol === null
+  }
+
+  function sameUrl ( redirect ) {
+    var parsedPattern = url.parse( redirect.pattern )
+    var parsedDestination = url.parse( redirect.destination )
+    var areTheSame = (
+      parsedPattern.protocol === parsedDestination.protocol &&
+      parsedPattern.host === parsedDestination.host &&
+      parsedPattern.path === parsedDestination.path)
+    return ! areTheSame;
   }
 }
 
