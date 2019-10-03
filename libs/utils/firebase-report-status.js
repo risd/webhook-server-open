@@ -13,7 +13,7 @@ module.exports = ReportStatus;
  */
 function ReportStatus ( firebase ) {
 
-  return function reportStatus ( site , message, status, code, callback ) {
+  return function reportStatus ( site, message, status, code, callback ) {
     if ( typeof code === 'function' ) {
       callback = code
       code = undefined
