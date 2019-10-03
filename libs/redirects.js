@@ -17,6 +17,7 @@ var miss = require( 'mississippi' )
 var throughConcurrent = require( 'through2-concurrent' )
 var utils = require( './utils.js' )
 var isAscii = require( 'is-ascii' );
+var ReportStatus = require( './utils/firebase-report-status.js' )
 
 // todo
 // update the `isNotDevelopmentDomain` to use the Fastly domains
@@ -52,23 +53,7 @@ module.exports.start = function ( config, logger ) {
 
   var deploys = Deploys( this.root )
 
-  var reportStatus = function(site, message, status) {
-    // project::firebase::ref::done
-    var messagesRef = self.root.ref('/management/sites/' + site + '/messages/');
-    // project::firebase::push::done
-    messagesRef.push({ message: message, timestamp: Date.now(), status: status, code: 'REDIRECTS' }, function() {
-      // project::firebase::once--value::done
-      messagesRef.once('value', function(snap) {
-        var size = _.size(snap.val());
-
-        if(size > 50) {
-          messagesRef.startAt().limit(1).once('child_added', function(snap) {
-            messagesRef.child(snap.key).remove();
-          });
-        }
-      });
-    });
-  }
+  var reportStatus = ReportStatus( self.root )
 
   console.log( 'Waiting for commands'.red )
 
@@ -101,7 +86,22 @@ module.exports.start = function ( config, logger ) {
         activateTask,
       ]
 
-      async.series( tasks, callback )
+      async.series( tasks, redirectsHandler )
+
+      function redirectsHandler ( error ) {
+        var reportStatusCode = 'REDIRECTS'
+        if ( error && error.reportStatus && error.reportStatus.message && error.reportStatus.status ) {
+          reportStatus( site, error.reportStatus.message, error.reportStatus.status, reportStatusCode )
+        }
+        else if ( error && error.message ) {
+          reportStatus( site, error.message, error.code ? error.code : 1, reportStatusCode )
+        }
+        else {
+          reportStatus( site, 'Successfully set redirects.', 0, reportStatusCode )
+        }
+
+        callback( error )
+      }
     }
 
     function domainsToConfingure ( siteName, callback ) {
@@ -166,27 +166,47 @@ module.exports.start = function ( config, logger ) {
         redirectsForDomainTask( function ( error, redirects ) {
           if ( error ) return taskComplete( error )
 
-          var tasks = domains.map( setRedirectsForDomain( redirects ) )
+          var tasks = domains.map( setRedirectsForDomain( redirects.concat( [ { pattern: '/same/', destination: '/same/' } ] ) ) )
 
           return async.series( tasks, taskComplete )
         } )
       }
 
       function setRedirectsForDomain ( redirects ) {
+        var domainsToProcess = domains.length
+        var domainsThatErrored = []
         return function perDomain ( domain ) {
           return function setRedirectsTask ( taskComplete ) {
-            fastly.redirects( { host: domain, redirects: redirects }, taskComplete )
+            fastly.redirects( { host: domain, redirects: redirects }, handleRedirects )
+
+            function handleRedirects ( error, results ) {
+              domainsToProcess -= 1;
+              if ( error ) {
+                domainsThatErrored = domainsThatErrored.concat( [ domain ] )
+              }
+              if ( domainsToProcess === 0 && domainsThatErrored.length > 0 ) {
+                error.reportStatus = {
+                  message: `Error setting redirects for
+                    domain${ domainsThatErrored.length > 1 ? 's' : ''  }:
+                    ${ domainsThatErrored.join( ' ' ) }`
+                      .split( '\n' )
+                      .map( function trim ( str ) { return str.trim() } )
+                      .join( '\n' ),
+                  code: 1,
+                }
+                return taskComplete( error, results )
+              }
+              else {
+                return taskComplete( null, results )
+              }
+            }
           }
         }
       }
 
       function redirectsForDomainTask ( taskComplete ) {
         var tasks = [ getSiteKey, getRedirects ]
-        return async.waterfall( tasks, function ( error, results ) {
-          if ( error ) return taskComplete( error )
-          var redirects = results;
-          taskComplete( null, redirects )
-        } )
+        return async.waterfall( tasks, callbackDebug( 'redirects-for-domain', taskComplete ) )
       }
 
       function getSiteKey ( taskComplete ) {
@@ -197,6 +217,9 @@ module.exports.start = function ( config, logger ) {
 
         function onSiteData ( siteData ) {
           var siteValues = siteData.val()
+          if ( ! ( siteValues && siteValues.key ) ) {
+            return taskComplete( new Error( `Could not find key for ${ site }.` ) )
+          }
           console.log( 'get-site-key:success' )
           console.log( siteValues.key )
           taskComplete( null, siteValues.key )
@@ -249,6 +272,10 @@ function callbackDebug ( name, callback ) {
   return function wrapsCallback ( error, result ) {
     if ( error ) {
       console.log( name + ':error' )
+      error.reportStatus = {
+        message: `Error setting redirects at step: ${ name }. Notify a developer for help.`,
+        code: 1,
+      }
       console.log( error )
     }
     else {
