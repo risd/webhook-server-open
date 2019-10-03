@@ -788,6 +788,8 @@ function removeDomains ( domains, complete ) {
 function setRedirects ( options, complete ) {
   var self = this;
 
+  var redirects = options.redirects.filter( patternWithProtocol )
+
   async.series( [
     setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: options.redirects.filter( isNotRegex ) } ) ),
     setSnippetRedirectTasks( Object.assign( {}, options, { redirects: options.redirects.filter( isRegex ) } ) )
@@ -812,6 +814,11 @@ function setRedirects ( options, complete ) {
 
   function isNotRegex ( redirect ) {
     return !isRegex( redirect )
+  }
+
+  function patternWithProtocol ( redirect ) {
+    var parsedPattern = url.parse( redirect.pattern )
+    return parsedPattern.protocol === null
   }
 }
 
