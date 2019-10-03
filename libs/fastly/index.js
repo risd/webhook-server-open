@@ -5,6 +5,7 @@ var assert = require( 'assert' )
 var crypto = require( 'crypto' )
 var Fastly = require( 'fastly' )
 var async = require( 'async' )
+var url = require( 'url' )
 
 // base configuration of the service
 var DICTIONARY_REDIRECT_HOSTS = 'dictionary_redirect_hosts';
@@ -221,8 +222,8 @@ function ensureDevelopmentVersion ( complete ) {
     if ( typeof serviceMetadata === 'function' ) taskComplete = serviceMetadata;
     var service_id = self._service_id;
     var version = self.version();
-    var url = [ '/service', service_id, 'version', version, 'clone' ].join( '/' )
-    var args = [ 'PUT', url, setVersion ]
+    var urlStr = [ '/service', service_id, 'version', version, 'clone' ].join( '/' )
+    var args = [ 'PUT', urlStr, setVersion ]
 
     self.request.apply( self, args )
 
@@ -253,8 +254,8 @@ function activateVersion ( options, complete ) {
   var request = options.request;
   var service_id = options.service_id;
   var version = options.version;
-  var url = [ '/service', service_id, 'version', version, 'activate' ].join( '/' )
-  return request( 'PUT', url, complete );
+  var urlStr = [ '/service', service_id, 'version', version, 'activate' ].join( '/' )
+  return request( 'PUT', urlStr, complete );
 }
 
 /**
@@ -685,7 +686,7 @@ function removeDomains ( domains, complete ) {
 
   // removes the domain configuration
   function mapDomainsToRemoveTask ( domain ) {
-    var url = function () {
+    var urlFn = function () {
       return [ '/service', service_id, 'version', self.version(), 'domain', domain ].join( '/' )
     }
     return function removeTask ( taskComplete ) {
@@ -693,7 +694,7 @@ function removeDomains ( domains, complete ) {
       return async.waterfall( [ getSubTask, conditionalVersionClone, removeSubTask ], taskComplete )
 
       function getSubTask ( subTaskComplete ) {
-        self.request( 'GET', url(), function ( error, domainMetadata ) {
+        self.request( 'GET', urlFn(), function ( error, domainMetadata ) {
           if ( error ) return subTaskComplete( null, null )
           subTaskComplete( null, domainMetadata )
         } )
@@ -706,7 +707,7 @@ function removeDomains ( domains, complete ) {
 
       function removeSubTask ( serviceState, subTaskComplete ) {
         if ( ! serviceState ) return subTaskComplete( null, { status: 'ok' } )
-        self.request( 'DELETE', url(), subTaskComplete )
+        self.request( 'DELETE', urlFn(), subTaskComplete )
       }
     }
   }
@@ -786,9 +787,14 @@ function removeDomains ( domains, complete ) {
  */
 function setRedirects ( options, complete ) {
   var self = this;
+
+  var redirects = options.redirects
+    .filter( patternWithProtocol )
+    .filter( sameUrl )
+
   async.series( [
-    setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: options.redirects.filter( isNotRegex ) } ) ),
-    setSnippetRedirectTasks( Object.assign( {}, options, { redirects: options.redirects.filter( isRegex ) } ) )
+    setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: redirects.filter( isNotRegex ) } ) ),
+    setSnippetRedirectTasks( Object.assign( {}, options, { redirects: redirects.filter( isRegex ) } ) )
   ], complete )
 
   function setDictionaryRedirectsTask ( args ) {
@@ -810,6 +816,21 @@ function setRedirects ( options, complete ) {
 
   function isNotRegex ( redirect ) {
     return !isRegex( redirect )
+  }
+
+  function patternWithProtocol ( redirect ) {
+    var parsedPattern = url.parse( redirect.pattern )
+    return parsedPattern.protocol === null
+  }
+
+  function sameUrl ( redirect ) {
+    var parsedPattern = url.parse( redirect.pattern )
+    var parsedDestination = url.parse( redirect.destination )
+    var areTheSame = (
+      parsedPattern.protocol === parsedDestination.protocol &&
+      parsedPattern.host === parsedDestination.host &&
+      parsedPattern.path === parsedDestination.path)
+    return ! areTheSame;
   }
 }
 
@@ -953,14 +974,14 @@ function setSnippetRedirects ( options, complete ) {
     var service_id = self._service_id;
     var version = self.version();
 
-    var url = [ '/service', service_id, 'version', version, 'snippet' ].join( '/' )
+    var urlStr = [ '/service', service_id, 'version', version, 'snippet' ].join( '/' )
 
-    console.log( `get-cdn:${ url }` )
+    console.log( `get-cdn:${ urlStr }` )
 
-    apiRequest( 'GET', url, taskComplete )
+    apiRequest( 'GET', urlStr, taskComplete )
   }
 
-  // options => cdnSnippets => cdnOperations : [ [ method, url, body ] ]
+  // options => cdnSnippets => cdnOperations : [ [ method, urlStr, body ] ]
   function createOperationsFrom ( options ) {
     var service_id = self._service_id;
     var version = self.version();
@@ -989,7 +1010,7 @@ function setSnippetRedirects ( options, complete ) {
       }
     }
 
-    // [ VCLSnippet ] => { pattern, destination } => [ method : string, url : string, body : VCLSnippet ]
+    // [ VCLSnippet ] => { pattern, destination } => [ method : string, urlStr : string, body : VCLSnippet ]
     function createOperations ( cdnRedirects ) {
       return function forRedirect ( redirect ) {
         var snippetName = snippetNameFor( redirect )
@@ -1008,15 +1029,15 @@ function setSnippetRedirects ( options, complete ) {
         return op.bind( self, createBody )
 
         function op ( createBody ) {
-          return [ 'POST', url(), createBody ]
-          function url () {
+          return [ 'POST', urlFn(), createBody ]
+          function urlFn () {
             return [ '/service', service_id, 'version', self.version(), 'snippet' ].join( '/' )
           }
         }
       }
     }
 
-    // [ { pattern, destination } ] => VCLSnippet => [ method : string, url : string, body : {} ]
+    // [ { pattern, destination } ] => VCLSnippet => [ method : string, urlStr : string, body : {} ]
     function deleteOperations ( redirects ) {
       var deleteBody = {};
 
@@ -1030,8 +1051,8 @@ function setSnippetRedirects ( options, complete ) {
       }
 
       function op ( cdnSnippet, deleteBody ) {
-        return [ 'DELETE', url(), deleteBody ]
-        function url () {
+        return [ 'DELETE', urlFn(), deleteBody ]
+        function urlFn () {
           return [ '/service', service_id, 'version', self.version(), 'snippet', cdnSnippet.name ].join( '/' )
         }
       }
@@ -1181,11 +1202,11 @@ function serviceConfigurationUpdater () {
       var apiRequest = self.request;
       var service_id = self._service_id;
 
-      var url = [ '/service', service_id, args.type, args.id, args.property ].join( '/' )
+      var urlStr = [ '/service', service_id, args.type, args.id, args.property ].join( '/' )
 
-      console.log( `map-version-less-task:${ url }` )
+      console.log( `map-version-less-task:${ urlStr }` )
 
-      self.request( 'GET', url, function ( error, items ) {
+      self.request( 'GET', urlStr, function ( error, items ) {
         if ( error ) return taskComplete( error )
 
         console.log( `map-version-less-task:items` )
@@ -1216,7 +1237,7 @@ function serviceConfigurationUpdater () {
           var patchBody = {}
           patchBody[ args.property ] = operations;
           return function patchTask ( subTaskComplete ) {
-            self.jsonRequest( 'PATCH', url, patchBody, function ( error, status ) {
+            self.jsonRequest( 'PATCH', urlStr, patchBody, function ( error, status ) {
               if ( error ) return subTaskComplete( error )
               subTaskComplete( null, status )
             } )
@@ -1258,9 +1279,9 @@ function serviceConfigurationUpdater () {
     var service_id = self._service_id;
     var version = self.version()
 
-    var url = [ '/service', service_id, 'version', version, args.type, args.get.name ].join( '/' )
+    var urlStr = [ '/service', service_id, 'version', version, args.type, args.get.name ].join( '/' )
 
-    apiRequest( 'GET', url, complete )
+    apiRequest( 'GET', urlStr, complete )
   }
 
   function checkGetForUpdate ( args, taskComplete ) {
@@ -1340,7 +1361,7 @@ function serviceConfigurationUpdater () {
     var service_id = self._service_id;
     var version = self.version()
 
-    var url = [ '/service', service_id, 'version', version, args.type  ].join( '/' )
+    var urlStr = [ '/service', service_id, 'version', version, args.type  ].join( '/' )
 
     var ensureDevelopmentVersion = self._ensureDevelopmentVersion()
     if ( ensureDevelopmentVersion ) {
@@ -1348,7 +1369,7 @@ function serviceConfigurationUpdater () {
     }
     else {
       // already an inactive version to work off of
-      return apiRequest.apply( self, [ 'POST', url, args.post, complete ] )
+      return apiRequest.apply( self, [ 'POST', urlStr, args.post, complete ] )
     }
   }
 
@@ -1419,9 +1440,9 @@ function gzipArguments ( name ) {
         var service_id = options.service_id;
         var version = options.version;
         var method = 'PUT';
-        var url = [ '/service', service_id, 'version', version, args.type, gzipOptions.name ].join( '/' )
+        var urlStr = [ '/service', service_id, 'version', version, args.type, gzipOptions.name ].join( '/' )
         var body = Object.assign( {}, gzipOptions )
-        return [ method, url, body ]
+        return [ method, urlStr, body ]
       }
     }
   }
@@ -1487,13 +1508,13 @@ function snippetArguments ( name, options ) {
         var service_id = options.service_id;
         var snippet_id = options.snippet_id;
         var method = 'PUT';
-        var url = [ '/service', service_id, args.type, snippet_id ].join( '/' )
+        var urlStr = [ '/service', service_id, args.type, snippet_id ].join( '/' )
         var body = putBody;
         console.log( 'put-args' )
         console.log( method )
-        console.log( url )
+        console.log( urlStr )
         console.log( body )
-        return [ method, url, body ]
+        return [ method, urlStr, body ]
       }
     }
   }
@@ -1757,7 +1778,7 @@ function debugCallback( name, fn ) {
 
 
 function configFastlyJsonRequest ( token ) {
-  return function fastlyJsonRequest ( method, url, json, callback ) {
+  return function fastlyJsonRequest ( method, urlStr, json, callback ) {
     var headers = {
       'fastly-key': token,
       'content-type': 'application/json',
@@ -1767,7 +1788,7 @@ function configFastlyJsonRequest ( token ) {
     // HTTP request
     request({
       method: method,
-      url: 'https://api.fastly.com' + url,
+      url: 'https://api.fastly.com' + urlStr,
       headers: headers,
       body: JSON.stringify( json ),
     }, function (err, response, body) {
