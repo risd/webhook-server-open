@@ -217,8 +217,8 @@ module.exports.start = function (config, logger) {
               reportStatus( siteName, error.reportStatus.message, error.reportStatus.status )
               console.log( error.reportStatus.message );
             }
-            else if ( error ) {
-
+            else if ( error && error.message ) {
+              reportStatus( siteName, error.message, error.code ? error.code : 1 )
             }
             else {
               reportStatus( siteName, 'Built and uploaded to ' + siteBucket + '.', 0 )
