@@ -19,6 +19,7 @@ var SNIPPET_FETCH_RESTORE_ORIGINAL_HOST = 'fetch_restore_original_host';
 var SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS = 'host_risddotedu_force_https';
 var SNIPPET_ERROR_REDIRECT = 'error_redirect_synthetic';
 var GZIP_BASIC = 'gzip_basic';
+var HEADER_CORS_ALLOW_ALL_ORIGINS = 'header_cors_allow_all_origins'
 
 // todo
 // update force_https to be based on process.env.FASTLY_DOMAINS values
@@ -135,6 +136,7 @@ function initializeService ( service_id, complete ) {
           snippetArguments( SNIPPET_FETCH_RESTORE_ORIGINAL_HOST ),
           snippetArguments( SNIPPET_RECV_HOST_RISDDOTEDU_FORCE_HTTPS ),
           gzipArguments( GZIP_BASIC ),
+          headerArguments( HEADER_CORS_ALLOW_ALL_ORIGINS ),
         ]
         .map( updator.mapVersionedTask )
 
@@ -1417,6 +1419,61 @@ function apiDictionaryItemArguments ( options ) {
     id: options.id,
     operations: options.operations,  // result of get, input for patch
     property: 'items',
+  }
+}
+
+// versioned configuration
+function headerArguments ( name ) {
+  var args = apiArguments( 'header', name )
+  var headerOptions = headerOptionsForName( name )
+  
+  Object.assign( args, { checkUpdate: checkUpdate } )
+  Object.assign( args.post, headerOptions )
+
+  return args;
+
+  function checkUpdate ( cdnHeader ) {
+    var sameHeader = ( cdnHeader.name === headerOptions.name ) &&
+      ( cdnHeader.type === headerOptions.type ) &&
+      ( cdnHeader.action === headerOptions.action ) &&
+      ( cdnHeader.dst === headerOptions.dst ) &&
+      ( cdnHeader.src === headerOptions.src ) &&
+      ( cdnHeader.priority === headerOptions.priority ) &&
+      ( cdnHeader.priority === headerOptions.ignore_if_set )
+
+    if ( sameHeader ) return
+    else return putArgsFn;
+
+    // options : { service_id, version }
+    function putArgsFn ( options ) {
+      var service_id = options.service_id;
+      var version = options.version;
+      var method = 'PUT';
+      var urlStr = [ '/service', service_id, 'version', version, args.type, headerOptions.name ].join( '/' )
+      var body = Object.assign( {}, headerOptions )
+      return [ method, urlStr, body ]
+    }
+  }
+
+  function headerOptionsForName ( name ) {
+    var headerConfiguration = {}
+
+    headerConfiguration[ HEADER_CORS_ALLOW_ALL_ORIGINS ] = {
+      name: HEADER_CORS_ALLOW_ALL_ORIGINS,
+      type: 'cache',
+      action: 'set',
+      dst: 'http.Access-Control-Allow-Origin',
+      src: '"*"',
+      ignore_if_set: 0,
+      priority: 10,
+    }
+
+    try {
+      return headerConfiguration[ name ]
+    }
+    catch ( error ) {
+      throw new Error( `header configuration "${ name }" does not exist.` )
+    }
   }
 }
 
