@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+require('dotenv').config()
+
+var async = require( 'async' )
+var grunt = require( 'grunt' )
+var webhookTasks = require( '../Gruntfile.js' )
+var WHElasticSearch = require( '../libs/elastic-search/index.js' )
+
+webhookTasks( grunt )
+
+var elasticSearch = WHElasticSearch( grunt.config().elastic )
+
+var siteName = process.argv.slice( 2 )[ 0 ]
+
+elasticSearch.createSite( { siteName } )
+  .then( function () {
+    console.log( `index created for ${ siteName }` )
+    process.exit( 0 )
+  } )
+  .catch( function ( error ) {
+    console.log( `index could not be created for ${ siteName }` )
+    console.log( error )
+    process.exit( 1 )
+  } )
