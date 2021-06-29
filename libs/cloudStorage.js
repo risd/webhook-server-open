@@ -402,7 +402,7 @@ var objectsAPI = {
           })                  
       },{ 
           'Content-Type' : overrideMimeType ? overrideMimeType : mime.lookup(local),
-          body: fs.readFileSync(local)
+          body: readFile(local)
       }]
     }, function handleUpload ( error, results ) {
         if ( error ) return callback( error )
@@ -415,6 +415,17 @@ var objectsAPI = {
         }
         return callback( null, results )
       } );
+
+    function readFile ( filePath ) {
+      try {
+        var content = fs.readFileSync( filePath )
+        return content
+      }
+      catch ( error ) {
+        // file does not exist, pass the filePath as the content
+        return filePath
+      }
+    }
   },
 
   /*
