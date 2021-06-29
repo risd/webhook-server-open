@@ -160,6 +160,16 @@ function testObjects () {
       res: [ statusCode( 200 ), jsonBody( uploadedFileShape ), ensureFileExists() ],
     },
     {
+      name: 'POST /search/index/',
+      req: {
+        method: 'POST',
+        uri: serverUrlForPath( '/search/index/' ),
+        json: true,
+        body: Object.assign( {}, siteTokenFn(), searchDocument() ),
+      },
+      res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
+    },
+    {
       name: 'POST /search/',
       req: {
         method: 'POST',
@@ -170,16 +180,6 @@ function testObjects () {
         }, siteTokenFn() ),
       },
       res: [ statusCode( 200 ), jsonBody( searchResultsShape ) ],
-    },
-    {
-      name: 'POST /search/index/',
-      req: {
-        method: 'POST',
-        uri: serverUrlForPath( '/search/index/' ),
-        json: true,
-        body: Object.assign( {}, siteTokenFn(), searchDocument() ),
-      },
-      res: [ statusCode( 200 ), jsonBody( searchIndexShape ) ],
     },
     {
       name: 'POST /search/delete/',

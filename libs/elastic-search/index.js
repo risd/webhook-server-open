@@ -20,6 +20,7 @@ WHElasticSearch.prototype.index = Index;
 WHElasticSearch.prototype.deleteDocument = DeleteDocument;
 WHElasticSearch.prototype.deleteType = DeleteType;
 WHElasticSearch.prototype.deleteSite = DeleteSite;
+WHElasticSearch.prototype.createSite = CreateSite;
 
 function Search ( options ) {
   var client = this._client;
@@ -319,4 +320,27 @@ function DeleteSite ( options ) {
     //   } )
     //   .exec()
   } )
+}
+
+function CreateSite ( options ) {
+  var client = this._client
+
+  var siteName = unescape( options.siteName )
+
+  var args = {
+    index: siteName,
+    includeTypeName: false,
+  }
+
+  return new Promise( function ( resolve, reject ) {
+
+    client.indices.create( args )
+      .then( function ( createResponse ) {
+        resolve()
+      } )
+      .catch( function ( error ) {
+        reject( error )
+      } )
+
+  } ) 
 }
