@@ -56,7 +56,7 @@ module.exports.start = function(config, logger)
   var elastic = Elastic( config().elastic );
 
   var firebaseOptions = Object.assign(
-    { initializationName: 'create-worker' },
+    { initializationName: 'server-worker' },
     config().firebase )
 
   // project::firebase::initialize::done
