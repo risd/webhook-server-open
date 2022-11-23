@@ -135,6 +135,20 @@ function Index ( options ) {
   var parsedDoc = JSON.parse( doc );
   // parsedDoc.__oneOff = oneOff;
   // parsedDoc.__type = typeName;
+  
+  const docFromObj = (obj) => {
+    const doc = {}
+    Object.keys(obj).forEach((key) => {
+      if (typeof obj[key] === 'object' && obj[key] !== null) {
+        doc[key] = JSON.stringify(obj[key])
+      }
+      else {
+        doc[key] = obj[key]
+      }
+    })
+    return doc
+  }
+  
 
   // var args = [ siteName, this._globalTypeName, parsedDoc, id ]
   var args = {
@@ -142,9 +156,10 @@ function Index ( options ) {
     type: this._globalTypeName,
     id: id,
     body: {
-      doc: parsedDoc,
+      doc: docFromObj(parsedDoc),
       oneOff: oneOff,
       contentType: typeName,
+      name: parsedDoc.name,
     },
   }
 
@@ -152,8 +167,6 @@ function Index ( options ) {
 
     client.index( args )
       .then( function ( indexedResponse ) {
-        console.log( 'indexedResponse' )
-        console.log( indexedResponse )
         if ( typeof indexedResponse === 'string' ) {
           var indexedData = JSON.parse( indexedResponse )
         }
