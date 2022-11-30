@@ -1,6 +1,14 @@
+const debug = require('debug')('WHFirebase')
 var path = require( 'path' )
 var request = require( 'request-promise-native' )
 var admin = require( 'firebase-admin' )
+var {
+  initializeApp,
+  cert,
+} = require( 'firebase-admin/app' )
+const {
+  getDatabase,
+} = require('firebase-admin/database')
 var getAccessToken = require( './access-token.js' )
 
 var unescape = require( '../utils/firebase-unescape.js' )
@@ -26,7 +34,7 @@ function WHFirebase ( config ) {
   var firebaseServiceAccountKey = require( `${ process.cwd() }/${ config.serviceAccountKey }` );
 
   var options = {
-    credential: admin.credential.cert( firebaseServiceAccountKey ),
+    credential: cert( firebaseServiceAccountKey ),
     databaseURL: 'https://' + firebaseName + '.firebaseio.com',
   }
 
@@ -34,14 +42,14 @@ function WHFirebase ( config ) {
 
   this._app = appForName( this._initializationName )
   if ( ! this._app ) {
-    this._app = admin.initializeApp( options, this._initializationName )
+    this._app = initializeApp( options, this._initializationName )
   }
 
   this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccountKey )
 }
 
 WHFirebase.prototype.database = function () {
-  return this._app.database()
+  return getDatabase(this._app)
 }
 
 WHFirebase.prototype.siteKey = WebhookSiteKey;
@@ -122,7 +130,7 @@ function WebhookSiteDevData ( options, siteData ) {
   }
 
   function sizeOf ( data ) {
-    return Buffer( JSON.stringify( data ) ).length
+    return Buffer.from( JSON.stringify( data ) ).length
   }
 }
 
@@ -223,9 +231,9 @@ function WebhookBackups ( options, value, pushCallback ) {
     // set, remove backup key
     return firebaseDatabaseSetValueForKeyPath( this._app, keyPath, value )
   }
-  else if ( options && options.push && value && pushCallback ) {
+  else if ( options && options.push && value ) {
     // set, push key
-    return firebaseDatabasePushValueForKeyPath( this._app, keyPath, value, pushCallback )
+    return firebaseDatabasePushValueForKeyPath( this._app, keyPath, value)
   }
   else if ( options && options.key && typeof value === 'undefined' ) {
     // get, backup timestamp
@@ -262,8 +270,9 @@ function WebhookSiteRedirects ( options, value ) {
 
 // helpers - interfaces into data
 
-function firebaseDatabaseSetValueForKeyPath ( firebase, keyPath, value ) {
-  return firebase.database().ref( keyPath ).set( value )
+function firebaseDatabaseSetValueForKeyPath ( app, keyPath, value ) {
+  // return set(child(ref(getDatabase(app)), keyPath), value)
+  return getDatabase(app).ref().child(keyPath).set(value)
 }
 
 function firebaseDatabaseSetLargeValueForKeyPath ( keyPath, value ) {
@@ -281,12 +290,14 @@ function firebaseDatabaseSetLargeValueForKeyPath ( keyPath, value ) {
     } )
 }
 
-function firebaseDatabaseOnceValueForKeyPath ( firebase, keyPath ) {
-  return firebase.database().ref( keyPath ).once( 'value' )
+function firebaseDatabaseOnceValueForKeyPath ( app, keyPath ) {
+  debug(`get:${keyPath}`)
+  return getDatabase(app).ref().child(keyPath).get()
 }
 
-function firebaseDatabasePushValueForKeyPath ( firebase, keyPath, value, callback ) {
-  return firebase.database().ref( keyPath ).push( value, callback )
+function firebaseDatabasePushValueForKeyPath (app, keyPath, value) {
+  debug(`push:${keyPath}`)
+  return getDatabase(app).ref().child(keyPath).push(value)
 }
 
 // helpers - construct paths

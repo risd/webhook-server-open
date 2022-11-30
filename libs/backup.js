@@ -83,8 +83,16 @@ module.exports.start = function (config, logger, callback) {
     }
   }
 
+  // TODO put a test in around this, we changed the underlying .push
+  // usage on firebase to not use the callback
   function storeBackupTimestampReference ( next ) {
-    firebase.backups( { push: true }, options.backupTimestamp, next )
+    firebase.backups( { push: true }, options.backupTimestamp )
+      .then((value) => {
+        next(null, value)
+      })
+      .catch((error) => {
+        next(error)
+      })
   }
 
   function checkRemoveOldestBackup ( next ) {
