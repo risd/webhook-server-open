@@ -42,12 +42,7 @@ function errorHandler (err, req, res, next) {
   res.send('error');
 }
 
-module.exports.start = function(config, logger)
-{
-  if (config.get('newrelicEnabled')) {
-    require('newrelic');
-  }
-
+module.exports.start = function(config, logger) {
   cloudStorage.setProjectName(config.get('googleProjectId'));
   cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
 

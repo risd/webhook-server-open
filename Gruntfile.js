@@ -53,7 +53,6 @@ module.exports = function(grunt) {
     backupBucket: process.env.BACKUPS_BUCKET,                               // The name of the backup bucket on Google Cloud Storage
     uploadsBucket: process.env.UPLOADS_BUCKET,                              // The name of the bucket to push all file uploads to
     googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,               // The email of your projects Service Acccount
-    newrelicEnabled: false,                                                 // Set to true to enable NewRelic monitoring (also make sure that a newrelic.js file exists)
     memcachedServers: [
       'localhost:11211'
     ],
