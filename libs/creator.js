@@ -23,8 +23,8 @@ var usingArguments = utils.usingArguments;
 var sink = utils.sink;
 var cloudStorage = require('./cloudStorage.js');
 
-var escapeUserId = function(userid) {
-  return userid.replace(/\./g, ',1');
+var escapeUserId = function(userId) {
+  return userId.replace(/\./g, ',1');
 };
 
 var unescapeSite = function(site) {
@@ -58,56 +58,90 @@ module.exports.start = function (config, logger) {
 
   return createSite;
 
-  function createSite (payload, identifier, data, client, callback) {
-    var userid = data.userid;
-    var site = data.sitename;
-
+  async function createSite ({ userId, siteName }, callback) {
     console.log('Processing Command For '.green + site.red);
 
-    // project::firebase::ref::done
-    self.root.ref('management/sites/' + site).once('value', function(siteData) {
-      var siteValues = siteData.val();
+    try {
+      const siteManagementSnapshot = await firebase.siteManagement({ siteName })
+      const siteManagement = siteManagementSnapshot.val()
 
-      // IF site already has a key, we alraedy created it, duplicate job
-      if(siteValues.key)
-      {
-        console.log('Site already has key');
-
-        callback( new Error( 'site-exists' ) );
+      if (siteManagement.key) {
+        // site already exists
+        const error = new Error('site-exists')
+        throw error
       }
-      // Else if the site owner is requesting, we need to make it
-      else if(_(siteValues.owners).has(escapeUserId(userid)))
-      {
-        // project::firebase::ref::done
-        self.root.ref('management/sites/' + site + '/error/').set(false, function(err) {
-          // We setup the site, add the user as an owner (if not one) and finish up
-          setupSite(site, siteValues, siteData, siteData.ref, userid, function(err) {
-            if(err) {
-              var errorMessage = 'Error Creating Site For '.green + site.red;
-              // project::firebase::ref::done
-              self.root.ref('management/sites/' + site + '/error/').set(true, function(err) {
-                if ( err ) return callback( err )
-                return callback( new Error( errorMessage.stripColors ) );  
-              });
-            } else {
-              // project::firebase::ref::done
-              self.root.ref('management/users/' + escapeUserId(userid) + '/sites/owners/' + site).set(true, function(err) {
-                console.log('Done Creating Site For '.green + site.red);
-                if (err) return callback( err )
-                callback();
-              });
-            }
-          });
-        });
-      } else {
+      else if (_(siteManagement.owners).has(escapeUserId(userId))) {
+        // site owner is requesting we setup the site
+        await siteManagementError({ siteName }, false)
+        try {
+          await setupSite({ userId, siteName })
+          await firebase.userManagementSetSiteOwner({ userEmail: userId, siteName })
+          console.log(`create-site:${siteName}:success`)
+        }
+        catch (error) {
+          console.log(`create-site:${siteName}:setup-site:error`)
+          console.log(error)
+          await siteManagementError({ siteName }, true)
+          throw error
+        }
+      }  
+      else {
         // Someone is trying to do something they shouldn't
-        var errorMessage = 'Site does not exist or no permissions'
-        console.log( errorMessage );
-        callback( new Error( 'Site does not exist or no permissions' ) );
+        throw new Error('Site does not exist or no permissions')
       }
-    }, function(err) {
-      callback( err );
-    });
+    }
+    catch (error) {
+      console.log(`create-site:${siteName}:error`)
+      console.log(error)
+      // project::async
+      // throw error
+      return callback(error)
+    }
+    
+
+    // self.root.ref('management/sites/' + site).once('value', function(siteData) {
+    //   var siteValues = siteData.val();
+
+    //   // IF site already has a key, we alraedy created it, duplicate job
+    //   if(siteValues.key)
+    //   {
+    //     console.log('Site already has key');
+
+    //     callback( new Error( 'site-exists' ) );
+    //   }
+    //   // Else if the site owner is requesting, we need to make it
+    //   else if(_(siteValues.owners).has(escapeUserId(userId)))
+    //   {
+    //     // project::firebase::ref::done
+    //     self.root.ref('management/sites/' + site + '/error/').set(false, function(err) {
+    //       // We setup the site, add the user as an owner (if not one) and finish up
+    //       setupSite({ userId, siteName }, function(err) {
+    //         if(err) {
+    //           var errorMessage = 'Error Creating Site For '.green + site.red;
+    //           // project::firebase::ref::done
+    //           self.root.ref('management/sites/' + site + '/error/').set(true, function(err) {
+    //             if ( err ) return callback( err )
+    //             return callback( new Error( errorMessage.stripColors ) );  
+    //           });
+    //         } else {
+    //           // project::firebase::ref::done
+    //           self.root.ref('management/users/' + escapeUserId(userId) + '/sites/owners/' + site).set(true, function(err) {
+    //             console.log('Done Creating Site For '.green + site.red);
+    //             if (err) return callback( err )
+    //             callback();
+    //           });
+    //         }
+    //       });
+    //     });
+    //   } else {
+    //     // Someone is trying to do something they shouldn't
+    //     var errorMessage = 'Site does not exist or no permissions'
+    //     console.log( errorMessage );
+    //     callback( new Error( 'Site does not exist or no permissions' ) );
+    //   }
+    // }, function(err) {
+    //   callback( err );
+    // });
   }
 
 
@@ -118,11 +152,10 @@ module.exports.start = function (config, logger) {
   * @param siteData  The actual data of the site in firebase
   * @param siteRef   Firebase reference to the site node
   * @param userid    The userid creatign the site
-  * @param callback  Called when done
   */
-  function setupSite(site, siteValue, siteData, siteRef, userid, callback) {
-
-    var key = uuid.v4();
+  async function setupSite ({ siteName, userId }, callback) {
+    // TODO: finish making async
+    const siteKey = uuid.v4();
 
     var siteBucket = unescapeSite(site);
 
@@ -143,7 +176,7 @@ module.exports.start = function (config, logger) {
             // project::firebase::set::done
             self.root.ref('billing/sites/' + row.siteName).set({
               'plan-id': 'mainplan',
-              'email': userid,
+              'email': userId,
               'status': 'paid',
               'active': true,
               'endTrial' : Date.now()
@@ -167,9 +200,9 @@ module.exports.start = function (config, logger) {
           bucketExists: false,
           cloudStorage: cloudStorage,
           // specifically for generating the key
-          siteKey:      key,
-          siteName:     site,
-          ensureCname:  true,
+          siteKey,
+          siteName,
+          ensureCname: true,
         }]),
         getBucket(),
         createBucket(),
@@ -186,8 +219,6 @@ module.exports.start = function (config, logger) {
         }
       )
   }
-
-  return createSite;
 
   function createData() {
     return miss.through.obj( function ( row, enc, next ) {

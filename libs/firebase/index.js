@@ -54,6 +54,10 @@ WHFirebase.prototype.database = function () {
 
 WHFirebase.prototype.siteKey = WebhookSiteKey;
 WHFirebase.prototype.siteDevData = WebhookSiteDevData;
+WHFirebase.prototype.siteOwners = WebhookSiteOwners;
+WHFirebase.prototype.siteManagement = WebhookSiteManagement;
+WHFirebase.prototype.siteManagementError = WebhookSiteManagementError;
+WHFirebase.prototype.userManagementSetSiteOwner = WebhookUserManagementSetSiteOwner;
 // requires admin sdk + service account
 WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
@@ -134,6 +138,21 @@ function WebhookSiteDevData ( options, siteData ) {
   }
 }
 
+function WebhookSiteManagement ({ siteName }) {
+  const keyPath = siteManagementPath({ siteName })
+  return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+}
+
+function WebhookSiteManagementError ({ siteName }, value) {
+  const keyPath = `${siteManagementPath({ siteName })}/error`
+  if (typeof value !== 'undefined') {
+    return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, value)
+  }
+  else {
+    return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+  }
+}
+
 function WebhookSites () {
   var keyPath = siteManagementPath()
   return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
@@ -142,6 +161,11 @@ function WebhookSites () {
 function WebhookUsers () {
   var keyPath = usersManagementPath()
   return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+}
+
+function WebhookUserManagementSetSiteOwner ({ siteName, userEmail }) {
+  const keyPath = usersManagementPath({ siteName, userEmail, owner: true })
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, true)
 }
 
 function WebhookUserPasswordResetLink ( options ) {
@@ -268,6 +292,17 @@ function WebhookSiteRedirects ( options, value ) {
   }
 }
 
+function WebhookSiteOwners (options, ownerData) {
+  var keyPath = `${siteManagementPath(options)}/owners`
+  if (ownerData) {
+    // set
+    return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, ownerData)
+  } else {
+    // get
+    return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+  }
+}
+
 // helpers - interfaces into data
 
 function firebaseDatabaseSetValueForKeyPath ( app, keyPath, value ) {
@@ -322,13 +357,19 @@ function siteManagementPath ( options ) {
   }
 }
 
+// {
+//   siteName : string?,
+//   userEmail : string?,
+//   owner : boolean?,
+//   user: boolean?
+// }
 function usersManagementPath ( options ) {
   var base = `management/users`
   if ( options && options.userEmail && options.owner && options.siteName ) {
     return `${ base }/${ escape( options.userEmail ) }/sites/owners/${ escape( options.siteName ) }`
   }
   if ( options && options.userEmail && options.user && options.siteName ) {
-    return `${ base }/${ escape( options.userEmail ) }/sites/users/${ escape( options.siteName ) }`
+    return `${ base }/${ escape( options.userEmail || options.user ) }/sites/users/${ escape( options.siteName ) }`
   }
   if ( options && options.userEmail ) {
     return `${ base }/${ escape( options.userEmail ) }`
