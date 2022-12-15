@@ -77,6 +77,25 @@ test( 'matching-compression-metadata', function ( t ) {
   } )
 } )
 
+test('buckets', async (t) => {
+  try {
+    const existingBucket = await cloudStorage.bucketsPromises.get(uploadOptions.bucket)
+    t.ok('got bucket')
+    try {
+      const nonExistentBucket = await cloudStorage.bucketsPromises.get(`non-existing-bucket-${new Date().toISOString()}`)  
+    }
+    catch (error) {
+      t.ok('non existent bucket errors')
+    }
+  }
+  catch (error) {
+    t.fail(error)
+  }
+  finally {
+    t.end()
+  }
+})
+
 // // this is commented out to enable the delete function at the end of
 // // the lib/ tests to complete. 
 // test( 'delete-bucket', function ( t ) {

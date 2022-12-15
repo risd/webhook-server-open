@@ -70,7 +70,7 @@ FastlyWebhookService.prototype.redirects = setRedirects;
 FastlyWebhookService.prototype.mapDomain = mapDomain;
 FastlyWebhookService.prototype.removeMapDomain = removeMapDomain;
 FastlyWebhookService.prototype.maskForContentDomain = maskForContentDomain;
-FastlyWebhookService.prototype.activate =activator;
+FastlyWebhookService.prototype.activate = activator;
 
 /**
  * Activate the current service_id & version if it is not
@@ -341,17 +341,15 @@ function addressForDomain ( domain ) {
  * The key will be opposite domain, with the value being the domain configured.
  *
  * @param {string|[string]} domains  String of domains to configure. Can be a single string, comman separated string, or array of strings representing domain names.
- * @param {function} complete  Called when the domain has been added.
- *                             Returns ( error, [ ServiceConfiguration ] )
  */
-function addDomains ( domains, complete ) {
+function addDomains (domains, complete ) {
   if ( typeof domains === 'string' ) domains = domains.split( ',' )
   var self = this;
 
   // filter ignored domains
   domains = domains.filter( this.isFastlyDomain.bind( this ) )
 
-  if ( domains.length === 0 ) return complete( null, { status: 'ok', noDomainsAdded: true } )
+  if ( domains.length === 0 ) return Promise.resolve({ status: 'ok', noDomainsAdded: true })
 
   // tasks to execute in order to add the domain
   var tasks = [];
@@ -364,7 +362,15 @@ function addDomains ( domains, complete ) {
 
   tasks = tasks.concat( redirectHostOperationsFor( domains ) )
 
-  return async.series( tasks, handleCallbackError( complete )( self.activate.bind( self, complete ) ) )
+  return new Promise((resolve, reject) => {
+    async.series(tasks, (error) => {
+      if (error) return reject(error)
+      self.activate((error, serviceOptions) => {
+        if (error) return reject(error)
+        resolve(serviceOptions)
+      })
+    })
+  })
 
   function activeVersionTask ( taskComplete ) {
     return self._activeVersion( taskComplete )

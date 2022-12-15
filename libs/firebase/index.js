@@ -58,6 +58,7 @@ WHFirebase.prototype.siteOwners = WebhookSiteOwners;
 WHFirebase.prototype.siteManagement = WebhookSiteManagement;
 WHFirebase.prototype.siteManagementError = WebhookSiteManagementError;
 WHFirebase.prototype.userManagementSetSiteOwner = WebhookUserManagementSetSiteOwner;
+WHFirebase.prototype.siteBillingCreate = WebhookSiteBillingCreate;
 // requires admin sdk + service account
 WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
@@ -301,6 +302,18 @@ function WebhookSiteOwners (options, ownerData) {
     // get
     return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
   }
+}
+
+function WebhookSiteBillingCreate ({ siteName, userEmail }) {
+  const keyPath = siteBilling({ siteName })
+  const billingData = {
+    'plan-id': 'mainplan',
+    'email': userEmail,
+    'status': 'paid',
+    'active': true,
+    'endTrial' : Date.now()
+  }
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, billingData)
 }
 
 // helpers - interfaces into data

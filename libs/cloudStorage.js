@@ -122,6 +122,11 @@ module.exports.setServiceAccount = function(account) {
   googleServiceAccount = account;
 }
 
+module.exports.configure = function ({ projectId, serviceAccount }) {
+  projectName = projectId
+  googleServiceAccount = serviceAccount
+}
+
 // Manually get token, used when wanting a stream back, caller is
 // responsible for making sure token is valid
 module.exports.getToken = function(callback) {
@@ -242,9 +247,42 @@ var bucketsAPI = {
       method: 'DELETE'
     }, callback);
   }
-
 };
 module.exports.buckets = bucketsAPI;
+module.exports.bucketsPromises = {
+  get: function (bucketName) {
+    return new Promise((resolve, reject) => { 
+      bucketsAPI.get(bucketName, (error, body) => {
+        if (error) reject(error)
+        else resolve(body)
+      });
+    })
+  },
+  create: function (bucketName) {
+    return new Promise((resolve, reject) => {
+      bucketsAPI.create(bucketName, (error, body) => {
+        if (error) reject(error)
+        else resolve(body)
+      })
+    })
+  },
+  updateAcls: function (bucketName) {
+    return new Promise((resolve, reject) => {
+      bucketsAPI.updateAcls(bucketName, (error, body) => {
+        if (error) reject(error)
+        else resolve(body)
+      })
+    })
+  },
+  updateIndex: function (bucketName, indexFile, notFoundFile) {
+    return new Promise((resolve, reject) => {
+      bucketsAPI.updateIndex(bucketName, indexFile, notFoundFile, (error, body) => {
+        if (error) reject(error)
+        else resolve(body)
+      })
+    })
+  },
+}
 
 // A collection of all functions related to manipulating objects in cloud storage
 
