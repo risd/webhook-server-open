@@ -10,7 +10,7 @@ webhookTasks(grunt)
 var cloudStorage = require('../../libs/cloudStorage.js')
 
 var uploadOptions = {
-  bucket: config.cloudStorage.bucket(),
+  bucket: config.cloudStorage.bucket,
   local: 'Simple text file',
   remote: 'test/cloud-strorage-upload.txt',
   overrideMimeType: 'text/plain'
