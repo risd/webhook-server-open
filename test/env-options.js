@@ -7,11 +7,11 @@ function EnvOptions ( options ) {
   if ( ! ( this instanceof EnvOptions ) ) return new EnvOptions( options )
   if ( typeof options !== 'object' ) options = {}
 
-  require( 'dotenv-safe' ).load( {
+  require( 'dotenv-safe' ).load({
     allowEmptyValues: true,
     path: path.join( process.cwd(), '.env.test' ),
     sample: path.join( process.cwd(), '.env.test.example' ),
-  } )
+  })
 
   var envOptions = {
     fastlyAddDomain: process.env.FASTLY_ADD_DOMAIN,

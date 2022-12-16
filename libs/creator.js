@@ -39,37 +39,23 @@ module.exports.cnameForDomain = cnameForDomain;
 module.exports.DEFAULT_CNAME_RECORD = DEFAULT_CNAME_RECORD;
 
 /**
- * @param  {Object}   config     Configuration options from .firebase.conf
- * @param  {Object}   logger     Object to use for logging, defaults to no-ops (deprecated)
+ * @param  {Object}  config  Grunt config
  */
-module.exports.start = function (config, logger) {
-  
-  cloudStorage.setProjectName(config.get('googleProjectId'));
-  cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
+module.exports.configure = configure
 
-  var jobQueue = JobQueue.init(config);
-  var self = this;
+async function configure (config) {
+  cloudStorage.config(config.get('cloudStorage'));
 
-  var firebaseOptions = Object.assign(
+  const firebaseOptions = Object.assign(
     { initializationName: 'create-worker' },
-    config().firebase )
+    config.get('firebase') )
+  const firebase = Firebase( firebaseOptions )
 
-  // project::firebase::initialize::done
-  var firebase = Firebase( firebaseOptions )
-  this.root = firebase.database()
-
-  const fastly = require( './fastly' )(config.get( 'fastly' ))
+  const fastly = require('./fastly')(config.get( 'fastly' ))
   const cloudflareConfig = config.get('cloudflare')
 
-  console.log('Waiting for commands'.red);
-
-  // Wait for create commands from firebase
-  jobQueue.reserveJob('create', 'create', createSite);
-
-  return createSite;
-
-  async function createSite ({ userId, siteName }, callback) {
-    console.log('Processing Command For '.green + site.red);
+  return async function ({ userId, siteName }) {
+    console.log('Processing Command For ' + siteName);
 
     try {
       const siteManagementSnapshot = await firebase.siteManagement({ siteName })
@@ -99,14 +85,11 @@ module.exports.start = function (config, logger) {
         // Someone is trying to do something they shouldn't
         throw new Error('Site does not exist or no permissions')
       }
-      callback()
     }
     catch (error) {
       console.log(`create-site:${siteName}:error`)
       console.log(error)
-      // project::async
-      // throw error
-      return callback(error)
+      throw error
     }
   }
 
@@ -133,6 +116,32 @@ module.exports.start = function (config, logger) {
       settings: {},
     })
   }
+}
+
+
+module.exports.start = function (config) {
+
+  var jobQueue = JobQueue.init(config)
+
+  console.log('Waiting for commands'.red);
+
+  const job = configure(config)
+
+  const wrapJob = ({ userId, siteName }, callback) => {
+    job({ userId, siteName })
+      .then(() => {
+        console.log('creator:job:complete')
+        callback()
+      })
+      .catch((error) => {
+        console.log('creator:job:error')
+        console.log(error)
+        callback(error)
+      })
+  }
+
+  // Wait for create commands from firebase
+  jobQueue.reserveJob('create', 'create', wrapJob)
 }
 
 /**
@@ -162,13 +171,13 @@ async function setupBucket (options) {
 
   try {
     console.log('setup-bucket:get-bucket')
-    await cloudStorage.bucketsPromises.get(siteBucket)
+    await cloudStorage.buckets.get(siteBucket)
   }
   catch (error) {
     try {
       // make the bucket
       console.log('setup-bucket:create-bucket')
-      await cloudStorage.bucketsPromises.create(siteBucket)
+      await cloudStorage.buckets.create(siteBucket)
     }
     catch (error) {
       console.log('setup-bucket:create-bucket:error')
@@ -178,9 +187,9 @@ async function setupBucket (options) {
   }
 
   console.log('setup-bucket:update-bucket-acls')
-  await cloudStorage.bucketsPromises.updateAcls(siteBucket)
+  await cloudStorage.buckets.updateAcls(siteBucket)
   console.log('setup-bucket:update-bucket-index')
-  await cloudStorage.bucketsPromises.updateIndex(siteBucket, 'index.html', '404.html')
+  await cloudStorage.buckets.updateIndex({ bucket: siteBucket })
 
   console.log('setup-bucket:fastly-setup')
   const service = await fastly.domain(siteBucket)

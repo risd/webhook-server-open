@@ -18,9 +18,9 @@ var firebaseEscape = require( '../../libs/utils/firebase-escape.js' )
 grunt.config.merge( { suppressJobQueue: true } )
 
 var firebase = Firebase( grunt.config.get( 'firebase' ) )
-var deploys = Deploys( firebase.database() )
+var deploys = Deploys( firebase.database().ref() )
 
-test( 'add-owner', function ( t ) {
+test( 'add-owner', async function ( t ) {
   /* Add owner is a task that is accomplished by the `wh create` command
      in anticipation of submitting the signal command to create the site. */
   t.plan( 1 )
@@ -28,12 +28,12 @@ test( 'add-owner', function ( t ) {
   var ownerData = {}
   ownerData[ firebaseEscape( testOptions.createUserId ) ] = testOptions.createUserId
 
-  firebase.database()
-    .ref( `${ firebaseSitePaths( testOptions.createSiteName ).management }/owners` )
-    .set( ownerData, onOwnerAdded )
-
-  function  onOwnerAdded ( error ) {
-    t.assert( error === null, 'Added site owner without error.' )
+  try {
+    await firebase.siteOwners({ siteName: testOptions.createSiteName }, ownerData)  
+    t.ok(true, 'added site owner without error.')
+  }
+  catch (error) {
+    t.fail(error, 'failed to add site owner' )
   }
 } ) 
 
@@ -44,11 +44,9 @@ test( 'create-site', function ( t ) {
   
   makeCreateWithHandler( createSiteHandler )
   
-  
   function createSiteHandler ( error ) {
     t.assert( error === undefined, 'Create completed without error.' )
   }
-
 } )
 
 test( 'set-deploy', function ( t ) {
@@ -58,7 +56,7 @@ test( 'set-deploy', function ( t ) {
     .then( setDeployWithToken )
     .catch( siteTokenError )
 
-  function setDeployWithToken ( token ) {
+  async function setDeployWithToken ( token ) {
     var setterOptions = {
       siteName: testOptions.createSiteName,
       key: token.val(),
@@ -67,14 +65,13 @@ test( 'set-deploy', function ( t ) {
         bucket: testOptions.createDeployBucket,
       },
     }
-    deploys.setBucket( setterOptions, function ( error ) {
-      if ( error ) {
-        t.fail( error )
-      }
-      else {
-        t.ok( 'creator:deploy-settings-made' )
-      }
-    } )
+    try {
+      await deploys.setBucket(setterOptions)
+      t.ok( 'creator:deploy-settings-made' )
+    }
+    catch (error) {
+      t.fail( error )
+    }
   }
 
   function siteTokenError ( error ) {
@@ -98,18 +95,15 @@ test.onFinish( process.exit )
 
 function makeCreateWithHandler ( createHandler ) {
   var createOptions = {
-    identifier: testOptions.createSiteName,
-    payload: {
-      userid: testOptions.createUserId,
-      sitename: testOptions.createSiteName,
-    }
+    userId: testOptions.createUserId,
+    siteName: testOptions.createSiteName,
   }
 
   var mockClient = { put: function () {} }
 
   var create = creator.start( grunt.config, console.log )
 
-  return create( createOptions, createOptions.identifier, createOptions.payload, mockClient, createHandler )
+  return create(createOptions, createHandler)
 }
 
 function firebaseSitePaths ( siteName ) {

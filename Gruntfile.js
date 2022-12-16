@@ -54,8 +54,7 @@ module.exports = function(grunt) {
     uploadsBucket: process.env.UPLOADS_BUCKET,                              // The name of the bucket to push all file uploads to
     googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,               // The email of your projects Service Acccount
     cloudStorage: {
-      projectId: process.env.GOOGLE_PROJECT_ID,
-      serviceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,
+      keyFilename: process.env.GOOGLE_KEY_JSON,
     },
     memcachedServers: [
       'localhost:11211'

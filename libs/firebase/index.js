@@ -1,6 +1,6 @@
 const debug = require('debug')('WHFirebase')
 var path = require( 'path' )
-var request = require( 'request-promise-native' )
+var axios = require( 'axios' )
 var admin = require( 'firebase-admin' )
 var {
   initializeApp,
@@ -330,11 +330,11 @@ function firebaseDatabaseSetLargeValueForKeyPath ( keyPath, value ) {
         uri += `?access_token=${ token }`
         var putOptions = {
           method: 'PUT',
-          uri: uri,
-          body: value,
+          url: uri,
+          data: value,
           json: true,
         }
-        return request.put( putOptions )
+        return axios.put( putOptions )
     } )
 }
 

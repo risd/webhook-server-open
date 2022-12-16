@@ -12,35 +12,33 @@ module.exports = DeleteSite;
 function DeleteSite ( options ) {
   if ( ! ( this instanceof DeleteSite ) ) return new DeleteSite( options )
 
+  cloudStorage.configure(options.cloudStorage)
   this._firebase = Firebase( options.firebase )
   this._fastly = Fastly( options.fastly )
   this._cloudflare = Cloudflare( options.cloudflare )
-  this._deploys = Deploys( this._firebase.database() )
+  this._deploys = Deploys( this._firebase.database().ref() )
   this._elastic = ElasticSearch( options.elastic )
 }
 
 DeleteSite.prototype.delete = WebhookSiteDelete;
 
 function WebhookSiteDelete ( siteName ) {
+  console.log('delete-site:', siteName)
   var self = this;
 
   return getDeploys()
     .then( deleteSite )
 
-  function getDeploys () {
-    return new Promise( function ( resolve, reject ) {
-      self._deploys.get( { siteName: siteName }, handleDeploys )
-
-      function handleDeploys ( error, deployConfiguration ) {
-        if ( error ) {
-          console.log( 'Could not get deploys for site.' )
-          reject( error )
-        }
-        else {
-          resolve( deployConfiguration.deploys.map( pluck( 'bucket' ) ) )
-        }
-      }
-    } )
+  async function getDeploys () {
+    try {
+      const deployConfiguration = await self._deploys.get({ siteName })
+      return deployConfiguration.deploys.map(d => d.bucket)
+    }
+    catch (error) {
+      console.log('Could not get deploys for site.')
+      console.log(error)
+      throw error
+    }
   }
 
   function deleteSite ( buckets ) {
@@ -76,9 +74,10 @@ function WebhookSiteDelete ( siteName ) {
   function deleteStorageBucketTask ( siteName ) {
     return new Promise( function ( resolve, reject ) {
       cloudStorage.objects.deleteAll( siteName, function ( error ) {
-        console.log( error )
         if ( error ) {
-          return reject( error )
+          console.log('delete:bucket:error:')
+          console.log(error)
+          return reject(resolve)
         }
 
         cloudStorage.buckets.del( siteName, function ( error ) {
@@ -92,4 +91,3 @@ function WebhookSiteDelete ( siteName ) {
   }
 }
 
-function pluck ( key ){ return function ( obj ) { return obj[ key ]  } }
