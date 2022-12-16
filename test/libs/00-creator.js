@@ -15,19 +15,19 @@ var firebase = Firebase( grunt.config.get( 'firebase' ) )
 var deploys = Deploys( firebase.database().ref() )
 
 const createOptions = {
-  userId: config.createor.userId,
-  siteName: config.createor.siteName,
+  userId: config.creator.userId,
+  siteName: config.creator.siteName,
 }
 
 const createSite = creator.configure(grunt.config)
-
+console.log(createSite)
 test( 'add-owner', async function ( t ) {
   /* Add owner is a task that is accomplished by the `wh create` command
      in anticipation of submitting the signal command to create the site. */
   t.plan( 1 )
 
   var ownerData = {}
-  ownerData[ firebaseEscape( createOptions.userId ) ] = testOptions.createUserId
+  ownerData[ firebaseEscape( createOptions.userId ) ] = createOptions.userId
 
   try {
     await firebase.siteOwners({ siteName: createOptions.siteName }, ownerData)  
@@ -39,7 +39,7 @@ test( 'add-owner', async function ( t ) {
 } ) 
 
 
-test( 'create-site', async function ( t ) {
+test( 'create-site', async function (t) {
   t.plan( 1 )
 
   try {
@@ -61,7 +61,7 @@ test( 'set-deploy', async function ( t ) {
       key: siteKey,
       deploy: {
         branch: 'develop',
-        bucket: createOptions.deploy.bucket,
+        bucket: config.creator.deploy.bucket,
       },
     }
     await deploys.setBucket(setterOptions)
@@ -75,15 +75,15 @@ test( 'set-deploy', async function ( t ) {
   }
 })
 
-test( 'create-existing-site', function ( t ) {
+test( 'create-existing-site', async function ( t ) {
   t.plan( 1 )
 
   try {
     await createSite(createOptions)  
-    t.ok(true, 'failed by creating an already existing site')
+    t.ok(false, 'failed by creating an already existing site')
   }
   catch (error) {
-    t.fail(error, 'create existing site errored correctly')
+    t.ok(true, 'create existing site errored correctly')
   }
 
 } )

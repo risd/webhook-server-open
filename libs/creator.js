@@ -43,8 +43,8 @@ module.exports.DEFAULT_CNAME_RECORD = DEFAULT_CNAME_RECORD;
  */
 module.exports.configure = configure
 
-async function configure (config) {
-  cloudStorage.config(config.get('cloudStorage'));
+function configure (config) {
+  cloudStorage.configure(config.get('cloudStorage'));
 
   const firebaseOptions = Object.assign(
     { initializationName: 'create-worker' },
@@ -68,7 +68,7 @@ async function configure (config) {
       }
       else if (_(siteManagement.owners).has(escapeUserId(userId))) {
         // site owner is requesting we setup the site
-        await siteManagementError({ siteName }, false)
+        await firebase.siteManagementError({ siteName }, false)
         try {
           await setupSite({ userId, siteName })
           await firebase.userManagementSetSiteOwner({ userEmail: userId, siteName })
@@ -107,10 +107,13 @@ async function configure (config) {
       fastly: config.get( 'fastly' ),
       cloudStorage: config.get('cloudStorage'),
     })
+    console.log('creator:setup-site:site-key')
     await firebase.siteKey({ siteName }, siteKey)
+    console.log('creator:setup-site:site-billing')
     await firebase.siteBillingCreate({ siteName, userEmail: userId })
 
-    await firebase.siteDevData([ siteName, siteKey ], {
+    console.log('creator:setup-site:dev-data')
+    await firebase.siteDevData({ siteName, siteKey }, {
       data: {},
       contentType: {},
       settings: {},
@@ -161,6 +164,7 @@ module.exports.start = function (config) {
  * @param  {string}   options.fastly.ignoreDomain
  */
 async function setupBucket (options) {
+  console.log('creator:setup-bucket')
   const { siteBucket } = options
   const fastly = require('./fastly')(options.fastly)
   const cnameOptions = {
@@ -186,10 +190,14 @@ async function setupBucket (options) {
     }
   }
 
+  // these are run on create, but verified in case
+  // that process was interrupted
   console.log('setup-bucket:update-bucket-acls')
   await cloudStorage.buckets.updateAcls(siteBucket)
   console.log('setup-bucket:update-bucket-index')
   await cloudStorage.buckets.updateIndex({ bucket: siteBucket })
+  console.log('setup-bucket:update-cors')
+  await cloudStorage.buckets.updateCors({ bucket: siteBucket })
 
   console.log('setup-bucket:fastly-setup')
   const service = await fastly.domain(siteBucket)
@@ -201,6 +209,7 @@ async function setupBucket (options) {
   }
 
   const cname = await createCnameRecord(cnameOptions)
+  console.log('creator:setup-bucket:done')
 }
 
 /**
