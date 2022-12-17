@@ -19,6 +19,8 @@ const fileNameForTimestamp = (timestamp) => {
   return `backup-${timestamp}`
 }
 
+module.exports.fileNameForTimestamp = fileNameForTimestamp
+
 /**
 * @params config The configuration from Grunt
 */
@@ -98,4 +100,6 @@ module.exports.start = async function (config) {
     bucket,
     file: fileNameForTimestamp(oldestBackupTimestamp)
   })
+
+  return { file, timestamp }
 }

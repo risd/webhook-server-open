@@ -2,14 +2,14 @@ const test = require( 'tape' )
 const grunt = require( 'grunt' )
 const webhookTasks = require( '../../Gruntfile.js' )
 
-webhookTasks( grunt )
+webhookTasks(grunt)
 
 const backup = require( '../../libs/backup.js' )
 
 test('backup', async function (t) {
   t.plan(1)
   try {
-    await backup.start(grunt.config)  
+    const { file, timestamp } = await backup.start(grunt.config)
     t.ok(true, 'successfully ran firebase backup')
   }
   catch (error) {

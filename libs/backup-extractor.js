@@ -1,4 +1,4 @@
-var Transform = require('stream').Transform;
+const {Transform} = require('stream')
 
 /*
 * This is a utility used to extract the backup of a speciifc site from the main

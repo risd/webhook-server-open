@@ -473,6 +473,9 @@ var objectsAPI = {
         return url
       })
   },
+  createReadStream: function ({ bucket, file }) {
+    return storage.bucket(bucket).file(file).createReadStream()
+  },
 };
 
 module.exports.objects = objectsAPI;
