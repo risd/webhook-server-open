@@ -31,7 +31,7 @@ function WHFirebase ( config ) {
   if ( ! ( this instanceof WHFirebase ) ) return new WHFirebase( config )
   var firebaseName = config.name;
   this._firebaseName = firebaseName;
-  var firebaseServiceAccountKey = require( `${ process.cwd() }/${ config.serviceAccountKey }` );
+  var firebaseServiceAccountKey = require(path.join(process.cwd(), config.serviceAccountKey));
 
   var options = {
     credential: cert( firebaseServiceAccountKey ),
@@ -273,14 +273,11 @@ function WebhookBackups ( options, value, pushCallback ) {
   }
 }
 
-function WebhookSiteBackupURL () {
-  var uri = `https://${ this._firebaseName }.firebaseio.com/.json?format=export`
-  return this._getAccessToken().then( urlForToken )
-
-  function urlForToken ( token ) {
-    uri += `&access_token=${ token }`
-    return Promise.resolve( uri )
-  }
+async function WebhookSiteBackupURL () {
+  let uri = `https://${ this._firebaseName }.firebaseio.com/.json?format=export`
+  const token = await this._getAccessToken()
+  uri += `&access_token=${ token }`
+  return uri
 }
 
 function WebhookSiteRedirects ( options, value ) {

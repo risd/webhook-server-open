@@ -8,9 +8,6 @@
 // var request = require('request');
 const { Storage } = require('@google-cloud/storage')
 const stream = require('stream')
-// var axios = require('axios')
-// var FormData = require('form-data')
-// var GAPI = require('gapitoken');
 var mime = require('mime');
 var fs   = require('fs');
 var zlib = require('zlib');
@@ -64,34 +61,7 @@ if (keyFilename && projectName && googleServiceAccount) {
 }
 
 
-/* 
-* Refreshes the token used to access google cloud storage
-*
-* @param callback Callback to call when refreshed
-*/
-// var refreshToken = function(callback) {
-//   console.log('cloud-storage:refresh-token')
-//   var gapi = new GAPI({
-//       iss: googleServiceAccount,
-//       scope: 'https://www.googleapis.com/auth/devstorage.full_control https://www.googleapis.com/auth/siteverification',
-//       keyFile: keyFile,
-//   }, function(err) {
-//      if (err) {
-//        console.log('cloud-storage:refresh-token:error')
-//        console.log(err)
-//        callback(err)
-//      }
-
-//      gapi.getToken(function(err, token) {
-//        console.log(token)
-//         if (err) { return console.log(err); }
-//         oauthToken = token;
-
-//         callback(err, token);
-//      });     
-//   });
-// };
-
+// TODO: remove this and its use throughout the module
 /*
 * Run a json request against google cloud stoage, handles getting token
 *
@@ -304,21 +274,14 @@ module.exports.buckets = bucketsAPI;
 var objectsAPI = { 
 
   // List all objects in a bucket (name, md5hash)
-  list: function(bucket, options, callback) {
-    console.log('cloud-storage:objects:list')
-    if ( typeof options === 'function' ) callback = options;
-    if ( !options ) options = {};
-
-    var qs = Object.assign( {
-      fields: 'kind,items(name,md5Hash),nextPageToken',
-      delimiter: 'webhook-uploads/',
-    }, options )
-
-    jsonRequest({
-      method: 'GET',
-      url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o',
-      qs: qs,
-    }, callback);
+  list: function({ bucket, options={} }, callback) {
+    const chain = storage.bucket(bucket).getFiles(options)
+      .then((results) => {
+        const files = results[0]
+        return files
+      })
+    if (typeof callback === 'function') chainCallbackResponse(chain, callback)
+    else return chain
   },
 
   listAll: function (bucket, options, callback) {
@@ -422,7 +385,7 @@ var objectsAPI = {
     if (typeof callback === 'function') chainCallbackResponse(chain, callback)
     else return chain
   },
-  upload: function objectUpload ({ bucket, local, remote, cacheControl='no-cache', overrideMimeType }, callback) {
+  upload: function ({ bucket, local, remote, cacheControl='no-cache', overrideMimeType }, callback) {
     // we stream file uploads since `local` can be a file or the contents of a file
     const destinationOptions = {
       metadata: {
@@ -467,20 +430,7 @@ var objectsAPI = {
       }
     }
   },
-
-  /*
-  * Upload file to bucket with gz compression
-  *
-  * @param options
-  * @param options.bucket            Bucket to upload to
-  * @param options.local             Local file name, or contents of file
-  * @param options.remote            Remote file name
-  * @param options.cacheControl      Cache control header to put on object (optional)
-  * @param options.overrideMimeType  Mime type to use instead of auto detecting (optional)
-  * @param callback         Callback with object
-  *
-  */
-  uploadCompressed: function( options, callback ) {
+  uploadCompressed: function(options, callback) {
     console.log('upload-compressed, pass through to upload')
     return objectsAPI.upload(options, callback)
   },
@@ -492,13 +442,11 @@ var objectsAPI = {
     else return chain
   },
 
-  // TODO not sure if this is needed anymore 
   deleteAll: function ( bucket, callback ) {
     console.log('cloud-storage:delete-all:', bucket)
 
-    const chain = storage.bucket(bucket).getFiles()
-      .then(async (results) => {
-        const files = results[0]
+    const chain = objectsAPI.list({ bucket })
+      .then(async (files) => {
         for (const file of files) {
           console.log('cloud-storage:delete-all:delete-file:', file.name)
           await objectsAPI.del({ bucket, file: file.name })
@@ -509,6 +457,22 @@ var objectsAPI = {
     else return chain
   },
 
+  // TODO did not end up using this, it can be removed
+  getUploadUrl: function ({ bucket, file }) {
+    const options = {
+      version: 'v4',
+      action: 'write',
+      expires: Date.now() + 15 * 60 * 1000, // 15 min
+      // contentType: 'application/json',
+      contentType: 'multipart/form-data',
+    }
+
+    return storage.bucket(bucket).file(file).getSignedUrl(options)
+      .then((results) => {
+        const url = results[0]
+        return url
+      })
+  },
 };
 
 module.exports.objects = objectsAPI;

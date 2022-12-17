@@ -56,6 +56,7 @@ module.exports = function(grunt) {
     cloudStorage: {
       keyFilename: process.env.GOOGLE_KEY_JSON,
     },
+    googleCloudServiceAccountKeyJson: process.env.GOOGLE_KEY_JSON,
     memcachedServers: [
       'localhost:11211'
     ],
@@ -125,9 +126,19 @@ module.exports = function(grunt) {
     server.start(grunt.config, grunt.log);
   });
 
-  grunt.registerTask('backupCron', 'Job to run for backup cron', function() {
-    var done = this.async();
-    backup.start(grunt.config, grunt.log);
+  grunt.registerTask('backupCron', 'Job to run for backup cron', async function() {
+    let exitCode
+    try {
+      await backup.start(grunt.config)
+      exitCode = 0
+    }
+    catch (error) {
+      console.log(error)
+      exitCode = 1
+    }
+    finally {
+      process.exit(exitCode)
+    }
   });
 
   grunt.registerTask('extractKey', 'Extract RSA key from JSON file', function() {
