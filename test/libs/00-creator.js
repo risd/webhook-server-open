@@ -43,7 +43,7 @@ test( 'create-site', async function (t) {
   t.plan( 1 )
 
   try {
-    await createSite(createOptions)  
+    await createSite(createOptions)
     t.ok(true, 'created site')
   }
   catch (error) {

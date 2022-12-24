@@ -1,3 +1,4 @@
+const path = require('path')
 const date = dateString()
 
 module.exports = {
@@ -15,6 +16,15 @@ module.exports = {
       bucket: `automated-server-creator-test-${date}.risd.systems`
     },
   },
+  builder: {
+    buildFolder: path.join(process.cwd(), 'test', 'build-folders'),
+    buildOptions: {
+      siteName: 'start-here,1risd,1systems',
+      branch: 'feature/node-16',
+      bucket: 'node-16-start-here.risd.systems',
+      userId: 'rrodrigu@risd.edu',
+    },
+  }
 }
 
 function dateString () {

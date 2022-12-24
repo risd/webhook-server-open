@@ -10,4 +10,13 @@ module.exports = {
     siteName: `site-${date}`,
     userId: 'admin@domain.com',
   },
+  builder: {
+    buildFolder: 'build-folder',
+    buildOptions: {
+      siteName: 'site.domain.com',
+      branch: 'develop',
+      bucket: 'dev-site.domain.com',
+      userId: 'admin',
+    },
+  }
 }

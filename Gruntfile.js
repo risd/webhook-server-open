@@ -29,6 +29,7 @@ var extractKey = require('./libs/extractKey.js');
 var previewBuilder = require('./libs/preview-builder.js');
 var domainMapper = require('./libs/domain-mapper.js');
 var timeoutWorker = require('./libs/timeout-worker.js');
+const path = require('path')
 
 module.exports = function(grunt) {
   // Project configuration.
@@ -71,6 +72,7 @@ module.exports = function(grunt) {
     builder: {
       forceWrite: process.env.BUILDER_FORCE_WRITE || false,
       maxParallel: concurrencyOption( process.env.BUILDER_MAX_PARALLEL ),
+      buildFolderRoot: process.env.BUILD_FOLDER || path.join(process.cwd(), '..', 'build-folders')
     },
     fastly: {
       token: process.env.FASTLY_TOKEN,

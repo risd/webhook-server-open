@@ -1,136 +1,25 @@
 #!/usr/bin/env node
 
-require('dotenv').config()
-var firebaseEscape = require( '../libs/utils/firebase-escape.js' )
-var firebaseUnescape = require( '../libs/utils/firebase-unescape.js' )
-var developmentDomain = process.env.DEVELOPMENT_DOMAIN;
-
-function formatSiteName ( siteName ) {
-  siteName = firebaseUnescape( siteName )
-  if ( siteName.indexOf( developmentDomain ) === -1 ) {
-    siteName = `${ siteName }.${ developmentDomain }`
-  }
-  return siteName;
-}
-
-var cmd = parseArgs( process.argv.slice( 2 ) )
-if ( ! cmd ) return printHelp()
-
+const argv = require('minimist')(process.argv.slice(2), {
+  alias: {
+    u: 'userId',
+    s: 'siteName',
+    h: 'help,'
+  },
+})
 var grunt = require( 'grunt' );
 var webhookTasks = require( '../Gruntfile.js' );
 var builder = require( '../libs/builder.js' );
 
-webhookTasks( grunt );
+webhookTasks(grunt)
 
-// merge this config in order to run just the builder command
-grunt.config.merge( {
-  suppressJobQueue: true,
-} )
+const buildSite = builder.configure(grunt.config)
 
-var build = builder.start( grunt.config, grunt.log )
-
-var mockClient = {
-  put: function (first, second, third, fourth, jobExecuter) {
-    jobExecuter()
-  }
-}
-
-var jobCallback = function ( error ) {
-  if ( error ) console.log( error )
-  else console.log( arguments )
-  process.exit( error ? 1 : 0 )
-}
-
-var args = parseArgs( process.argv.slice( 2 ) )
-if ( ! args ) return printHelp()
-var cmd = cmdForArgs( args )
-
-build( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
-
-function parseArgs ( args ) {
-  var siteName = formatSiteName( args[ 0 ] )
-  // [{ flag: value }]
-  var flagObjects = args.slice( 1 ).map( parseFlag ).filter( notNull )
-  
-  // [ flag, flag, ... ]
-  var flags = flagObjects.map( pluckKey )
-
-  var matchingFlags = matchesRequired( flags )
-  if ( ! matchingFlags ) return false;
-
-  return flagObjects.reduce( intoSingleObject, { siteName: siteName } )
-
-  function intoSingleObject ( singleObject, flagObject ) {
-    return Object.assign( singleObject, flagObject )
-  }
-
-  function matchesRequired ( flags ) {
-    var requiredFlags = [ 'branch', 'bucket', 'userid' ]
-    var matching = flags.filter( inRequired )
-
-    if ( matching.length === requiredFlags.length ) return true;
-    else return false;
-
-    function inRequired ( flag ) {
-      return requiredFlags.indexOf( flag ) !== -1;
-    }
-  }
-
-  // --flag=value => { flag: value }
-  function parseFlag ( flagArgument ) {
-    // var flags = [ 'branch', 'bucket', 'userid' ]
-    if ( ! flagArgument.startsWith( '--' ) ) return null;
-    var kvArray = flagArgument.slice( 2 ).split( '=' )
-    var kv = {}
-    kv[ kvArray[ 0 ] ] = kvArray[ 1 ]
-    return kv;
-  }
-
-  function notNull ( value ) {
-    return value !== null;
-  }
-
-  function pluckKey ( flagObject ) {
-    var flags = Object.keys( flagObject )
-    return flags[ 0 ]
-  }
-}
-
-function printHelp () {
-  var msg = `
-    Expected the following usage:
-    ./bin/build-command { siteName } --branch={ branch } --bucket={ bucket } --userid={ userid }
-  `.trim()
-  console.log( msg )
-}
-
-function cmdForArgs ( options ) {
-  var siteName = options.siteName;
-  var bucket = options.bucket;
-  var branch = options.branch;
-  var userid = options.userid;
-
-  var data = {
-    build_time: new Date(),
-    id: uniqueId(),
-    sitename: firebaseEscape( siteName ),
-    siteBucket: bucket,
-    userid: userid,
-    branch: branch,
-    deploys: [ { branch: branch, bucket: bucket } ]
-  }
-
-  var identifier = `${ firebaseUnescape( siteName ) }_${ branch }`
-
-  return {
-    identifier: identifier,
-    payload: data,
-  }
-}
-
-function uniqueId() {
-  return Date.now() + 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8);
-    return v.toString(16);
-  });
-}
+;(async () => {
+  await buildSite({
+    siteName: argv.siteName,
+    branch: argv.branch,
+    bucket: argv.bucket,
+    userId: argv.userId,
+  })
+})()

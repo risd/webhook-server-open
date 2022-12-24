@@ -59,6 +59,7 @@ WHFirebase.prototype.siteManagement = WebhookSiteManagement;
 WHFirebase.prototype.siteManagementError = WebhookSiteManagementError;
 WHFirebase.prototype.userManagementSetSiteOwner = WebhookUserManagementSetSiteOwner;
 WHFirebase.prototype.siteBillingCreate = WebhookSiteBillingCreate;
+WHFirebase.prototype.siteMessageAdd = WebhookSiteMessagesAdd;
 // requires admin sdk + service account
 WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
@@ -313,6 +314,32 @@ function WebhookSiteBillingCreate ({ siteName, userEmail }) {
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, billingData)
 }
 
+
+function WebhookSiteMessages ({ siteName }, value) {
+  
+  if (value) {
+    
+  }
+  else {
+    return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+  }
+}
+
+// value : { message, timestamp, status, code }
+function WebhookSiteMessagesAdd ({ siteName }, value) {
+  const keyPath = siteMessagesKeyPath({ siteName })
+  return firebaseDatabasePushValueForKeyPath(this._app, keyPath, value)
+    .then(() => {
+      return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+    })
+    .then((messagesSnapshot) => {
+      const messages = messagesSnapshot.val()
+      if (Object.keys(messages).length <= 50) return
+      const oldestKey = Object.keys(messages).sort()[0]
+      return firebaseDatabaseSetValueForKeyPath(this._app, `${keyPath}/${oldestKey}`, null)
+    })
+}
+
 // helpers - interfaces into data
 
 function firebaseDatabaseSetValueForKeyPath ( app, keyPath, value ) {
@@ -407,4 +434,8 @@ function siteRedirectPath ( options ) {
 
 function siteBilling ( options ) {
   return `billing/sites/${ escape( options.siteName ) }`
+}
+
+function siteMessagesKeyPath ({ siteName }) {
+  return `${siteManagementPath({ siteName })}/messages`
 }

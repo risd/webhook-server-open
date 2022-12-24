@@ -66,7 +66,7 @@ function addMaskDomain ( config ) {
  * Pushes  { siteBucket, maskDomain?, purgeProxy, ... }
  */
 function addPurgeProxy ( config ) {
-  var cdn = require( './fastly/index.js' )( config )
+  var cdn = require( './fastly/index.js' )( config )
   return miss.through.obj( function ( args, enc, next ) {
     args.purgeProxy = args.maskDomain
       ? cdn.addressForDomain( args.maskDomain )

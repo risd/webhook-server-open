@@ -590,14 +590,19 @@ function removeMapDomain ( options, complete ) {
  * @param  {string} contentDomain The value to find in the dictionary_host_backends table
  * @param  {function} complete    The function to invoke with the maskDomain value.
  */
-function maskForContentDomain ( contentDomain, complete ) {
+function maskForContentDomain (contentDomain) {
   assert( typeof contentDomain === 'string', 'Content domain is a string.')
-  assert( typeof complete === 'function', 'Complete callback is a function.' )
   var self = this;
 
   var tasks = [ getDictionaryId( DICTIONARY_HOST_BACKENDS ), getDictionaryItems ]
 
-  async.waterfall( tasks, returnMaskDomainFor( contentDomain, complete ) )
+  return new Promise((resolve, reject) => {
+    const handler = (error, maskDomain) => {
+      if (error) reject(error)
+      else resolve(maskDomain)
+    }
+    async.waterfall( tasks, returnMaskDomainFor( contentDomain, handler ) )
+  })
 
   function getDictionaryId ( dictionaryName ) {
     return function task ( taskComplete ) {

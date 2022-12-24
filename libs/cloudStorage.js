@@ -368,12 +368,8 @@ var objectsAPI = {
   },
 
   // Get an object from a bucket
-  get: function(bucket, file, callback) {
-    jsonRequest({
-      url: 'https://www.googleapis.com/storage/v1/b/' + bucket + '/o/' + file,
-      qs: { alt: 'media' },
-      binary: true
-    }, callback);
+  get: function({ bucket, remote, local }) {
+    return storage.bucket(bucket).file(remote).download({ destination: local })
   },
 
   // Get an objects metadata
