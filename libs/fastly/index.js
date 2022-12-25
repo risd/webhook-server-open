@@ -342,7 +342,7 @@ function addressForDomain ( domain ) {
  *
  * @param {string|[string]} domains  String of domains to configure. Can be a single string, comman separated string, or array of strings representing domain names.
  */
-function addDomains (domains, complete ) {
+function addDomains (domains) {
   if ( typeof domains === 'string' ) domains = domains.split( ',' )
   var self = this;
 
@@ -441,7 +441,7 @@ function addDomains (domains, complete ) {
  * @param  {string} options[].contentDomain
  * @param  {function} complete The callback function to call upon completion
  */
-function mapDomain ( options, complete ) {
+function mapDomain (options) {
   var self = this;
   if ( ! Array.isArray( options ) && typeof options === 'object' ) options =  [ options ]
 
@@ -454,10 +454,12 @@ function mapDomain ( options, complete ) {
 
   var tasks = [ dictionaryIdForName( DICTIONARY_HOST_BACKENDS  ), mapDomainDictionaryUpdateFor( mapDomainItemArguments ) ];
 
-  return async.series( tasks, function ( error, taskResults ) {
-    if ( error ) return complete ( error )
-    complete( null, taskResults[ taskResults.length - 1 ] )
-  } )
+  return new Promise((resolve, reject) => {
+    async.series( tasks, function ( error, taskResults ) {
+      if ( error ) return reject ( error )
+      resolve( taskResults[ taskResults.length - 1 ] )
+    } )
+  })
 
   function toMapDomainOptions ( domainPair ) {
     return { item_key: domainPair.maskDomain, item_value: domainPair.contentDomain }
@@ -518,7 +520,7 @@ function mapDomain ( options, complete ) {
  * @param  {string} options[].maskDomain
  * @param  {function} complete The callback function to call upon completion
  */
-function removeMapDomain ( options, complete ) {
+function removeMapDomain (options) {
   var self = this;
   if ( ! Array.isArray( options ) && typeof options === 'object' ) options = [ options ]
 
@@ -531,10 +533,12 @@ function removeMapDomain ( options, complete ) {
 
   var tasks = [ dictionaryIdForName( DICTIONARY_HOST_BACKENDS ), mapDomainDictionaryUpdateFor( removeMapDomainItemArguments )  ]
 
-  return async.series( tasks, function ( error, taskResults ) {
-    if ( error ) return complete ( error )
-    complete( null, taskResults[ taskResults.length - 1 ] )
-  } )
+  return new Promise((resolve, reject) => {
+    async.series( tasks, function ( error, taskResults ) {
+      if ( error ) return reject(error)
+      resolve(taskResults[ taskResults.length - 1 ])
+    })
+  })
 
   function toRemoveMapDomainOptions( domainSingle ) {
     return { item_key: domainSingle.maskDomain }
@@ -674,7 +678,7 @@ function redirectWwwArguments ( domain ) {
  * @param  {string|string[]} domains
  * @param  {Function} complete
  */
-function removeDomains ( domains, complete ) {
+function removeDomains (domains) {
   if ( typeof domains === 'string' ) domains = domains.split( ',' )
   var self = this;
   var service_id = self._service_id;
@@ -691,7 +695,15 @@ function removeDomains ( domains, complete ) {
     .concat( domains.map( mapPathRedirectsRemoveTask ) )
     .concat( domains.map( mapHostRedirectsRemoveTask ) )
 
-  return async.series( tasks, handleCallbackError( complete )( self.activate.bind( self, complete ) ) )
+  return new Promise((resolve, reject) => {
+    async.series(tasks, (error) => {
+      if (error) return reject(error)
+      self.activate((error, serviceOptions) => {
+        if (error) return reject(error)
+        resolve(serviceOptions)
+      })
+    })
+  })
 
   function activeVersionTask ( taskComplete ) {
     return self._activeVersion( taskComplete )

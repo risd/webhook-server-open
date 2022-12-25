@@ -10,6 +10,7 @@
 // Requires
 var Firebase = require('./firebase/index.js');
 var Cloudflare = require('./cloudflare/index.js');
+const Fastly = require('./fastly')
 var colors = require('colors');
 var _ = require('lodash');
 var uuid = require('node-uuid');
@@ -51,7 +52,7 @@ function configure (config) {
     config.get('firebase') )
   const firebase = Firebase( firebaseOptions )
 
-  const fastly = require('./fastly')(config.get( 'fastly' ))
+  const fastly = Fastly(config.get( 'fastly' ))
   const cloudflareConfig = config.get('cloudflare')
 
   return async function ({ userId, siteName }) {
