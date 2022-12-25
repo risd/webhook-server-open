@@ -7,8 +7,6 @@ var cloudStorage = require( './cloudStorage.js' )
 
 module.exports = DeleteSite;
 
-// todo, add cloud storage bucket removal
-
 function DeleteSite ( options ) {
   if ( ! ( this instanceof DeleteSite ) ) return new DeleteSite( options )
 

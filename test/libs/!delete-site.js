@@ -4,11 +4,7 @@ var async = require( 'async' )
 var test = require( 'tape' )
 var webhookTasks = require( '../../Gruntfile.js' )
 
-webhookTasks( grunt )
-
-grunt.config.merge( {
-  suppressJobQueue: true,
-} )
+webhookTasks(grunt)
 
 var deleteSite = require( '../../libs/delete.js' )
 
@@ -17,7 +13,7 @@ var siteName = testOptions.createSiteName;
 test( 'delete-site', function ( t ) {
   t.plan( 1 )
 
-  var deletor = deleteSite( grunt.config() )
+  var deletor = deleteSite(grunt.config())
   
   deletor.delete( siteName )
     .then( handleDelete )
