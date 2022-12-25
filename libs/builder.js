@@ -9,47 +9,31 @@ const tar = require('tar')
 var Firebase = require('./firebase/index.js');
 var colors = require('colors');
 var _ = require('lodash');
-var uuid = require('node-uuid');
-var winSpawn = require('win-spawn');
-var wrench = require('wrench');
 var async = require('async');
 var mkdirp = require('mkdirp');
 var cloudStorage = require('./cloudStorage.js');
-var crypto = require('crypto');
 var JobQueue = require('./jobQueue.js');
 var touch = require('touch');
-var domain = require('domain');
 var Deploys = require( 'webhook-deploy-configuration' );
 var miss = require( 'mississippi' );
 var throughConcurrent = require( 'through2-concurrent' )
 var path = require( 'path' )
 var glob = require( 'glob' )
 const { fork } = require('child_process')
-var setupBucket = require('./creator.js').setupBucket;
+var { setupBucket } = require('./creator.js');
 var Fastly = require( './fastly/index.js' )
-const utils = require('./utils.js');
+const {
+  protocolForDomain,
+  usingArguments,
+  sink,
+  uploadIfDifferent,
+  redirectTemplateForDestination,
+  cachePurge,
+} = require('./utils.js');
 const runInDir = require('./utils/run-in-dir.js')
-
-// Util functions
-var protocolForDomain = utils.protocolForDomain;
-// Util streams
-var usingArguments = utils.usingArguments;
-var sink = utils.sink;
-var uploadIfDifferent = utils.uploadIfDifferent;
-var redirectTemplateForDestination = utils.redirectTemplateForDestination;
-var cachePurge = utils.cachePurge;
-// var addMaskDomain = utils.addMaskDomain;
-// var addPurgeProxy = utils.addPurgeProxy;
-// var ReportStatus = require( './utils/firebase-report-status.js' )
 
 var firebaseEscape = require( './utils/firebase-escape.js' )
 var firebaseUnescape = require( './utils/firebase-unescape.js' )
-
-// var escapeUserId = function(userid) {
-//   return userid.replace(/\./g, ',1');
-// };
-
-function noop () {}
 
 module.exports.configure = configure
 function configure (config) {
@@ -666,7 +650,7 @@ module.exports.start = function (config) {
 
   var jobQueue = JobQueue.init(config);
 
-   const wrapJob = ({ siteName, userId, bucket, branch }, callback) => {
+  const wrapJob = ({ siteName, userId, bucket, branch }, callback) => {
     job({ siteName, userId, bucket, branch })
       .then(() => {
         console.log('builder:job:complete')
