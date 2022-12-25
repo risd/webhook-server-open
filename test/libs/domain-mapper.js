@@ -1,38 +1,27 @@
 var testOptions = require( '../env-options.js' )()
 var test = require( 'tape' )
-var async = require( 'async' )
 var grunt = require( 'grunt' )
 var webhookTasks = require( '../../Gruntfile.js' )
 
-webhookTasks( grunt )
+webhookTasks(grunt)
 
-grunt.config.merge( {
-  suppressJobQueue: true,
-} )
+const {configure} = require( '../../libs/domain-mapper.js' )
+const mapDomain = configure(grunt.config)
 
-var DomainMapper = require( '../../libs/domain-mapper.js' )
-var Firebase = require( '../../libs/firebase/index.js' )
-var firebaseEscape = require( '../../libs/utils/firebase-escape.js' )
-
-grunt.config.merge( { suppressJobQueue: true } )
-
-var firebase = Firebase( grunt.config.get( 'firebase' ) )
-
-var mockClient = { put: function () {} }
-
-test( 'domain-mapper:add', function ( t ) {
-  console.log( testOptions.domainMapperSitename )
+test( 'domain-mapper:add', async function ( t ) {
   var domainMapperAddOptions = {
     maskDomain: testOptions.domainMapperKey,
     contentDomain: testOptions.domainMapperValue,
-    sitename: firebaseEscape( testOptions.domainMapperSitename ),
+    sitename: testOptions.domainMapperSitename,
   }
 
   t.plan( 1 )
-  mapDomain( domainMapperAddOptions, domainMapperAddHandler )
-
-  function domainMapperAddHandler ( error ) {
-    t.assert( ! error, 'Domain map was added successfully.' )
+  try {
+    await mapDomain(domainMapperAddOptions)  
+    t.ok(true, 'Domain map was added successfully.')
+  }
+  catch (error) {
+    t.fail(error, 'Domain map failed to be added.' )  
   }
 } )
 
@@ -42,18 +31,13 @@ test( 'domain-mapper:remove', function ( t ) {
   }
 
   t.plan( 1 )
-  mapDomain( domainMapperRemoveOptions, domainMapperRemoveHandler )
-
-  function domainMapperRemoveHandler ( error ) {
-    t.assert( ! error, 'Domain map was removed successfully.' )
+  try {
+    await mapDomain(domainMapperRemoveOptions)
+    t.ok(true, 'Domain map was removed successfully.' )
+  }
+  catch (error) {
+    t.fail(error, 'Domain map failed to be removed.' )
   }
 } )
 
 test.onFinish( process.exit )
-
-function mapDomain ( payload, mapHandler ) {
-  var mapper = DomainMapper.start( grunt.config, grunt.log )
-  Object.assign( payload, { userid: testOptions.buildUserId } )
-  var options = Object.assign( { payload: payload }, { identifier: '' } )
-  mapper( options, options.identifier, payload, mockClient, mapHandler )
-}
