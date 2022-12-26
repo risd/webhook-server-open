@@ -1,7 +1,6 @@
-var async = require( 'async' )
-var exec = require( 'child_process' ).exec
-var spawn = require( 'child_process' ).spawn
-var jobQueue = require( './jobQueue.js' )
+const async = require( 'async' )
+const {spawn, exec} = require( 'child_process' )
+const jobQueue = require( './jobQueue.js' )
 
 module.exports.start = function ( config, logger, callback ) {
   jobQueue.init( config )
