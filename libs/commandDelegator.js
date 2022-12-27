@@ -44,7 +44,10 @@ function CommandDelegator (config) {
   if ( ! ( this instanceof CommandDelegator ) ) return new CommandDelegator(config)
   EventEmitter.call( this )
 
-  const firebase = Firebase(config.get('firebase'))
+  const firebase = Firebase({
+    initializationName: 'command-delegator',
+    ...config.get('firebase'),
+  })
 
   // Memcached is used for locks, to avoid setting the same job
   var memcached = new Memcached(config.get('memcachedServers'));
