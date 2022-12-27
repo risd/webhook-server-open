@@ -446,7 +446,6 @@ module.exports.start = function(config, logger) {
   // id is the id of the object, typeName is the type of the object
   function postSearchDeleteHandler (req, res) {
 
-    // Todo: validate this shit
     var site = req.body.site;
     var token = req.body.token;
     var id   = req.body.id;
@@ -475,7 +474,6 @@ module.exports.start = function(config, logger) {
   // typeName is the type of the object
   function postSearchDeleteTypeHandler (req, res) {
 
-    // Todo: validate this shit
     var site = req.body.site;
     var token = req.body.token;
     var typeName = req.body.typeName;
