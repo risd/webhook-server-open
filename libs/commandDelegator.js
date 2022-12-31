@@ -227,6 +227,10 @@ function CommandDelegator (config) {
       var payload = commandData.payload;
       var identifier = commandData.identifier;
 
+      // todo: update signalers to conform to updated naming
+      payload.userId = payload.userid
+      payload.siteName = payload.sitename
+
       var lockId = payload.id || 'noneya';
       var memcacheLockId = item.lock + '_' + lockId + '_queued';
 
@@ -236,56 +240,48 @@ function CommandDelegator (config) {
         // gets used to build the site
         // if no branch is defined, then queue a command for
         // each of the branches
-        // TODO: update deploys to use promise interface
-        deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
-          if ( error ) {
-            console.log( error )
-            return;
-          }
-
-          if ( payload.siteBucket ) {
-            var siteBuckets = [ payload.siteBucket ]
-          }
-          else if ( payload.branch ) {
-            var siteBuckets = configuration.deploys
-              .filter( function ( deploy ) { return deploy.branch === payload.branch } )
-              .map( function ( deploy ) { return deploy.bucket } )
-          }
-          else {
-            var siteBuckets = configuration.deploys.map( function ( deploy ) { return deploy.bucket } )
-          }
-
-          siteBuckets = _.uniq( siteBuckets )
-
-          return siteBuckets.map( toBuildCommandArgs ).forEach( queueCommandForArgs )
-
-          function toBuildCommandArgs ( siteBucket ) {
-            var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, siteBucket )
-            var memcacheLockId = [ item.lock, identifier, 'queued' ].join( '_' )
-            var deploysForBuild = configuration.deploys.filter( function ( deploy ) { return deploy.bucket === siteBucket } )
-            var payloadArgs = {
-              siteBucket: siteBucket,
-              branch: deploysForBuild[ 0 ].branch,
+        deploys.get({ siteName: payload.sitename })
+          .then((configuration) => {
+            if ( payload.siteBucket ) {
+              var siteBuckets = [ payload.siteBucket ]
             }
-            return {
-              identifier: identifier,
-              memcacheLockId: memcacheLockId,
-              payload: Object.assign( {}, payload, payloadArgs ),
+            else if ( payload.branch ) {
+              var siteBuckets = configuration.deploys
+                .filter( function ( deploy ) { return deploy.branch === payload.branch } )
+                .map( function ( deploy ) { return deploy.bucket } )
             }
-          }
-        } )
+            else {
+              var siteBuckets = configuration.deploys.map( function ( deploy ) { return deploy.bucket } )
+            }
 
-      } else if ( item.tube ==='previewBuild' ) {
+            siteBuckets = _.uniq( siteBuckets )
 
+            return siteBuckets.map( toBuildCommandArgs ).forEach( queueCommandForArgs )
+
+            function toBuildCommandArgs ( siteBucket ) {
+              var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, siteBucket )
+              var memcacheLockId = [ item.lock, identifier, 'queued' ].join( '_' )
+              var deploysForBuild = configuration.deploys.filter( function ( deploy ) { return deploy.bucket === siteBucket } )
+              var payloadArgs = {
+                siteBucket: siteBucket,
+                branch: deploysForBuild[ 0 ].branch,
+              }
+              return {
+                identifier: identifier,
+                memcacheLockId: memcacheLockId,
+                payload: Object.assign( {}, payload, payloadArgs ),
+              }
+            }
+          })
+          .catch((error) => {
+            console.log(error)
+          })
+      }
+      else if ( item.tube ==='previewBuild' ) {
         // preview builds piggy back on regular build signals
-        if ( payload.contentType && payload.itemKey ) {
-          // TODO: update deploys to use promise interface
-          deploys.get( { siteName: payload.sitename }, function ( error, configuration ) {
-            if ( error ) {
-              console.log( error )
-              return;
-            }
-
+        if (!payload.contentType || !payload.itemKey) return
+        deploys.get({ siteName: payload.sitename })
+          .then((configuration) => {
             var siteBuckets = configuration.deploys.map( function ( deploy ) { return deploy.bucket } )
             siteBuckets = _.uniq( siteBuckets )
             
@@ -300,10 +296,12 @@ function CommandDelegator (config) {
                 payload: Object.assign( { siteBucket: siteBucket }, payload )
               }
             }
-
-          } )
-        }
-      } else {
+          })
+          .catch((error) => {
+            console.log(error)
+          })
+      }
+      else {
         var queueCommandArgs = { identifier: identifier, memcacheLockId: memcacheLockId, payload: payload }
         return queueCommandForArgs( queueCommandArgs )
       }
