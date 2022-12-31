@@ -3,7 +3,7 @@
 const argv = require('minimist')(process.argv.slice(2), {
   alias: {
     u: 'userId',
-    s: 'siteName',
+    n: 'siteName',
     h: 'help,'
   },
 })
@@ -19,7 +19,7 @@ const buildSite = builder.configure(grunt.config)
   await buildSite({
     siteName: argv.siteName,
     branch: argv.branch,
-    bucket: argv.bucket,
+    siteBucket: argv.siteBucket,
     userId: argv.userId,
   })
 })()

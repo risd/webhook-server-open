@@ -114,7 +114,7 @@ module.exports.init = function (config) {
                   });
 
                   domainInstance.run(function() {
-                    cb(payload, identifier, data, conn, function(err) { 
+                    cb(payload, function(err) { 
                       console.log('Done job');
                       console.log('job-queue:err')
                       console.log(err)

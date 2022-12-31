@@ -43,7 +43,7 @@ function configure (config) {
 
   const buildFolderRoot = config.get('builder').buildFolderRoot
 
-  return async function buildSite ({ siteName, userId, bucket, branch }) {
+  return async function buildSite ({ siteName, userId, siteBucket, branch }) {
     const siteManagementSnapshot = await firebase.siteManagement({ siteName })
     const siteManagement = siteManagementSnapshot.val()
     if (!siteManagement) return
@@ -56,7 +56,7 @@ function configure (config) {
       )) return
 
       await firebase.siteMessageAdd({ siteName }, {
-        message: `Build started for ${bucket}`,
+        message: `Build started for ${siteBucket}`,
         timestamp: Date.now(),
         status: 0,
         code: 'BUILDING',
@@ -65,7 +65,7 @@ function configure (config) {
       // Create build-folders if it isnt there
       mkdirp.sync(buildFolderRoot)
 
-      const buildFolderName =Deploys.utilities.nameForSiteBranch(siteName, bucket)
+      const buildFolderName = Deploys.utilities.nameForSiteBranch(siteName, siteBucket)
       const buildFolder = path.join(buildFolderRoot, buildFolderName)
       // site version is updated on server site deploy upload
       const buildFolderVersion = path.join(buildFolder, `.fb_version${siteManagement.version}`)
@@ -100,7 +100,7 @@ function configure (config) {
       }
       catch (error) {
         console.log(error)
-        error.message = `Failed to build, errors in installation of site dependencies for ${bucket}`
+        error.message = `Failed to build, errors in installation of site dependencies for ${siteBucket}`
         throw error
       }
       
@@ -110,19 +110,19 @@ function configure (config) {
           cloudStorage: config.get('cloudStorage'),
           cloudflare: config.get('cloudflare'),
           fastly: config.get('fastly'),
-          siteBucket: bucket,
+          siteBucket,
         })
       }
       catch (error) {
         console.log(error)
-        error.message = `Failed to build site, error in setting up bucket ${bucket}`
+        error.message = `Failed to build site, error in setting up bucket ${siteBucket}`
         throw error
       }
 
-      const maskDomain = await fastly.maskForContentDomain(bucket)
+      const maskDomain = await fastly.maskForContentDomain(siteBucket)
       const purgeProxy = maskDomain
         ? fastly.addressForDomain(maskDomain)
-        : fastly.addressForDomain(bucket)
+        : fastly.addressForDomain(siteBucket)
 
       // build : start
       console.log('grunt-clean')
@@ -160,7 +160,7 @@ function configure (config) {
         buildOrder,
         buildFolder,
         builtFolder,
-        bucket,
+        siteBucket,
         maskDomain,
         purgeProxy,
         cacheData,
@@ -171,7 +171,7 @@ function configure (config) {
       // another without and see if its deleted
       await deleteRemoteFilesNotInBuild({
         bucketSpecs: [{
-          contentDomain: bucket,
+          contentDomain: siteBucket,
           maskDomain,
         }],
         builtFolder,
@@ -179,7 +179,7 @@ function configure (config) {
       })
 
       await firebase.siteMessageAdd({ siteName }, {
-        message: `Built and uploaded to ${bucket}`,
+        message: `Built and uploaded to ${siteBucket}`,
         timestamp: Date.now(),
         status: 0,
         code: 'BUILT',
@@ -200,13 +200,13 @@ function configure (config) {
     buildOrder,
     buildFolder,
     builtFolder,
-    bucket,
+    siteBucket,
     maskDomain,
     purgeProxy,
     cacheData,
   }) {
     const bucketSpec = {
-      contentDomain: bucket,
+      contentDomain: siteBucket,
       maskDomain,
     }
     const bucketSpecs = [bucketSpec]
@@ -225,7 +225,7 @@ function configure (config) {
           `--inFile=${buildFile}`,
           `--data=${cacheData}`,
           `--production=true`,
-          '--settings={"site_url":"'+ protocolForDomain(maskDomain || bucket) +'"}',
+          '--settings={"site_url":"'+ protocolForDomain(maskDomain || siteBucket) +'"}',
         ],
         {
           cwd: buildFolder,
@@ -604,8 +604,8 @@ module.exports.start = function (config) {
 
   var jobQueue = JobQueue.init(config);
 
-  const wrapJob = ({ siteName, userId, bucket, branch }, callback) => {
-    job({ siteName, userId, bucket, branch })
+  const wrapJob = (payload, callback) => {
+    job(payload)
       .then(() => {
         console.log('builder:job:complete')
         callback()

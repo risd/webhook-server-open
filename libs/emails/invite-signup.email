@@ -4,4 +4,4 @@ Website:
 <%= siteUrl %>
 
 Click here to create an account so you can make edits.
-<%= url %>
+<%= createUrl %>

@@ -3,28 +3,22 @@
 // pushes these through a build process that anticipates
 // the repo to exist, 
 
-var winSpawn = require( 'win-spawn' )
 var cloudStorage = require( './cloudStorage.js' )
-var crypto = require( 'crypto' )
 var JobQueue = require( './jobQueue.js' )
 var miss = require( 'mississippi' )
-var throughConcurrent = require( 'through2-concurrent' )
 var Deploys = require( 'webhook-deploy-configuration' )
 var Firebase = require('./firebase/index.js');
-var utils = require( './utils.js' )
+var {
+  usingArguments,
+  sink,
+  uploadIfDifferent,
+  protocolForDomain,
+} = require( './utils.js' )
+const runBuildEmitter = require('./utils/run-build-emitter')
 var path = require( 'path' )
 var fs = require( 'fs' )
 const fsp = require('fs/promises')
 
-// Util streams
-const runBuildEmitter = require('./utils/run-build-emitter')
-var usingArguments = utils.usingArguments;
-var sink = utils.sink;
-var uploadIfDifferent = utils.uploadIfDifferent;
-var redirectTemplateForDestination = utils.redirectTemplateForDestination;
-var protocolForDomain = utils.protocolForDomain;
-var addMaskDomain = utils.addMaskDomain;
-var addPurgeProxy = utils.addPurgeProxy;
 
 module.exports.configure = configure
 function configure (config) {
@@ -38,12 +32,12 @@ function configure (config) {
   return async function previewBuilder ({
     userId,
     siteName,
-    bucket,
+    siteBucket,
     contentType,
     itemKey,
   }) {
 
-    const buildFolderName = Deploys.utilities.nameForSiteBranch(siteName, bucket)
+    const buildFolderName = Deploys.utilities.nameForSiteBranch(siteName, siteBucket)
     const buildFolder = path.join(buildFolderRoot, buildFolderName)
     const builtFolder = path.join(buildFolder, '.build')
     const cacheData = path.join(buildFolder, 'data.json')
@@ -55,10 +49,10 @@ function configure (config) {
       if (siteData.typeInfo[contentType]?.oneOff && siteData.typeInfo[contentType]?.customUrls?.listUrl) {
         oneOffPath = siteData.typeInfo[contentType]?.customUrls?.listUrl
       }
-      const maskDomain = await fastly.maskForContentDomain(bucket)
+      const maskDomain = await fastly.maskForContentDomain(siteBucket)
       const purgeProxy = maskDomain
         ? fastly.addressForDomain(maskDomain)
-        : fastly.addressForDomain(bucket)
+        : fastly.addressForDomain(siteBucket)
 
       await buildAndUpload({
         contentType,
@@ -66,13 +60,13 @@ function configure (config) {
         oneOffPath,
         buildFolder,
         builtFolder
-        bucket,
+        siteBucket,
         maskDomain,
         purgeProxy,
         cacheData,
       })
       await firebase.siteMessageAdd({ siteName }, {
-        `Priority build complete for ${ contentType } on ${ bucket }`,
+        `Priority build complete for ${ contentType } on ${ siteBucket }`,
         timestamp: Date.now(),
         status: 0,
         code: 'PRIORITY',
@@ -89,13 +83,13 @@ function configure (config) {
     oneOffPath,
     buildFolder,
     builtFolder,
-    bucket,
+    siteBucket,
     maskDomain,
     purgeProxy,
     cacheData,
   }) {
     const bucketSpec = {
-      contentDomain: bucket,
+      contentDomain: siteBucket,
       maskDomain,
     }
     const bucketSpecs = [bucketSpec]
@@ -112,7 +106,7 @@ function configure (config) {
       gruntBin,
       subCmd.concat([
         `--production=true`,
-        '--settings={"site_url":"'+ protocolForDomain(maskDomain || bucket) +'"}',
+        '--settings={"site_url":"'+ protocolForDomain(maskDomain || siteBucket) +'"}',
       ]),
       { cwd: buildFolder }
     ]
@@ -138,11 +132,24 @@ function configure (config) {
 }
 
 module.exports.start = function ( config, logger ) {
+  const job = configure(config)
+
+  const wrapJob = (payload, callback) => {
+    job(payload)
+      .then(() => {
+        console.log('preview-builder:job:complete')
+        callback()
+      })
+      .catch((error) => {
+        console.log('preview-builder:job:error')
+        console.log(error)
+        callback(error)
+      })
   
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init(config);
   console.log('Waiting for commands'.red);
 
   // Wait for a build job, extract info from payload
-  jobQueue.reserveJob('previewBuild', 'previewBuild', previewBuildJob)
+  jobQueue.reserveJob('previewBuild', 'previewBuild', wrapJob)
 }

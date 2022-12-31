@@ -15,139 +15,85 @@ var async = require('async');
 var JobQueue = require('./jobQueue.js');
 var Mailgun = require('mailgun-js');
 
-var escapeUserId = function(userid) {
-  return userid.replace(/\./g, ',1');
-};
+var unescapeFirebase = require( './utils/firebase-unescape.js' )
 
-var unescapeUserId = function(userid) {
-  return userid.replace(/,1/g, '.');
-};
-
-/**
- * @param  {Object}   config     Configuration options from .firebase.conf
- * @param  {Object}   logger     Object to use for logging, defaults to no-ops (deprecated)
- */
-module.exports.start = function (config, logger) {
+module.exports = configure
+function configure (config) {
   var fromEmail = config.get('fromEmail');
   var mailgunDomain = config.get('mailgunDomain');
   var mailgun = new Mailgun({
     apiKey: config.get('mailgunKey'),
     domain: mailgunDomain,
   });
+  const firebase = Firebase({
+    initializationName: 'invite-worker',
+    ...config.get('firebase'),
+  })
 
-  var jobQueue = JobQueue.init(config);
-  var self = this;
+  return async function inviter ({ userId, from_userid, siteref }) {
+    const userEmail = unescape(userId)
+    const userExists = await firebase.userExists({ userEmail })
+    const fromUser = unescape(from_userid)
+    const siteName = unescape(siteref)
+    const domain = mailgunDomain
+    const siteUrl = `http://${siteName}`
+    const cmsUrl = `${siteUrl}/cms/`
+    const subject = `[${domain}] You\'ve been invited to edit ${siteName}`
+    if (userExists) {
+      const contentTemplate = fs.readFileSync('libs/emails/invite-login.email');
+      const content = _.template(contentTemplate);
+      const message = {
+        from: fromEmail,
+        to: userEmail,
+        subject,
+        text: content({ fromUser, siteUrl, cmsUrl, domain }),
+      }
+      await sendMessage(message)
+    }
+    else {
+      const createUrl = `${cmsUrl}#/create-user?username=${userEmail}`
+      const contentTemplate = fs.readFileSync('libs/emails/invite-signup.email')
+      const content = _.template(contentTemplate)
+      const message = {
+        from: fromEmail,
+        to: userEmail,
+        subject,
+        text: content({ fromUser, siteUrl, createUrl, domain }),
+      }
+      await sendMessage(message)
+    }
+  }
 
-  var firebaseOptions = Object.assign(
-    { initializationName: 'invite-worker' },
-    config().firebase )
+  function sendMessage (message) {
+    return new Promise((resolve, reject) => {
+      mailgun.messages().send(message, (error) => {
+        if (error) reject(error)
+        else resolve()
+      })
+    })
+  }
+}
 
-  // project::firebase::initialize::done
-  var firebase = Firebase( firebaseOptions )
-  this.root = firebase.database()
-  this.users = this.root.ref( 'management/users' )
 
+module.exports.start = function (config) {
+  const job = configure(config)
+
+  const wrapJob = (payload, callback) => {
+    job(payload)
+      .then(() => {
+        console.log('inviter:job:complete')
+        callback()
+      })
+      .catch((error) => {
+        console.log('inviter:job:error')
+        console.log(error)
+        callback(error)
+      })
+
+  var jobQueue = JobQueue.init(config)
   console.log('Waiting for invites'.red);
 
   // Wait for jobs
-  jobQueue.reserveJob('invite', 'invite', inviter);
-
-  return inviter;
-
-  function inviter (payload, identifier, data, client, callback) {
-    var username = data.userid;
-    var fromUsername = data.from_userid;
-    var siteref = data.siteref;
-
-    // project::firebase::child::done
-    // project::firebase::once--value::done
-    // Check to see if the user exists
-    self.users.child(escapeUserId(username)).once('value', function(data) {
-      var user = data.val();
-
-
-      // If hte user doesnt exist, send a registration email
-      if(!user || !user.exists) {
-        sendRegistrationEmail(username, fromUsername, siteref, callback);
-      } else { // If they do, send a login to the site
-        sendLoginEmail(username, fromUsername, siteref, callback);
-      }
-    });
-  }
-
-  /*
-  * Sends a registration-invite email to the user. This is an email that both sends the user
-  * to the registration part of the webhook site.
-  *
-  * @param email        The email to send the invite to
-  * @param fromUsername The username (email) thats being invited, should be the same as email
-  * @param siteref      The site that the user is being invited to
-  */
-  function sendRegistrationEmail(email, fromUsername, siteref, callback) {
-    console.log('Sending email');
-
-    var siteRefUrl = 'http://' + unescapeUserId(siteref);
-
-    // project::firebase::ref::done
-    // project::firebase::once--value::done
-    self.root.ref('management/sites/' + siteref + '/dns').once('value', function(snap) {
-      if(snap.val()) {
-        siteRefUrl = 'http://' + snap.val();
-      }
-
-      var url = siteRefUrl + '/cms/#/create-user?username=' + email;
-      var siteUrl = siteRefUrl +'/';
-
-      var contentTemplate = fs.readFileSync('libs/emails/invite-signup.email');
-      var content = _.template(contentTemplate);
-
-      var message = {
-        from: fromEmail,
-        to: email,
-        subject: '[' + mailgunDomain + '] You\'ve been invited to edit ' + unescapeUserId(siteref),
-        text: content({ fromUser: fromUsername, siteUrl: siteUrl, url: url, domain: mailgunDomain }),
-      }
-
-      mailgun.messages().send( message, callback )
-    });
-
-  }
-
-  /*
-  * Sends a normal invite email to the user. Since the user is already registered they just have
-  * to login to the site.
-  *
-  * @param email        The email to send the invite to
-  * @param fromUsername The username (email) thats being invited, should be the same as email
-  * @param siteref      The site that the user is being invited to
-  */
-  function sendLoginEmail(email, fromUsername, siteref, callback) {
-    console.log('Sending email');
-
-    var siteRefUrl = 'http://' + unescapeUserId(siteref);
-
-    // project::firebase::ref::done
-    // project::firebase::once--value::done
-    self.root.ref('management/sites/' + siteref + '/dns').once('value', function(snap) {
-      if(snap.val()) {
-        siteRefUrl = 'http://' + snap.val();
-      }
-
-      var url = siteRefUrl + '/cms/';
-      var siteUrl = siteRefUrl + '/';
-
-      var contentTemplate = fs.readFileSync('libs/emails/invite-login.email');
-      var content = _.template(contentTemplate);
-
-      var message = {
-        from: fromEmail,
-        to: email,
-        subject: '[' + mailgunDomain + '] You\'ve been invited to edit ' + unescapeUserId(siteref),
-        text: content({ fromUser: fromUsername, siteUrl: siteUrl, url: url, domain: mailgunDomain }),
-      }
-
-      mailgun.messages().send( message, callback )
-    });
-  }
+  jobQueue.reserveJob('invite', 'invite', wrapJob)
 };
 

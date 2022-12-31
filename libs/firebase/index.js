@@ -69,6 +69,7 @@ WHFirebase.prototype.deleteSite = WebhookSiteDelete;
 WHFirebase.prototype.backupUrl = WebhookSiteBackupURL;
 WHFirebase.prototype.backups = WebhookBackups;
 WHFirebase.prototype.siteRedirects = WebhookSiteRedirects;
+WHFirebase.prototype.userExists = WebhookUserExists;
 
 // helper - for initialization
 
@@ -163,6 +164,19 @@ function WebhookSites () {
 function WebhookUsers () {
   var keyPath = usersManagementPath()
   return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+}
+
+function WebhookUserExists ({ userEmail }) {
+  const keyPath = usersManagementPath({ userEmail })
+  return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+    .then((userSnapshot) => {
+      const user = userSnapshot.val()
+      if (user && user.exists) return true
+      return false
+    })
+    .catch((error) => {
+      return false
+    })
 }
 
 function WebhookUserManagementSetSiteOwner ({ siteName, userEmail }) {

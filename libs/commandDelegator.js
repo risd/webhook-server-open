@@ -189,8 +189,6 @@ function CommandDelegator (config) {
   function handleCommands(client, item) { 
     console.log('Waiting on commands for ' + item.tube);
 
-    // project::firebase::ref::done
-    // project::firebase::on--child_added::done
     self.root.ref(item.command).on('child_added', onCommandSnapshot, onCommandSnapshotError);
 
     return handleCommandData;
@@ -201,9 +199,6 @@ function CommandDelegator (config) {
       var identifier = snapshot.key;
       
       // We remove the data immediately to avoid duplicates
-      // project::firebase::ref::done
-      // project::firebase::child::done
-      // project::firebase::remove::done
       self.root.ref(item.command).child(snapshot.key).remove()
 
       var commandData = {
