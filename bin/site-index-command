@@ -1,53 +1,21 @@
 #!/usr/bin/env node
 
+const argv = require('minimist')(process.argv.slice(2), {
+  alias: {
+    n: 'siteName',
+    h: 'help,'
+  },
+})
 var grunt = require( 'grunt' );
-var Firebase = require( 'firebase' )
 var webhookTasks = require( '../Gruntfile.js' );
 var siteIndexor = require( '../libs/siteIndex.js' );
-var firebaseEscape = require( '../libs/utils/firebase-escape' )
 
-webhookTasks( grunt );
+webhookTasks(grunt)
 
-// merge this config in order to run just the builder command
-grunt.config.merge( {
-  suppressJobQueue: true
-} )
+const indexSite = siteIndexor.configure(grunt.config)
 
-var args = process.argv.slice( 2 )
-var options = optionsForArgs( args )
-if ( ! options ) return;
-
-function optionsForArgs ( args ) {
-  var options = {}
-  try {
-    options.sitename = firebaseEscape( args[ 0 ] )
-    options.userid = args[ 1 ].split( '=' )[ 1 ]
-  } catch( error ) {
-    console.log( 'Expected arguments: {site-name} --userid={userid}' )
-    options = null;
-  }
-  return options
-}
-
-var siteIndex = siteIndexor.start( grunt.config, grunt.log )
-
-var identifier = 'id'
-
-var payload = {
-  "identifier": identifier,
-  "payload": options,
-}
-
-var mockClient = {
-  put: function (first, second, third, fourth, jobExecuter) {
-    jobExecuter()
-  }
-}
-
-var jobCallback = function ( error ) {
-  if ( error ) console.log( error )
-  else console.log( `Successfully indexed ${ options.sitename }.` )
-  process.exit( error ? 1 : 0 )
-}
-
-siteIndex( payload, identifier, options, mockClient, jobCallback  )
+;(async () => {
+  await indexSite({
+    siteName: argv._[0] || argv.siteName
+  })
+})()

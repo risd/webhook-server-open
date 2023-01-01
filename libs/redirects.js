@@ -38,23 +38,13 @@ function configure (config) {
         const isFastlyDomain = fastly.isFastlyDomain(redirectDomain)
         if (isFastlyDomain) fastlyRedirectDomains.push(redirectDomain)
       }
-      if (fastlyRedirectDomains.length === 0) return await firebase.siteMessageAdd({siteName}, {
-        message: `No fastly domains to set redirects on.`,
-        timestamp: Date.now()
-        status: 0,
-        code,
-      })
+      if (fastlyRedirectDomains.length === 0) throw new Error(`No fastly domains to set redirects on.`)
       await fastly.domain(fastlyRedirectDomains)
       const siteKeySnapshot = await firebase.siteKey({ siteName })
       const siteKey = siteKeySnapshot.val()
       const redirectsSnapshot = await firebase.siteRedirects({ siteName, siteKey })
       const redirects = redirectsSnapshot.val()
-      if (!(typeof redirects === 'object' && redirects !== null)) return await firebase.siteMessageAdd({siteName}, {
-        message: `No redirects set in CMS.`,
-        timestamp: Date.now()
-        status: 0,
-        code,
-      })
+      if (!(typeof redirects === 'object' && redirects !== null)) throw new Error('No redirects set in CMS')
       let cmsRedirects = []
       Object.keys( redirects ).forEach( function ( redirectKey ) {
         cmsRedirects.push( redirects[ redirectKey ] )
