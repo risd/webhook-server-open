@@ -13,6 +13,7 @@
 * site name + site token.
 */
 
+const debug = require('debug')('server')
 const Fastify = require('fastify')
 const expressPlugin = require('@fastify/express')
 const express = require('express');
@@ -90,33 +91,29 @@ module.exports.start = async function(config) {
     }
   }
 
-  const siteMiddleware = [siteBillingActive, siteKeyEqualsToken]
+  const protectedRouteOptions = {
+    preHandler: [siteBillingActive, siteKeyEqualsToken]
+  }
   
   app.get('/', getRootHandler)
-  app.get('/backup-snapshot/', siteMiddleware, getBackupHandler)
-  app.post('/upload-url/', siteMiddleware, postUploadUrlHandler)
-  app.post('/upload-file/', siteMiddleware, postUploadFileHandler)
-  app.post('/search/', siteMiddleware, postSearchHandler)
-  app.post('/search/index/', siteMiddleware, postSearchIndexHandler)
-  app.post('/search/delete/', siteMiddleware, postSearchDeleteHandler)
-  app.post('/search/delete/type/', siteMiddleware, postSearchDeleteTypeHandler)
-  app.post('/search/delete/index/', siteMiddleware, postSearchDeleteIndexHandler)
-  app.post('/upload/', siteMiddleware, postUploadHandler)
-
-  app.use('*', (req, res) => {
-    res.status(404)
-    res.json({ msg: 'not found' })
-  })
+  app.get('/backup-snapshot/', protectedRouteOptions, getBackupHandler)
+  app.post('/upload-url/', protectedRouteOptions, postUploadUrlHandler)
+  app.post('/upload-file/', protectedRouteOptions, postUploadFileHandler)
+  app.post('/search/', protectedRouteOptions, postSearchHandler)
+  app.post('/search/index/', protectedRouteOptions, postSearchIndexHandler)
+  app.post('/search/delete/', protectedRouteOptions, postSearchDeleteHandler)
+  app.post('/search/delete/type/', protectedRouteOptions, postSearchDeleteTypeHandler)
+  app.post('/search/delete/index/', protectedRouteOptions, postSearchDeleteIndexHandler)
+  app.post('/upload/', protectedRouteOptions, postUploadHandler)
 
   const port = 3000
-  await app.listen(serverPort)
-  console.log(`listening on ${ serverPort }...`.red);
+  await app.listen(port)
+  console.log(`listening on ${ port }...`.red);
 
   return { app, port }
 
-  // Used to know that the program is working
-  function getRootHandler (req, res) {
-    res.send('Working...');
+  function getRootHandler (request, reply) {
+    reply.send('Working...')
   }
 
   // TODO: test this setup, tried to match backupextractor
