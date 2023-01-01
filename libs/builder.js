@@ -212,6 +212,9 @@ function configure (config) {
     const bucketSpecs = [bucketSpec]
 
     const gruntBin = path.join(buildFolder, 'node_modules', '.bin', 'grunt')
+    const dataParam = `--data=${cacheData}`
+    const productionParam = `--production=true`
+    const settingsParam = '--settings={"site_url":"'+ protocolForDomain(maskDomain || siteBucket) +'"}'
 
     const buildProcessOpts = buildOrder.map((buildFile) => {
       const subCmd = buildFile.startsWith('pages')
@@ -223,9 +226,9 @@ function configure (config) {
         [
           subCmd,
           `--inFile=${buildFile}`,
-          `--data=${cacheData}`,
-          `--production=true`,
-          '--settings={"site_url":"'+ protocolForDomain(maskDomain || siteBucket) +'"}',
+          dataParam,
+          productionParam
+          settingsParam,
         ],
         {
           cwd: buildFolder,
@@ -235,12 +238,13 @@ function configure (config) {
 
     return new Promise((resolve, reject) => {
       const buildEventSource = miss.through.obj()
+      const cmdParams = { gruntBin, dataParam, productionParam, settingsParam }
 
       miss.pipe(
         buildEventSource,
         runBuildEmitter({ builtFolder, bucketSpec }),  // pushes { builtFile, builtFilePath, bucket }
         buildSitemap({ builtFolder, bucketSpecs }), // pushes { builtFile, builtFilePath, bucket }
-        buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs }), // pushes { builtFile, builtFilePath, bucket }
+        buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
         uploadIfDifferent({ maxParallel: 10, purgeProxy }),  // pushes { builtFile, builtFilePath, bucket }
         sink(),
         (error) => {
@@ -360,6 +364,7 @@ function configure (config) {
     var buckets = options.bucketSepcs || [];
     var buildFolder = options.buildFolder;
     var builtFolder = options.builtFolder;
+    const cmdParams = options.cmdParams
     var shouldBuild = false;
     var builtFile = 'robots.txt';
 
@@ -392,43 +397,36 @@ function configure (config) {
       return miss.from.obj( buckets.map( function ( bucket ) { return { bucket: bucket } } ).concat( [ null ] ) )
     }
 
+    // TODO: ensure this builds the right robots file
     function buildAndRead () {
-      return miss.through.obj( function ( args, enc, next ) {
+      return miss.through.obj(async function ( args, enc, next ) {
         var robotsDataContent = buildDataForBucket( args.bucket )
         var robotsDataPath = path.join( builtFolder, 'robots-data.json' )
 
         var buildParams = [
           'build-page',
           '--inFile=pages/robots.txt',
-          '--production=true',
-          '--data=.build/robots-data.json',
-          '--emitter=true'
+          cmdParams.productionParam,
+          '--data=.build/robots-data.json'
         ]
 
         var builtRobotsPath = path.join( builtFolder, builtFile )
-
-
-        fs.writeFile( robotsDataPath, robotsDataContent, function ( error ) {
-          if ( error ) return next( error )
-
-          // TODO: replace this with async runInDir
-          runInDir( 'grunt', buildFolder, buildParams, function ( error ) {
-            if ( error ) return next( error )
-
-            fs.readFile( builtRobotsPath, function ( error, contents ) {
-              if ( error ) return next( error )
-
-              var uploadArgs = {
-                builtFile: builtFile,
-                builtFilePath: contents.toString(),
-                bucket: args.bucket,
-                overrideMimeType: 'text/plain',
-              }
-
-              next( null, uploadArgs )
-            } )
-          } )
-        } )
+        try {
+          await fsp.writeFile(robotsDataPath, robotsDataContent)
+          await runInDir(cmdParams.gruntBin, buildParams, { cwd: buildFolder })
+          const robotsBuffer = await fsp.readFile(builtRobotsPath)
+          const uploadArgs = {
+            builtFile,
+            builtFilePath: robotsBuffer.toString(),
+            bucket: args.bucket,
+            overrideMimeType: 'text/plain',
+          }
+          next(null, uploadArgs)
+        }
+        catch (error) {
+          console.log(error)
+          next(error)
+        }
       } )
     }
 
