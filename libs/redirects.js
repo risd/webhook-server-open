@@ -10,18 +10,14 @@ var FastlyWebhook = require( './fastly/index' )
 var Firebase = require( './firebase/index' )
 var JobQueue = require('./jobQueue.js')
 var Deploys = require( 'webhook-deploy-configuration' )
-var miss = require( 'mississippi' )
-var throughConcurrent = require( 'through2-concurrent' )
-var utils = require( './utils.js' )
 var isAscii = require( 'is-ascii' );
-var ReportStatus = require( './utils/firebase-report-status.js' )
 var firebaseUnescape = require( './utils/firebase-unescape.js' )
 
 module.exports.configure = configure
 
 function configure (config) {
   // redirects are not established for development domains
-  var fastly = FastlyWebhook( config.get( 'fastly' ) )
+  var fastly = FastlyWebhook(config.get( 'fastly' ))
   const firebase = Firebase({
     initializationName: 'redirects-worker',
     ...config.get('firebase'),
@@ -113,6 +109,7 @@ module.exports.start = function (config) {
         console.log(error)
         callback(error)
       })
+
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init(config);
 
