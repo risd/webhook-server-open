@@ -6,6 +6,7 @@ var crypto = require( 'crypto' )
 var Fastly = require( 'fastly' )
 var async = require( 'async' )
 var url = require( 'url' )
+const chainCallbackResponse = require('../utils/chain-callback-response')
 
 // base configuration of the service
 var DICTIONARY_REDIRECT_HOSTS = 'dictionary_redirect_hosts';
@@ -84,17 +85,20 @@ function activator ( complete ) {
     version: this.version(),
   }
 
-  if ( this._version_is_active === true ) return complete( null, serviceOptions )
+  if (this._version_is_active === true && typeof complete === 'function') return complete( null, serviceOptions )
+  else if (this._version_is_active === true) return Promise.resolve(serviceOptions)
 
   var self = this;
   var activateOptions = Object.assign( { request: this.request }, serviceOptions )
 
-  return activateVersion( activateOptions, function ( error, version ) {
-    if ( error ) return complete( error )
-    self._version_is_active = true;
+  const chain = activateVersion(activateOptions)
+    .then((results) => {
+      self._version_is_active = true
+      return serviceOptions
+    })
 
-    return complete( null, serviceOptions )
-  } )
+  if (typeof complete === 'function') chainCallbackResponse(chain, complete)
+  else return chain
 }
 
 /**
@@ -257,7 +261,14 @@ function activateVersion ( options, complete ) {
   var service_id = options.service_id;
   var version = options.version;
   var urlStr = [ '/service', service_id, 'version', version, 'activate' ].join( '/' )
-  return request( 'PUT', urlStr, complete );
+  const chain = new Promise((resolve, reject) => {
+    request( 'PUT', urlStr, (error, response, body) => {
+      if (error) reject(error)
+      else resolve({ resposne, body })
+    })
+  })
+  if (typeof complete === 'function') chainCallbackResponse(chain, complete)
+  else return chain
 }
 
 /**
@@ -817,10 +828,18 @@ function setRedirects ( options, complete ) {
     .filter( patternWithProtocolOrHost )
     .filter( sameUrl )
 
-  async.series( [
-    setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: redirects.filter( isNotRegex ) } ) ),
-    setSnippetRedirectTasks( Object.assign( {}, options, { redirects: redirects.filter( isRegex ) } ) )
-  ], complete )
+  const chain = new Promise((resolve, reject) => {
+    async.series([
+      setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: redirects.filter( isNotRegex ) } ) ),
+      setSnippetRedirectTasks( Object.assign( {}, options, { redirects: redirects.filter( isRegex ) } ) )
+    ], (error) => {
+      if (error) reject(error)
+      else resolve()
+    })    
+  })
+
+  if (typeof complete === 'function') chainCallbackResponse(chain, complete)
+  else return chain
 
   function setDictionaryRedirectsTask ( args ) {
     return function task ( taskComplete ) {

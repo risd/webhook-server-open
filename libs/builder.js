@@ -602,8 +602,6 @@ function configure (config) {
 module.exports.start = function (config) {
   const job = configure(config)
 
-  var jobQueue = JobQueue.init(config);
-
   const wrapJob = (payload, callback) => {
     job(payload)
       .then(() => {
@@ -615,6 +613,8 @@ module.exports.start = function (config) {
         console.log(error)
         callback(error)
       })
+
+  var jobQueue = JobQueue.init(config);
 
   console.log('Waiting for commands'.red);
 
