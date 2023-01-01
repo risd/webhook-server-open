@@ -36,11 +36,19 @@ test('create-bucket', async (t) => {
 })
 
 test( 'upload-object', function ( t ) {
-  t.plan( 1 )
-
-  cloudStorage.objects.upload(uploadOptions, function ( error, results ) {
-    t.assert( ! error, 'uploaded file content without error.' )
-  } )
+  cloudStorage.objects.upload(uploadOptions)
+    .then((results) => {
+      t.ok(true, 'succesfully upload file')
+      t.asset(typeof results.bucket === 'string', 'results.bucket exists')
+      t.asset(typeof results.name === 'string', 'results.name exists')
+      t.asset(typeof results.fileSize === 'number', 'results.fileSize exists')
+      t.asset(typeof results.contentType === 'string', 'results.contentType exists')
+      t.end()
+    })
+    .catch((error) => {
+      t.fail(error, 'Could not upload file')
+      t.end()
+    })
 } )
 
 test( 'upload-compressed-object', function ( t ) {
