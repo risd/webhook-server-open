@@ -53,14 +53,15 @@ WHFirebase.prototype.database = function () {
 }
 
 WHFirebase.prototype.siteKey = WebhookSiteKey;
+WHFirebase.prototype.siteVersion = WebhookSiteVersion;
 WHFirebase.prototype.siteDevData = WebhookSiteDevData;
 WHFirebase.prototype.siteOwners = WebhookSiteOwners;
 WHFirebase.prototype.siteManagement = WebhookSiteManagement;
 WHFirebase.prototype.siteManagementError = WebhookSiteManagementError;
 WHFirebase.prototype.userManagementSetSiteOwner = WebhookUserManagementSetSiteOwner;
 WHFirebase.prototype.siteBillingCreate = WebhookSiteBillingCreate;
+WHFirebase.prototype.siteBillingActive = WebhookSiteBillingActive;
 WHFirebase.prototype.siteMessageAdd = WebhookSiteMessagesAdd;
-// requires admin sdk + service account
 WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
 WHFirebase.prototype.allUsers = WebhookUsers;
@@ -70,6 +71,7 @@ WHFirebase.prototype.backupUrl = WebhookSiteBackupURL;
 WHFirebase.prototype.backups = WebhookBackups;
 WHFirebase.prototype.siteRedirects = WebhookSiteRedirects;
 WHFirebase.prototype.userExists = WebhookUserExists;
+WHFirebase.prototype.signalBuild = WebhookSignalBuild;
 
 // helper - for initialization
 
@@ -94,6 +96,16 @@ function WebhookSiteKey ( options, siteKey ) {
   else {
     // get
     return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+  }
+}
+
+function WebhookSiteVersion ({ siteName }, version) {
+  const keyPath = `${ siteManagementPath({ siteName }) }/version`
+  if (version) {
+    return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, version)
+  }
+  else {
+    return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
   }
 }
 
@@ -328,6 +340,15 @@ function WebhookSiteBillingCreate ({ siteName, userEmail }) {
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, billingData)
 }
 
+function WebhookSiteBillingActive ({ siteName }) {
+  const keyPath = `${siteBilling({ siteName })}/active`
+  return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+    .then((activeSnapshot) => {
+      const active = activeSnapshot.val()
+      return active
+    })
+}
+
 
 function WebhookSiteMessages ({ siteName }, value) {
   
@@ -352,6 +373,11 @@ function WebhookSiteMessagesAdd ({ siteName }, value) {
       const oldestKey = Object.keys(messages).sort()[0]
       return firebaseDatabaseSetValueForKeyPath(this._app, `${keyPath}/${oldestKey}`, null)
     })
+}
+
+function WebhookSignalBuild ({ siteName }, payload) {
+  const keyPath = `management/commands/build/${ escape(siteName) }`
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 // helpers - interfaces into data

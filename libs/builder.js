@@ -411,6 +411,7 @@ function configure (config) {
         fs.writeFile( robotsDataPath, robotsDataContent, function ( error ) {
           if ( error ) return next( error )
 
+          // TODO: replace this with async runInDir
           runInDir( 'grunt', buildFolder, buildParams, function ( error ) {
             if ( error ) return next( error )
 
@@ -613,6 +614,7 @@ module.exports.start = function (config) {
         console.log(error)
         callback(error)
       })
+  }
 
   var jobQueue = JobQueue.init(config);
 

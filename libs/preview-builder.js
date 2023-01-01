@@ -59,14 +59,14 @@ function configure (config) {
         itemKey,
         oneOffPath,
         buildFolder,
-        builtFolder
+        builtFolder,
         siteBucket,
         maskDomain,
         purgeProxy,
         cacheData,
       })
       await firebase.siteMessageAdd({ siteName }, {
-        `Priority build complete for ${ contentType } on ${ siteBucket }`,
+        message: `Priority build complete for ${ contentType } on ${ siteBucket }`,
         timestamp: Date.now(),
         status: 0,
         code: 'PRIORITY',
@@ -145,7 +145,7 @@ module.exports.start = function ( config, logger ) {
         console.log(error)
         callback(error)
       })
-  
+  }
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init(config);
   console.log('Waiting for commands'.red);

@@ -89,6 +89,7 @@ module.exports.start = function (config) {
         console.log(error)
         callback(error)
       })
+  }
 
   var jobQueue = JobQueue.init(config)
   console.log('Waiting for invites'.red);

@@ -5,7 +5,7 @@ const { redirectTemplateForDestination } = require('../utils')
 
 const BUILD_EVENT = 'build:document-written:./.build/'
 
-module.exports = runInDir
+module.exports = runBuildEmitter
 
 function runBuildEmitter ({ builtFolder, bucketSpec }) {
   return miss.through.obj(function (cmd, enc, next) {

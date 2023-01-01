@@ -7,7 +7,7 @@ const JobQueue = require( './jobQueue.js' )
 module.exports.configure = configure
 function configure (config) {
   const firebaseOptions = {
-    initializationName: 'domain-mapper'
+    initializationName: 'domain-mapper',
     ...config.get('firebase'),
   }
     
@@ -72,22 +72,7 @@ module.exports.start = function ( config, logger ) {
         console.log(error)
         callback(error)
       })
+  }
 
   console.log('Waiting for commands'.red);
-}
-
-function callbackDebug ( name, callback ) {
-  if ( typeof name === 'function' ) callback = name;
-
-  return function wrapsCallback ( error, result ) {
-    if ( error ) {
-      console.log( name + ':error' )
-      console.log( error )
-    }
-    else {
-      console.log( name + ':success' )
-      console.log( result )
-    }
-    callback( error, result )
-  }
 }

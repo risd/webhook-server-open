@@ -3,7 +3,7 @@ const { spawn } = require("node:child_process")
 
 module.exports = runInDir
 
-function runInDir(command, args = [], options = { cwd: process.cwd() }) {
+function runInDir (command, args = [], options = { cwd: process.cwd() }) {
   if (!command)
     throw new Error(
       "runInDir requires a `command` key that expresses what command to run."

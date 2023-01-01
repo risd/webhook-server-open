@@ -1,4 +1,6 @@
 // TODO update for latest internal apis
+// TODO replace siteBillingActive with firebase.siteBillingActive({ siteName })
+// TODO replace siteKeyEqualsToken with firebase.siteBillingActive({ siteName })
 // todo replace express with fastify?
 // TODO replace local elastic interface with the webhook-elastic-sarch module
 /**
@@ -11,7 +13,10 @@
 * site name + site token.
 */
 
-var express = require('express');
+const Fastify = require('fastify')
+const expressPlugin = require('@fastify/express')
+const express = require('express');
+const cors = require('cors')
 var colors = require('colors');
 var request = require('request');
 var fs = require('fs');
@@ -26,6 +31,8 @@ var temp = require('temp');
 var mime = require('mime');
 var _ = require('lodash');
 var Deploys = require( 'webhook-deploy-configuration' );
+const {pipeline} = require('stream')
+const {fileNameForTimestamp} = require( './backup.js' )
 
 // Some string functions worth having
 String.prototype.endsWith = function(suffix) {
@@ -36,18 +43,9 @@ String.prototype.startsWith = function (str){
   return this.indexOf(str) == 0;
 };
 
-// General error handling function
-function errorHandler (err, req, res, next) {
-  res.status(500);
-  res.send('error');
-}
+module.exports.start = async function(config) {
 
-module.exports.start = function(config, logger) {
-  cloudStorage.configure(config.get('cloudStorage'))
-
-  var app = express();
-
-  var elastic = Elastic( config().elastic );
+  var elastic = Elastic(config.get('elastic'))
 
   const firebase = Firebase({
     initializationName: 'server',
@@ -58,60 +56,82 @@ module.exports.start = function(config, logger) {
 
   var deploys = Deploys(database.ref())
 
+  const backupBucket = config.get('backupBucket')
+
+  const app = Fastify()
+  await app.register(expressPlugin)
+
   // Set up our request handlers for express
   app.use(express.limit('1024mb'));
   app.use(express.bodyParser({ maxFieldsSize: 10 * 1024 * 1024 }));
-  app.use(allowCrossDomain);
-  app.use(errorHandler);
+  app.use(cors())
+
+  async function siteBillingActive (request, reply) {
+    const siteName = request.query.site
+    const isActive = await firebase.siteBillingActive({ siteName })
+    if (!isActive) {
+      reply.type('application/json').code(500)
+      return { error: 'Site not active, please check billing status.' }
+    }
+  }
+
+  async function siteKeyEqualsToken (request, reply) {
+    const siteName = request.query.site
+    const token = request.query.token
+    const siteKeySnapshot = await firebase.siteKey({ siteName })
+    const siteKey = siteKeySnapshot.val()
+    if (!siteKey) {
+      reply.type('application/json').code(500)
+      return { error: 'Site does not exist.' }
+    }
+    if (token !== siteKey) {
+      reply.type('application/json').code(403)
+      return { error: 'Token is not valid' }
+    }
+  }
+
+  const siteMiddleware = [siteBillingActive, siteKeyEqualsToken]
   
   app.get('/', getRootHandler)
-  app.get('/backup-snapshot/', getBackupHandler)
-  app.post('/upload-url/',  postUploadUrlHandler)
-  app.post('/upload-file/', postUploadFileHandler)
-  app.post('/search/', postSearchHandler)
-  app.post('/search/index/', postSearchIndexHandler)
-  app.post('/search/delete/', postSearchDeleteHandler)
-  app.post('/search/delete/type/', postSearchDeleteTypeHandler)
-  app.post('/search/delete/index/', postSearchDeleteIndexHandler)
-  app.post('/upload/', postUploadHandler)
+  app.get('/backup-snapshot/', siteMiddleware, getBackupHandler)
+  app.post('/upload-url/', siteMiddleware, postUploadUrlHandler)
+  app.post('/upload-file/', siteMiddleware, postUploadFileHandler)
+  app.post('/search/', siteMiddleware, postSearchHandler)
+  app.post('/search/index/', siteMiddleware, postSearchIndexHandler)
+  app.post('/search/delete/', siteMiddleware, postSearchDeleteHandler)
+  app.post('/search/delete/type/', siteMiddleware, postSearchDeleteTypeHandler)
+  app.post('/search/delete/index/', siteMiddleware, postSearchDeleteIndexHandler)
+  app.post('/upload/', siteMiddleware, postUploadHandler)
 
-  var serverPort = 3000
-  app.listen(serverPort);
+  app.use('*', (req, res) => {
+    res.status(404)
+    res.json({ msg: 'not found' })
+  })
+
+  const port = 3000
+  await app.listen(serverPort)
   console.log(`listening on ${ serverPort }...`.red);
 
-  return { app: app, port: serverPort }
+  return { app, port }
 
   // Used to know that the program is working
   function getRootHandler (req, res) {
     res.send('Working...');
   }
 
-  // Request for backup snapshots, passed a token, sitename, and a timestamp
-  // If the token matches the token for the site on record, returns
-  // a backup for the given site
-  function getBackupHandler (req, res) {
-    var token = req.query.token;
-    var timestamp = req.query.timestamp;
-    var site = req.query.site;
+  // TODO: test this setup, tried to match backupextractor
+  async function getBackupHandler (request, reply) {
+    const siteName = request.query.site
+    const token = request.query.token
+    const timestamp = request.query.timestamp
 
-    var validateRequestSeries = [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-    ]
-
-    async.series( validateRequestSeries, function handleValidationSeries ( error ) {
-      if ( error ) return handleResponseForSeries( res, error )
-      extractBackup( timestamp, res )
-    } )
-
-    function extractBackup ( timestamp, res ) {
-      cloudStorage.getToken(function() {
-        var backupStream = cloudStorage.objects.getStream(config.get('backupBucket'), 'backup-' + timestamp);
-        var extractor = backupExtractor.getParser(['buckets', site, token, 'dev']);
-
-        backupStream.pipe(extractor).pipe(res);
-      });
-    }
+    const backupStream = await cloudStorage.objects.createReadStream({
+      bucket: backupBucket,
+      file: fileNameForTimestamp(timestamp),
+    })
+    const extractor = backupExtractor.getParser(['buckets', siteName, token, 'dev'])
+    reply.header('Content-Type', 'application/octet-stream')
+    reply.send(extractor)
   }
 
   // Handles uploading a file from a url
@@ -343,19 +363,6 @@ module.exports.start = function(config, logger) {
     res.json( 200, successResponse )
   }
 
-  // We do this to allow for CORS requests to the server (for search)
-  function allowCrossDomain (req, res, next) {
-      res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
-      res.header('Access-Control-Allow-Headers', 'Content-Type');
-
-      if ('OPTIONS' == req.method) {
-        res.send(200);
-      } else {
-        next();
-      }
-  }
-
   // Files are uploaded to the same `uploadsBucket`, at the URL returned
   // for the given `fileName`
   function fileUrlForFileName ( fileName ) {
@@ -574,56 +581,10 @@ module.exports.start = function(config, logger) {
     }
   }
 
-  function siteBillingActive ( site, callback ) {
-    database.ref( '/billing/sites/' + site + '/active' )
-      .once( 'value', onActiveSnapshotSuccess, onActiveSnapshotError )
-
-    function onActiveSnapshotSuccess ( activeSnapshot ) {
-      var isActive = activeSnapshot.val()
-      // if this function is pulled out into a common firebase interface,
-      // just return the active value
-      if ( ! isActive ) return callback( siteBillingActiveError() )
-      callback( null )
-    }
-
-    function onActiveSnapshotError ( error ) {
-      callback( siteBillingActiveError() )
-    }
-
-    // server specific error based on being able to send a response with
-    // the object `res.send( error.statusCode, error )
-    function siteBillingActiveError () {
-      return {
-        statusCode: 500,
-        message: 'Site not active, please check billing status.',
-      }
-    }
-  }
-
-  function siteKeyEqualsToken( options, callback ) {
-    var siteName = options.siteName
-    var token = options.token
-    database.ref( '/management/sites/' + siteName + '/key' )
-      .once( 'value', onSiteKeySnapshotSuccess, valueDoesNotExistErrorHandler( callback ) )
-
-    function onSiteKeySnapshotSuccess ( siteKeySnapshot ) {
-      var siteKey = siteKeySnapshot.val()
-      if ( ! siteKey ) return callback( valueDoesNotExistErrorObject() )
-      if ( siteKey !== token ) return callback( tokenNotValidError() )
-      callback()
-    }
-
-    function tokenNotValidError () {
-      return {
-        statusCode: 403,
-        message: 'Token is not valid.',
-      }
-    }
-  }
-
   function setSiteVersion ( options, callback ) {
     var siteName = options.siteName
     var timestamp = options.timestamp
+    // firebase.siteVersion({ siteName })
     database.ref( '/management/sites/' + siteName + '/version' )
       .set( timestamp, valueDoesNotExistErrorHandler( callback ) )
   }
@@ -638,17 +599,19 @@ module.exports.start = function(config, logger) {
       userid: 'admin',
       id: uniqueId(),
     }
+    // firebase.signalBuild({ siteName }, buildSignalOptions)
     database.ref( '/management/commands/build/' + siteName )
       .set( buildSignalOptions, valueDoesNotExistErrorHandler( callback ) )
   }
 
   function cloudStorageObjectUpload ( options, callback ) {
     var bucket = options.bucket
-    var localFile = options.localFile
-    var remoteFile = options.remoteFile
+    var local = options.localFile
+    var remote = options.remoteFile
     var cacheControl = options.cacheControl
     var mimeType = options.mimeType
 
+    // cloudStorage.objects.upload({ bucket, local, remote, cacheControl, overrideMimeType: mimeType })
     cloudStorage.objects.upload( bucket, localFile, remoteFile, cacheControl, mimeType, handleObjectUpload )
 
     function handleObjectUpload ( error, results ) {

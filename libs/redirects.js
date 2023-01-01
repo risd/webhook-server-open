@@ -97,6 +97,7 @@ module.exports.start = function (config) {
         console.log(error)
         callback(error)
       })
+  }
 
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init(config);

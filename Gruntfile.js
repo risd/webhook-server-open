@@ -125,7 +125,7 @@ module.exports = function(grunt) {
 
   grunt.registerTask('startServer', 'Starts node server', function() {
     var done = this.async();
-    server.start(grunt.config, grunt.log);
+    server.start(grunt.config);
   });
 
   grunt.registerTask('backupCron', 'Job to run for backup cron', async function() {
