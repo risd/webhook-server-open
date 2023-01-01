@@ -1,5 +1,6 @@
 // TODO update for latest internal apis
 // todo replace express with fastify?
+// TODO replace local elastic interface with the webhook-elastic-sarch module
 /**
 * The server is a web server that handles three main tasks:
 *   1) It provides an endpoint for users to upload their files to the workers, through wh deploy
@@ -12,20 +13,17 @@
 
 var express = require('express');
 var colors = require('colors');
-var Zip   = require('adm-zip');
 var request = require('request');
 var fs = require('fs');
 var mkdirp = require('mkdirp');
 var async = require('async');
 var Elastic = require( './elastic-search/index' )
 var Firebase = require('./firebase/index');
-var wrench = require('wrench');
 var path = require('path');
 var cloudStorage = require('./cloudStorage.js');
 var backupExtractor = require('./backup-extractor.js');
 var temp = require('temp');
 var mime = require('mime');
-var archiver   = require('archiver');
 var _ = require('lodash');
 var Deploys = require( 'webhook-deploy-configuration' );
 
@@ -45,22 +43,20 @@ function errorHandler (err, req, res, next) {
 }
 
 module.exports.start = function(config, logger) {
-  cloudStorage.setProjectName(config.get('googleProjectId'));
-  cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
+  cloudStorage.configure(config.get('cloudStorage'))
 
   var app = express();
 
   var elastic = Elastic( config().elastic );
 
-  var firebaseOptions = Object.assign(
-    { initializationName: 'server-worker' },
-    config().firebase )
+  const firebase = Firebase({
+    initializationName: 'server',
+    ...config.get('firebase'),
+  })
 
-  // project::firebase::initialize::done
-  var firebase = Firebase( firebaseOptions )
   var database = firebase.database()
 
-  var deploys = Deploys( database )
+  var deploys = Deploys(database.ref())
 
   // Set up our request handlers for express
   app.use(express.limit('1024mb'));
