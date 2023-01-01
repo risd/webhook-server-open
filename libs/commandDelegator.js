@@ -223,8 +223,8 @@ function CommandDelegator (config) {
       var identifier = commandData.identifier;
 
       // todo: update signalers to conform to updated naming
-      payload.userId = payload.userid
-      payload.siteName = payload.sitename
+      if (payload.userid) payload.userId = payload.userid
+      if (payload.sitename) payload.siteName = payload.sitename
 
       var lockId = payload.id || 'noneya';
       var memcacheLockId = item.lock + '_' + lockId + '_queued';

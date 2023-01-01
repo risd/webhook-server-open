@@ -53,8 +53,6 @@ function configure (config) {
       cmsRedirects = cmsRedirects.filter( function ( redirect ) {
         return isAscii( redirect.pattern ) && isAscii( redirect.destination )
       } )
-      // todo why is this here?
-      // cmsRedirects = cmsRedirects.concat([{ pattern: '/same/', destination: '/same/' }])
       const errorDomains = []
       for (const redirectDomain of fastlyRedirectDomains) {
         try {
