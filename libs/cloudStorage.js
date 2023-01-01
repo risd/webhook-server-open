@@ -180,7 +180,7 @@ module.exports.setKeyFile = function(file) {
   keyFile = file;
 }
 
-// TODO remove this into a config.json file that gets passed in
+// todo remove this into a config.json file that gets passed in
 // This object contains all methods that have to do with manipulating
 // buckets
 const defaultCors = [{
@@ -451,23 +451,6 @@ var objectsAPI = {
 
     if (typeof callback === 'function') chainCallbackResponse(chain, callback)
     else return chain
-  },
-
-  // TODO did not end up using this, it can be removed
-  getUploadUrl: function ({ bucket, file }) {
-    const options = {
-      version: 'v4',
-      action: 'write',
-      expires: Date.now() + 15 * 60 * 1000, // 15 min
-      // contentType: 'application/json',
-      contentType: 'multipart/form-data',
-    }
-
-    return storage.bucket(bucket).file(file).getSignedUrl(options)
-      .then((results) => {
-        const url = results[0]
-        return url
-      })
   },
   createReadStream: function ({ bucket, file }) {
     return storage.bucket(bucket).file(file).createReadStream()

@@ -1,5 +1,5 @@
 // TODO update for latest internal apis
-// TODO replace express with fastify?
+// todo replace express with fastify?
 /**
 * The server is a web server that handles three main tasks:
 *   1) It provides an endpoint for users to upload their files to the workers, through wh deploy
