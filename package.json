@@ -66,7 +66,7 @@
     "through2-concurrent": "^1.1.1",
     "touch": "0.0.3",
     "webhook-deploy-configuration": "^3.0.5",
-    "webhook-elastic-search": "^3.0.0"
+    "webhook-elastic-search": "^3.0.1"
   },
   "devDependencies": {
     "foreman": "^2.0.0",

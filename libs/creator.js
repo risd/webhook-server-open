@@ -10,6 +10,7 @@
 // Requires
 var Firebase = require('./firebase/index.js');
 var Cloudflare = require('./cloudflare/index.js');
+const Elastic = require('webhook-elastic-search')
 const Fastly = require('./fastly')
 var colors = require('colors');
 var _ = require('lodash');
@@ -24,13 +25,9 @@ var usingArguments = utils.usingArguments;
 var sink = utils.sink;
 var cloudStorage = require('./cloudStorage.js');
 
-var escapeUserId = function(userId) {
-  return userId.replace(/\./g, ',1');
-};
+const firebaseEscape = require( './utils/firebase-escape.js' )
+const firebaseUnescape = require( './utils/firebase-unescape.js' )
 
-var unescapeSite = function(site) {
-  return site.replace(/,1/g, '.');
-}
 
 const DEFAULT_CNAME_RECORD = { content: 'c.storage.googleapis.com', }
 
@@ -54,6 +51,7 @@ function configure (config) {
 
   const fastly = Fastly(config.get( 'fastly' ))
   const cloudflareConfig = config.get('cloudflare')
+  const elastic = Elastic(config.get('elastic'))
 
   return async function ({ userId, siteName }) {
     console.log('Processing Command For ' + siteName);
@@ -67,7 +65,7 @@ function configure (config) {
         const error = new Error('site-exists')
         throw error
       }
-      else if (_(siteManagement.owners).has(escapeUserId(userId))) {
+      else if (_(siteManagement.owners).has(firebaseEscape(userId))) {
         // site owner is requesting we setup the site
         await firebase.siteManagementError({ siteName }, false)
         try {
@@ -100,7 +98,7 @@ function configure (config) {
   */
   async function setupSite ({ siteName, userId }) {
     const siteKey = uuid.v4()
-    const siteBucket = unescapeSite(siteName)
+    const siteBucket = firebaseUnescape(siteName)
 
     await setupBucket({
       siteBucket,
@@ -112,6 +110,7 @@ function configure (config) {
     await firebase.siteKey({ siteName }, siteKey)
     console.log('creator:setup-site:site-billing')
     await firebase.siteBillingCreate({ siteName, userEmail: userId })
+    await elastic.createIndex({ siteName })
 
     console.log('creator:setup-site:dev-data')
     await firebase.siteDevData({ siteName, siteKey }, {
