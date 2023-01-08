@@ -116,7 +116,9 @@ module.exports.start = async function(config) {
     reply.send('Working...')
   }
 
-  // TODO: test this setup, tried to match backupextractor
+  // TODO: test this fastify setup, tried to match backupextractor test
+  // but not positive how to reply with a stream. might have to buffer and
+  // send in two separate steps
   async function getBackupHandler (request, reply) {
     const siteName = request.query.site
     const token = request.query.token

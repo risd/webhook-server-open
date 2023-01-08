@@ -151,7 +151,6 @@ module.exports.start = function (config) {
 /**
  * @param  {object}   options
  * @param  {string}   options.siteBucket
- * @param  {boolean}  options.ensureCname
  * @param  {object}   options.cloudStorage
  * @param  {string}   options.cloudStorage.projectId
  * @param  {string}   options.cloudStorage.serviceAccount

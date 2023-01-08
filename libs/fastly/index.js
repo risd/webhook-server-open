@@ -108,27 +108,17 @@ function activator ( complete ) {
  * activated as they are made.
  *
  * @param  {string} service_id  The `service_id` to initialize
- * @param  {function} complete  Called when the service has been initialized.
- *                              Returns ( error, ServiceVersion )
  */
-function initializeService ( service_id, complete ) {
+function initializeService (service_id) {
   if ( typeof service_id === 'string' ) this._service_id = service_id;
-  if ( typeof service_id === 'function' ) complete = service_id;
 
   var self = this;
 
-  // if any errors occur, bail and complete early
-  var ifSuccess = handleError( complete )
-
-  return this._activeVersion( ifSuccess( configureService( self.activate.bind( self, complete ) ) ) )
-
-  function configureService ( continuation ) {
-    return configurer;
-
-    function configurer ( version ) {
-
-      var updator = serviceConfigurationUpdater.apply( self )
-      var getOrCreateTasks = [
+  return new Promise((resolve, reject) => {
+    self._activeVersion((error) => {
+      if (error) return reject(error)
+      const updator = serviceConfigurationUpdater.apply( self )
+      const getOrCreateTasks = [
           dictionaryArguments( DICTIONARY_REDIRECT_HOSTS ),
           dictionaryArguments( DICTIONARY_REDIRECT_URLS ),
           dictionaryArguments( DICTIONARY_HOST_BACKENDS ),
@@ -144,9 +134,15 @@ function initializeService ( service_id, complete ) {
         ]
         .map( updator.mapVersionedTask )
 
-      return async.series( getOrCreateTasks, continuation )
-    }
-  }
+      async.series(getOrCreateTasks, (error) => {
+        if (error) return reject(error)
+        self.activate((error, serviceOptions) => {
+          if (error) return reject(error)
+          resolve(serviceOptions)
+        })
+      })
+    })
+  })
 }
 
 /**

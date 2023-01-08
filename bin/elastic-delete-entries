@@ -1,18 +1,16 @@
 #!/usr/bin/env node
-require('dotenv').config()
 
-var async = require( 'async' )
 var grunt = require( 'grunt' )
 var webhookTasks = require( '../Gruntfile.js' )
-var WebhookElasticSearchQuery = require( '../libs/elastic-search/index.js' )
+const Elastic = require('webhook-elastic-search')
 
 webhookTasks( grunt )
 
-var elasticQuery = WebhookElasticSearchQuery( grunt.config().elastic )
+var elastic = Elastic( grunt.config.get('elastic') )
 
 var siteName = process.argv.slice( 2 )[ 0 ]
 
-elasticQuery.deleteSite( { siteName: siteName } )
+elastic.deleteIndex({ siteName })
   .then( function () { process.exit( 0 ) } )
   .catch( function ( error ) {
     console.log( error )

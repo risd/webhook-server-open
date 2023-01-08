@@ -1,3 +1,4 @@
+// TODO: upload the .env.rackspace.prod-v1.1 to the server
 'use strict';
 /*
 * This Gruntfile handles all the launching/running of the workers and servers that
@@ -56,6 +57,7 @@ module.exports = function(grunt) {
     googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,               // The email of your projects Service Acccount
     cloudStorage: {
       keyFilename: process.env.GOOGLE_KEY_JSON,
+      defaultCors: parseJson(process.env.GOOGLE_BUCKET_DEFAULT_CORS),
     },
     googleCloudServiceAccountKeyJson: process.env.GOOGLE_KEY_JSON,
     memcachedServers: [

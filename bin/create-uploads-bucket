@@ -2,17 +2,15 @@
 
 var grunt = require( 'grunt' );
 var webhookTasks = require( '../Gruntfile.js' );
-var cloudStorage = require('../libs/cloudStorage.js');
-var setupBucketWithCloudStorage = require( '../libs/creator.js' ).setupBucketWithCloudStorage;
+var {setupBucket} = require( '../libs/creator.js' )
 
-webhookTasks( grunt )
+webhookTasks(grunt)
 
-cloudStorage.setProjectName(grunt.config.get('googleProjectId'))
-cloudStorage.setServiceAccount(grunt.config.get('googleServiceAccount'))
-
-var setupBucket = setupBucketWithCloudStorage( cloudStorage )
-
-setupBucket( 'cdn.risd.systems', function ( error ) {
-  if ( error ) console.log( error );
-  process.exit( error ? 1 : 0 )
-} )
+;(async () => {
+  await setupBucket({
+    cloudStorage: grunt.config.get('cloudStorage'),
+    fastly: grunt.config.get('fastly'),
+    cloudflare: grunt.config.get('cloudflare'),
+    siteBucket: grunt.config.get('uploadsBucket'),
+  })
+})()

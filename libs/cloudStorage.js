@@ -9,7 +9,7 @@
 const { Storage } = require('@google-cloud/storage')
 const stream = require('stream')
 var mime = require('mime');
-var fs   = require('fs');
+var fs = require('fs');
 var zlib = require('zlib');
 var async = require('async');
 const chainCallbackResponse = require('./utils/chain-callback-response')
@@ -23,6 +23,7 @@ var keyFilename = process.env.GOOGLE_KEY_JSON || 'libs/keyfile.key';
 
 // storage interface used throughout this file
 let storage
+let defaultCors
 
 function projectIdFromKeyFile( keyFile ) {
   console.log('project-id-from-key-file:keyFile:', keyFile)
@@ -38,7 +39,7 @@ function projectIdFromKeyFile( keyFile ) {
 
 module.exports.configure = configure
 
-function configure () {
+function configure (options={}) {
   console.log('cloud-storage:configure:', keyFilename)
   const config = {
     serviceAccountEmail: googleServiceAccount,
@@ -46,6 +47,7 @@ function configure () {
     keyFilename,
   }
   console.log(config)
+  if (options.defaultCors) defaultCors = options.defaultCors
   try {
     storage = new Storage(config)
   }
@@ -65,16 +67,6 @@ if (keyFilename && projectName && googleServiceAccount) {
 module.exports.setKeyFile = function(file) {
   keyFile = file;
 }
-
-// todo remove this into a config.json file that gets passed in
-// This object contains all methods that have to do with manipulating
-// buckets
-const defaultCors = [{
-  origin: [ "*.risd.systems", "cdn.risd.systems", "risd.edu", "*.risd.edu", "localhost" ],
-  responseHeader: [ "Content-Type" ],
-  method: [ "GET", "HEAD", "OPTIONS" ],
-  maxAgeSeconds: 3600
-}]
 
 var bucketsAPI = {
   // Get a bucket's meta data from google cloud storage

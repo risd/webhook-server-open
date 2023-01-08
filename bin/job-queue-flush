@@ -30,6 +30,10 @@ var destroyTubeJobs = function ( tube ) {
 
 async.series( tubes.map( destroyTubeJobs ), onComplete )
 
-function onComplete () {
+function onComplete (error) {
+  if (error) {
+    console.log(error)
+    process.exit(1)
+  }
   process.exit( 0 )
 }
