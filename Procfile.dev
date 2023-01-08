@@ -1,5 +1,5 @@
-beanstalk: beanstalkd
-memcached: memcached
+# beanstalk: beanstalkd
+# memcached: memcached
 command_delegator: DEBUG=* npm run command-delegator
 webhook_server: DEBUG=* npx grunt startServer
 create_worker: DEBUG=* npm run create-worker
