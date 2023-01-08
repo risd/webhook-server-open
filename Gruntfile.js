@@ -38,9 +38,11 @@ module.exports = function(grunt) {
       name: process.env.FIREBASE,                                           // The name of your firebase
       serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,          // Your firebase's service account key
     },
-    mailgunKey: process.env.MAILGUN_SECRET_KEY,                             // The API key from mailgun
-    mailgunDomain: process.env.MAILGUN_DOMAIN,                              // The domain that uses mailgun
-    fromEmail: process.env.FROM_EMAIL,                                      // Mailgun will send ALL emails for ALL sites from this email address.
+    mailgun: {
+      apiKey: process.env.MAILGUN_SECRET_KEY,
+      domain: process.env.MAILGUN_DOMAIN,
+      fromEmail: process.env.FROM_EMAIL,
+    },
     elastic: {
       host: process.env.ELASTIC_SEARCH_SERVER,
       port: 9200,

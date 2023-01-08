@@ -19,12 +19,9 @@ var unescapeFirebase = require( './utils/firebase-unescape.js' )
 
 module.exports = configure
 function configure (config) {
-  var fromEmail = config.get('fromEmail');
-  var mailgunDomain = config.get('mailgunDomain');
-  var mailgun = new Mailgun({
-    apiKey: config.get('mailgunKey'),
-    domain: mailgunDomain,
-  });
+  const mailgunConfig = config.get('mailgun')
+  const {fromEmail} = mailgunConfig
+  const mailgun = new Mailgun(mailgunConfig)
   const firebase = Firebase({
     initializationName: 'invite-worker',
     ...config.get('firebase'),
