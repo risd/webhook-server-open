@@ -1,4 +1,3 @@
-// TODO: upload the .env.rackspace.prod-v1.1 to the server
 'use strict';
 /*
 * This Gruntfile handles all the launching/running of the workers and servers that
