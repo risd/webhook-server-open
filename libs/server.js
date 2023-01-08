@@ -116,9 +116,6 @@ module.exports.start = async function(config) {
     reply.send('Working...')
   }
 
-  // TODO: test this fastify setup, tried to match backupextractor test
-  // but not positive how to reply with a stream. might have to buffer and
-  // send in two separate steps
   async function getBackupHandler (request, reply) {
     const siteName = request.query.site
     const token = request.query.token
@@ -129,6 +126,7 @@ module.exports.start = async function(config) {
       file: fileNameForTimestamp(timestamp),
     })
     const extractor = backupExtractor.getParser(['buckets', siteName, token, 'dev'])
+    backupStream.pipe(extractor)
     reply.header('Content-Type', 'application/octet-stream')
     return extractor
   }
@@ -324,12 +322,12 @@ module.exports.start = async function(config) {
     const oneOff = request.body.oneOff || false
 
     try {
-      await elastic.indexDocument ({
+      await elastic.indexDocument({
         siteName,
         contentType,
         doc,
         id,
-        oneOff = false,
+        oneOff,
       })
       reply.code(200)
       return { message: 'Finished' }

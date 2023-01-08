@@ -227,7 +227,7 @@ function configure (config) {
           subCmd,
           `--inFile=${buildFile}`,
           dataParam,
-          productionParam
+          productionParam,
           settingsParam,
         ],
         {
