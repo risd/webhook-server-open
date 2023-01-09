@@ -13,13 +13,7 @@ const Fastify = require('fastify')
 const cors = require('@fastify/cors')
 const formbody = require('@fastify/formbody')
 const multipart = require('@fastify/multipart')
-// const expressPlugin = require('@fastify/express')
-// const express = require('express');
-// const cors = require('cors')
-// const bodyParser = require('body-parser')
-// const multer = require('multer')
 var colors = require('colors');
-// var request = require('request');
 const axios = require('axios')
 var fs = require('fs');
 const fsp = require('node:fs/promises')
@@ -86,13 +80,6 @@ module.exports.start = async function(config) {
     attachFieldsToBody: 'keyValues',
     onFile,
   })
-  // await app.register(expressPlugin)
-
-  // const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } })
-
-  // Set up our request handlers for express
-  // app.use(cors())
-  // app.use(bodyParser.urlencoded({ extended: false }))
 
   async function siteBillingActive (request, reply) {
     debug('siteBillingActive')
