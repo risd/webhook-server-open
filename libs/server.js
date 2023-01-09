@@ -10,11 +10,17 @@
 
 const debug = require('debug')('server')
 const Fastify = require('fastify')
-const expressPlugin = require('@fastify/express')
-const express = require('express');
-const cors = require('cors')
+const cors = require('@fastify/cors')
+const formbody = require('@fastify/formbody')
+const multipart = require('@fastify/multipart')
+// const expressPlugin = require('@fastify/express')
+// const express = require('express');
+// const cors = require('cors')
+// const bodyParser = require('body-parser')
+// const multer = require('multer')
 var colors = require('colors');
-var request = require('request');
+// var request = require('request');
+const axios = require('axios')
 var fs = require('fs');
 const fsp = require('node:fs/promises')
 var mkdirp = require('mkdirp');
@@ -28,7 +34,7 @@ var temp = require('temp');
 var mime = require('mime');
 var _ = require('lodash');
 var Deploys = require( 'webhook-deploy-configuration' );
-const {pipeline} = require('stream')
+const {pipeline} = require('node:stream/promises')
 const {fileNameForTimestamp} = require( './backup.js' )
 
 // Some string functions worth having
@@ -60,32 +66,59 @@ module.exports.start = async function(config) {
   const cacheControl = 'public,max-age=86400'
 
   const app = Fastify()
-  await app.register(expressPlugin)
+  await app.register(cors)
+  await app.register(formbody)
+
+  async function onFile (part) {
+    const localFile = await createTmpFile()
+    await pipeline(part.file, fs.createWriteStream(localFile))
+    part.value = {
+      filename: part.filename,
+      localFile,
+      mimeType: mime.lookup(part.filename),
+    }
+  }
+
+  await app.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024,
+    },
+    attachFieldsToBody: 'keyValues',
+    onFile,
+  })
+  // await app.register(expressPlugin)
+
+  // const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } })
 
   // Set up our request handlers for express
-  app.use(express.limit('1024mb'));
-  app.use(express.bodyParser({ maxFieldsSize: 10 * 1024 * 1024 }));
-  app.use(cors())
+  // app.use(cors())
+  // app.use(bodyParser.urlencoded({ extended: false }))
 
   async function siteBillingActive (request, reply) {
-    const siteName = request.query.site
+    debug('siteBillingActive')
+    const siteName = request.body.site
+    debug({ siteName })
     const isActive = await firebase.siteBillingActive({ siteName })
     if (!isActive) {
+      cleanUpFiles(request)
       reply.type('application/json').code(500)
       return { error: 'Site not active, please check billing status.' }
     }
   }
 
   async function siteKeyEqualsToken (request, reply) {
-    const siteName = request.query.site
-    const token = request.query.token
+    debug('siteKeyEqualsToken')
+    const siteName = request.body.site
+    const token = request.body.token
     const siteKeySnapshot = await firebase.siteKey({ siteName })
     const siteKey = siteKeySnapshot.val()
     if (!siteKey) {
+      cleanUpFiles(request)
       reply.type('application/json').code(500)
       return { error: 'Site does not exist.' }
     }
     if (token !== siteKey) {
+      cleanUpFiles(request)
       reply.type('application/json').code(403)
       return { error: 'Token is not valid' }
     }
@@ -94,7 +127,7 @@ module.exports.start = async function(config) {
   const protectedRouteOptions = {
     preHandler: [siteBillingActive, siteKeyEqualsToken]
   }
-  
+
   app.get('/', getRootHandler)
   app.get('/backup-snapshot/', protectedRouteOptions, getBackupHandler)
   app.post('/upload-url/', protectedRouteOptions, postUploadUrlHandler)
@@ -117,9 +150,9 @@ module.exports.start = async function(config) {
   }
 
   async function getBackupHandler (request, reply) {
-    const siteName = request.query.site
-    const token = request.query.token
-    const timestamp = request.query.timestamp
+    const siteName = request.body.site
+    const token = request.body.token
+    const timestamp = request.body.timestamp
 
     const backupStream = await cloudStorage.objects.createReadStream({
       bucket: backupBucket,
@@ -139,14 +172,14 @@ module.exports.start = async function(config) {
   async function postUploadUrlHandler (request, reply) {
     reply.type('application/json')
 
-    const siteName = request.query.site
-    const token = request.query.token
+    const siteName = request.body.site
+    const token = request.body.token
 
-    const resizeUrlRequested = req.body.resize_url
-    const url = req.body.url
+    const resizeUrlRequested = request.body.resize_url
+    const url = request.body.url
 
     if (!url) {
-      cleanUpFiles(req)
+      cleanUpFiles(request)
       reply.code(400)
       return { error: 'Body requires a `url` attribute to upload.' }
     }
@@ -155,6 +188,8 @@ module.exports.start = async function(config) {
     await downloadUrlToPath({ url, localFile })
     const stat = await fsp.stat(localFile)
     if (stat.size > 50 * 1024 * 1024) {
+      fs.unlinkSync(localFile)
+      cleanUpFiles(request)
       reply.code(500)
       return { error: 'File too large. 50 MB is limit.' }
     }
@@ -172,9 +207,11 @@ module.exports.start = async function(config) {
       try {
         const resizeUrl = await resizeUrlForUrl(results.url)
         results.resizeUrl = resizeUrl
+        debug({ results })
       }
       catch (error) {
-        cleanUpFiles(req)
+        fs.unlinkSync(localFile)
+        cleanUpFiles(request)
         reply.code(500)
         return { error: 'Could not get resize url for file.' }
       }
@@ -187,47 +224,19 @@ module.exports.start = async function(config) {
     return {
       message: 'Finished',
       url: results.url,
-      size: results.fileSize,
+      size: +results.size,
       mimeType: results.contentType,
-      resizeUrl: results.resizeUrl,
-    }
-
-    function createTmpFile () {
-      return new Promise((resolve, reject) => {
-        temp.open({ prefix: 'uploads', dir: '/tmp' }, function (err, info) {
-          if (err) return reject(err)
-          resolve(info.path)
-        })
-      })
+      resize_url: results.resizeUrl,
     }
 
     function downloadUrlToPath ({ url, localFile }) {
-      var downloadError = { statusCode: 500, message: 'Could not download url.' }
-      return new Promise((resolve, reject) => {
-        try {
-          var req = request(url)
-        } catch (error) {
-          return reject(error)
-        }
-
-        var requestFailed = false
-        req
-          .on('response', function (response) {
-            if ( ! response || response.statusCode !== 200) {
-              requestFailed = true
-              fs.unlinkSync(localFile)
-            }
-          })
-          .on('error', function (error) {
-            fs.unlinkSync(localFile)
-            reject(error)
-          })
-          .pipe(fs.createWriteStream(localFile))
-            .on( 'close', function () {
-              if (requestFailed) return reject(new Error('Could not download url'))
-              else resolve()
-            })
-      })
+      return axios({
+        method: 'get',
+        url,
+        responseType: 'stream',
+      }).then((response) => {
+          return pipeline(response.data, fs.createWriteStream(localFile))
+        })
     }
   }
 
@@ -239,27 +248,19 @@ module.exports.start = async function(config) {
   async function postUploadFileHandler (request, reply) {
     reply.type('application/json')
 
-    const siteName = request.query.site
-    const token = request.query.token
+    const siteName = request.body.site
+    const token = request.body.token
 
-    const resizeUrlRequested = req.body.resize_url
-    const payload = req.files.payload;
-
-    // 50 MB file size limit
-    if ( payload.size > ( 50 * 1024 * 1024 ) ) {
-      cleanUpFiles(req)
-      reply.code(500)
-      return { error: 'File too large. 50 MB is limit.' }
-    }
-
-    const localFile = payload.path;
-    const remote = timestampedUploadsPathForFileName(path.basename(payload.originalFilename))
+    const resizeUrlRequested = request.body.resize_url
+    const payload = request.body.payload
+    const remote = timestampedUploadsPathForFileName(path.basename(payload.filename))
 
     const results = await cloudStorage.objects.upload({
       bucket: uploadBucket,
-      local: localFile,
+      local: payload.localFile,
       remote,
       cacheControl,
+      overrideMimeType: payload.mimeType,
     })
     results.url = `//${results.bucket}/${results.name}`
 
@@ -269,22 +270,20 @@ module.exports.start = async function(config) {
         results.resizeUrl = resizeUrl
       }
       catch (error) {
-        cleanUpFiles(req)
+        cleanUpFiles(request)
         reply.code(500)
         return { error: 'Could not get resize url for file.' }
       }
     }
 
-    fs.unlinkSync(localFile)
     cleanUpFiles(request)
-
     reply.code(200)
     return {
       message: 'Finished',
       url: results.url,
-      size: results.fileSize,
+      size: +results.size,
       mimeType: results.contentType,
-      resizeUrl: results.resizeUrl,
+      resize_url: results.resizeUrl,
     }
   }
 
@@ -299,7 +298,9 @@ module.exports.start = async function(config) {
 
     const query = request.body.query
     const page = request.body.page || 1
-    const contentType = req.body.typeName || null
+    const contentType = request.body.typeName || null
+
+    cleanUpFiles(request)
 
     try { 
       const hits = await elastic.queryIndex({ siteName, query, page, contentType })
@@ -320,6 +321,8 @@ module.exports.start = async function(config) {
     const id = request.body.id
     const contentType = request.body.typeName
     const oneOff = request.body.oneOff || false
+
+    cleanUpFiles(request)
 
     try {
       await elastic.indexDocument({
@@ -364,6 +367,8 @@ module.exports.start = async function(config) {
     const siteName = request.body.site
     const contentType = request.body.typeName
 
+    cleanUpFiles(request)
+
     try {
       await elastic.deleteContentType({
         siteName,
@@ -385,6 +390,8 @@ module.exports.start = async function(config) {
     reply.type('application/json')
     const siteName = request.body.site
 
+    cleanUpFiles(request)
+
     try {
       await elastic.deleteIndex({ siteName })
       reply.code(200)
@@ -401,13 +408,16 @@ module.exports.start = async function(config) {
   // Site and Token are the name of the site and the token for the site to upload to
   // The Payload file is the zip file containing the site generated by wh deploy
   async function postUploadHandler (request, reply) {
+    debug('postUploadHandler')
     reply.type('application/json')
     const siteName = request.body.site
 
     const branch = request.body.branch;
-    const payload = request.files.payload;
+    const payload = request.body.payload;
 
-    if(!payload || !payload.path || !branch) {
+    cleanUpFiles(request)
+
+    if(!payload || !payload.localFile || !branch) {
       cleanUpFiles(request)
       reply.code(500)
       return { error: 'Must upload a file and define which git branch it is associated with.' }
@@ -415,10 +425,12 @@ module.exports.start = async function(config) {
     try { 
       await cloudStorage.objects.upload({
         bucket: siteBucket,
-        local: payload.path,
-        remote: Deploys.utilities.fileForSiteBranch(siteName, branch)
+        local: payload.localFile,
+        remote: Deploys.utilities.fileForSiteBranch(siteName, branch),
+        overrideMimeType: payload.mimeType,
       })
-      fs.unlinkSync(payload.path)
+      cleanUpFiles(request)
+      fs.unlinkSync(payload.localFile)
 
       await firebase.siteVersion({ siteName }, Date.now())
       await firebase.signalBuild({ siteName }, {
@@ -433,24 +445,19 @@ module.exports.start = async function(config) {
     catch (error) {
       reply.code(500)
       cleanUpFiles(request)
+      fs.unlinkSync(payload.localFile)
       return { error: error.message }
     }
   }
 
   function resizeUrlForUrl (url) {
     var encodedUrl = encodeURIComponentsForURL( removeProtocolFromURL( url ) )
-    return new Promise((resolve, reject) => {
-      request( `https://${ googleProjectId }.appspot.com/${ encodedUrl  }`, handleResize )
-
-      function handleResize ( error, response, responseBody ) {
-        if (error) return reject(error)
-        var resizeUrl = ''
-        if ( response && response.statusCode === 200 ) resizeUrl = responseBody
-        if ( resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0 ) {
-          resizeUrl = `https${ resizeUrl.slice( 4 )}`
-        }
-        resolve(resizeUrl)
+    return axios.get(`https://${ googleProjectId }.appspot.com/${ encodedUrl  }`).then((response) => {
+      let resizeUrl = response.data
+      if (resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0) {
+        resizeUrl = `https${ resizeUrl.slice( 4 )}`
       }
+      return resizeUrl
     })
   }
 
@@ -463,6 +470,14 @@ module.exports.start = async function(config) {
 
 /* helpers */
 
+function createTmpFile () {
+  return new Promise((resolve, reject) => {
+    temp.open({ prefix: 'uploads', dir: '/tmp' }, function (err, info) {
+      if (err) return reject(err)
+      resolve(info.path)
+    })
+  })
+}
 function uniqueId() {
   return Date.now() + 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8);
@@ -473,13 +488,14 @@ function uniqueId() {
 
 // Cleans up any files that may have been posted to
 // the server in req, used to clean up uploads
-function cleanUpFiles (req) {
-  for(var key in req.files) {
-    if(req.files[key].path) {
+function cleanUpFiles (request) {
+  for (bodyKey in request.body) {
+    if (request.body[bodyKey].localFile) {
       try {
-        fs.unlinkSync(req.files[key].path);
-      } catch (e) {
-        // Ignore, just last minute trying to unlink
+        fs.unlinkSync(request.body[bodyKey].localFile)
+      }
+      catch (error) {
+        // ignore, nothing to clean up
       }
     }
   }

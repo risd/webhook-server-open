@@ -114,7 +114,8 @@ module.exports.init = function (config) {
                   });
 
                   domainInstance.run(function() {
-                    cb(payload, function(err) { 
+
+                    cb(payload.payload, function(err) { 
                       console.log('Done job');
                       console.log('job-queue:err')
                       console.log(err)
@@ -237,6 +238,7 @@ module.exports.init = function (config) {
   */
   self.lockJob = function(client, lock, identifier, payload, callback, complete) {
     console.log( `lock-job:${ lock }_${ identifier }_processing` )
+    console.log({ identifier, payload })
     var lockId = lock + '_' + identifier + '_processing';
     memcached.add(lockId, 1, jobLifetime, function(err) {
       if(err) {

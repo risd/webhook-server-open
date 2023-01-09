@@ -6,12 +6,12 @@
 */
 
 // var request = require('request');
+const debug = require('debug')('cloud-storage')
+const { pipeline } = require('node:stream/promises');
 const { Storage } = require('@google-cloud/storage')
 const stream = require('stream')
 var mime = require('mime');
 var fs = require('fs');
-var zlib = require('zlib');
-var async = require('async');
 const chainCallbackResponse = require('./utils/chain-callback-response')
 
 var oauthToken = '';
@@ -81,7 +81,7 @@ var bucketsAPI = {
 
   // Create a new bucket, makes the bucket a website hosting bucket
   create: function(bucket, callback) {
-    console.log('cloud-storage:create:bucket', bucket)
+    debug('cloud-storage:create:bucket', bucket)
     const chain = storage.createBucket(bucket)
       .then(() => {
         return bucketsAPI.updateAcls(bucket)
@@ -152,7 +152,7 @@ var objectsAPI = {
   },
 
   listAll: function (bucket, options, callback) {
-    console.log('cloud-storage:objects:list-all')
+    debug('cloud-storage:objects:list-all')
     if ( typeof options === 'function' ) callback = options;
     if ( !options ) options = {};
 
@@ -209,25 +209,17 @@ var objectsAPI = {
       },
     }
     const destination = storage.bucket(bucket).file(remote)
-    return new Promise((resolve, reject) => {
-      streamFromSource(local)
-        .pipe(destination.createWriteStream(destinationOptions))
-        .on('error', (error) => {
-          if (typeof callback === 'function') callback(error)
-          reject(reror)
-        })
-        .on('finish', (results) => {
-          if ( typeof results === 'string' ) {
-            try {
-              results = JSON.parse( results )
-            } catch ( e ) {
-              console.log( 'results not json' )
-            }
-          }
-          if (typeof callback === 'function') callback(null, results)
-          resolve(results)
-        })
-    })
+    const chain = pipeline(
+      streamFromSource(local),
+      destination.createWriteStream(destinationOptions))
+      .then(() => {
+        return destination.getMetadata()
+      })
+      .then((results) => {
+        return results[0]
+      })
+    if (typeof callback === 'function') chainCallbackResponse(chain, callback)
+    else return chain
 
     function streamFromSource (fileOrContent) {
       const isFile = fs.existsSync(fileOrContent)
@@ -244,7 +236,7 @@ var objectsAPI = {
     }
   },
   uploadCompressed: function(options, callback) {
-    console.log('upload-compressed, pass through to upload')
+    debug('upload-compressed, pass through to upload')
     return objectsAPI.upload(options, callback)
   },
 
@@ -256,12 +248,12 @@ var objectsAPI = {
   },
 
   deleteAll: function ( bucket, callback ) {
-    console.log('cloud-storage:delete-all:', bucket)
+    debug('cloud-storage:delete-all:', bucket)
 
     const chain = objectsAPI.list({ bucket })
       .then(async (files) => {
         for (const file of files) {
-          console.log('cloud-storage:delete-all:delete-file:', file.name)
+          debug('cloud-storage:delete-all:delete-file:', file.name)
           await objectsAPI.del({ bucket, file: file.name })
         }
       })
