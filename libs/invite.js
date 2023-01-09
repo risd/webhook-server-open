@@ -20,7 +20,7 @@ var unescapeFirebase = require( './utils/firebase-unescape.js' )
 module.exports = configure
 function configure (config) {
   const mailgunConfig = config.get('mailgun')
-  const {fromEmail} = mailgunConfig
+  const {fromEmail, domain} = mailgunConfig
   const mailgun = new Mailgun(mailgunConfig)
   const firebase = Firebase({
     initializationName: 'invite-worker',
@@ -28,11 +28,10 @@ function configure (config) {
   })
 
   return async function inviter ({ userId, from_userid, siteref }) {
-    const userEmail = unescape(userId)
+    const userEmail = unescapeFirebase(userId)
     const userExists = await firebase.userExists({ userEmail })
-    const fromUser = unescape(from_userid)
-    const siteName = unescape(siteref)
-    const domain = mailgunDomain
+    const fromUser = unescapeFirebase(from_userid)
+    const siteName = unescapeFirebase(siteref)
     const siteUrl = `http://${siteName}`
     const cmsUrl = `${siteUrl}/cms/`
     const subject = `[${domain}] You\'ve been invited to edit ${siteName}`
