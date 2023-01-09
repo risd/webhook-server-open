@@ -415,8 +415,6 @@ module.exports.start = async function(config) {
     const branch = request.body.branch;
     const payload = request.body.payload;
 
-    cleanUpFiles(request)
-
     if(!payload || !payload.localFile || !branch) {
       cleanUpFiles(request)
       reply.code(500)
@@ -430,7 +428,6 @@ module.exports.start = async function(config) {
         overrideMimeType: payload.mimeType,
       })
       cleanUpFiles(request)
-      fs.unlinkSync(payload.localFile)
 
       await firebase.siteVersion({ siteName }, Date.now())
       await firebase.signalBuild({ siteName }, {
@@ -443,9 +440,10 @@ module.exports.start = async function(config) {
       return { message: 'Finished' }
     }
     catch (error) {
+      debug('error')
+      debug(error)
       reply.code(500)
       cleanUpFiles(request)
-      fs.unlinkSync(payload.localFile)
       return { error: error.message }
     }
   }

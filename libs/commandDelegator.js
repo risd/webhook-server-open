@@ -235,7 +235,7 @@ function CommandDelegator (config) {
         // gets used to build the site
         // if no branch is defined, then queue a command for
         // each of the branches
-        deploys.get({ siteName: payload.sitename })
+        deploys.get({ siteName: payload.siteName })
           .then((configuration) => {
             if ( payload.siteBucket ) {
               var siteBuckets = [ payload.siteBucket ]
@@ -297,7 +297,9 @@ function CommandDelegator (config) {
           })
       }
       else {
-        var queueCommandArgs = { identifier: identifier, memcacheLockId: memcacheLockId, payload: payload }
+        console.log('queueCommandArgs:payload:')
+        console.log(payload)
+        var queueCommandArgs = { identifier, memcacheLockId, payload }
         return queueCommandForArgs( queueCommandArgs )
       }
 

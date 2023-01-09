@@ -207,7 +207,14 @@ async function setupBucket (options) {
     console.log('setup-bucket:fastly-setup:no-service')
   }
 
-  const cname = await createCnameRecord(cnameOptions)
+  try {
+    const cname = await createCnameRecord(cnameOptions)  
+    console.log('setup-bucket:cloudflare-setup:has-cname')
+  }
+  catch (error) {
+    console.log('setup-bucket:cloudflare-setup:no-cname')
+  }
+  
   console.log('creator:setup-bucket:done')
 }
 

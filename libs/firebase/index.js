@@ -310,10 +310,10 @@ async function WebhookSiteBackupURL () {
 function WebhookSiteRedirects ( options, value ) {
   var keyPath = siteRedirectPath( options )
   if ( typeof value !== 'undefined' ) {
-    firebaseDatabaseSetValueForKeyPath( this._app, keyPath, value )
+    return firebaseDatabaseSetValueForKeyPath( this._app, keyPath, value )
   }
   else {
-    firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+    return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
   }
 }
 

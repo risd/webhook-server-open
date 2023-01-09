@@ -141,47 +141,10 @@ module.exports.buckets = bucketsAPI;
 var objectsAPI = { 
 
   // List all objects in a bucket (name, md5hash)
-  list: function({ bucket, options={} }, callback) {
+  list: function({ bucket, options={autoPaginate: false} }, callback) {
     const chain = storage.bucket(bucket).getFiles(options)
-      .then((results) => {
-        const files = results[0]
-        return files
-      })
     if (typeof callback === 'function') chainCallbackResponse(chain, callback)
     else return chain
-  },
-
-  listAll: function (bucket, options, callback) {
-    debug('cloud-storage:objects:list-all')
-    if ( typeof options === 'function' ) callback = options;
-    if ( !options ) options = {};
-
-    var completeList = []
-
-    var qs = Object.assign( {
-      fields: 'kind,items(name,md5Hash),nextPageToken',
-      delimiter: '',
-    }, options )
-
-    objectsAPI.list( bucket, qs, handleList )
-
-    function handleList ( error, results ) {
-      if ( error && error !== 404 ) return callback( error )
-
-      if ( results && results.items && Array.isArray( results.items ) ) {
-        completeList = completeList.concat( results.items )  
-      }
-
-      if ( results && results.nextPageToken ) {
-        var nextOptions = Object.assign( qs, {
-          pageToken: results.nextPageToken,
-        } )
-        return objectsAPI.list( bucket, nextOptions, handleList )
-      }
-
-      callback( null, completeList )
-    }
-
   },
 
   // Get an object from a bucket

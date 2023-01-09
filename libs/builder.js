@@ -1,6 +1,7 @@
 'use strict';
 
 // Requires
+const debug = require('debug')('builder')
 var fs = require('fs');
 const fsp = require('fs/promises');
 var url = require( 'url' )
@@ -167,8 +168,6 @@ function configure (config) {
       })
       // build : end
       
-      // TODO: run a build with a file, 
-      // another without and see if its deleted
       await deleteRemoteFilesNotInBuild({
         bucketSpecs: [{
           contentDomain: siteBucket,
@@ -473,54 +472,62 @@ function configure (config) {
 
       miss.pipe(
         usingArguments( { builtFolder } ),
-        feedCloudFiles( { buckets: bucketSpecs } ),            // adds { bucket, builtFile }
+        feedCloudFiles( { bucketSpecs } ),            // adds { bucket, builtFile }
         feedNotLocalFiles( { maxParallel: maxParallel } ), // pushes previous if conditions are met
         deleteFromBucket( { maxParallel: maxParallel } ),  // adds { remoteDeleted }
         cachePurge( { purgeProxy } ),
         sink(),
         function onComplete ( error ) {
           console.log( 'delete-remote-files-not-in-build:end' )
+          console.log(error)
           if ( error ) return reject( error )
           resolve()
         } )
     } )
 
     // list and feed all files in the buckets
-    function feedCloudFiles ( options ) {
-      var buckets = options.buckets;
+    function feedCloudFiles ({ bucketSpecs }) {
       return miss.through.obj( function ( args, enc, next ) {
         var stream = this;
 
-        var listTasks = buckets.map( pushListTask )
+        var listTasks = bucketSpecs.map( pushListTask )
 
         async.parallel( listTasks, function onDone () { next() } )
 
-        function pushListTask ( bucket ) {
+        function pushListTask ( bucketSpec ) {
           return function ( taskComplete ) {
 
             pushList()
 
-            function pushList ( pageToken ) {
-              var listOpts = {}
-              if ( pageToken ) listOpts.pageToken = pageToken;
-              cloudStorage.objects.list({
-                bucket: bucket.contentDomain,
-                options: listOpts,
-              }, function ( error, listResult ) {
-                if ( error ) return taskComplete( error )
-                if ( !listResult.items ) return taskComplete( error )
-
-                listResult.items.filter( nonStatic ).forEach( function ( remoteFile ) {
-                  stream.push( Object.assign( {}, args, {
-                    builtFile: remoteFile.name,
-                    bucket: bucket,
-                  } ) )
-                } )
-
-                if ( listResult.nextPageToken ) return pushList( listResult.nextPageToken )
-
-                taskComplete()
-              } )
+            function pushList (nextPageQuery) {
+              const listOptions = {
+                bucket: bucketSpec.contentDomain,
+              }
+              if (nextPageQuery) {
+                listOptions.options = nextPageQuery
+              }
+              cloudStorage.objects.list(listOptions)
+                .then((results) => {
+                  const files = results[0]
+                  const nextPageQueryOptions = results[1]
+                  if (!Array.isArray(files)) {
+                    debug('no-files-found')
+                    return taskComplete()
+                  }
+                  files.filter(nonStatic).forEach((remoteFile) => {
+                    debug('feed-cloud-file:', remoteFile.name)
+                    stream.push({
+                      ...args,
+                      builtFile: remoteFile.name,
+                      bucket: bucketSpec,
+                    })
+                  })
+                  if (nextPageQueryOptions) return pushList(nextPageQueryOptions)
+                  else taskComplete()
+                })
+                .catch((error) => {
+                  taskComplete(error)
+                })
             }
           }
         }
@@ -539,20 +546,25 @@ function configure (config) {
       return throughConcurrent.obj( { maxConcurrency: maxParallel }, function ( args, enc, next ) {
         var localFile = localForRemote( args.builtFile )
         var localFilePath = path.join( args.builtFolder, localFile )
+        debug({ localFile, localFilePath })
         fs.open( localFilePath, 'r', function ( error, fd ) {
           // file does not exist, lets see if it exists as named html file
           // rather than a named directory with an index.html
           if ( error ) {
             return fs.open( localNonIndex( localFilePath ), 'r', function ( error, fd ) {
               // file does not exist, lets push its args and delete it
-              if ( error ) return next( null, args )
+              if ( error ) {
+                debug('file-does-not-exist:', args.builtFile)
+                return next( null, args )
+              }
 
+              debug('file-exists:', args.builtFile)
               // file exists locally, lets keep it in the bucket
               fs.close( fd, function () { next() } )
             } )
 
           }
-
+          debug('file-exists:', args.builtFile)
           // file exists locally, lets keep it in the bucket
           fs.close( fd, function () { next() } )
         } )

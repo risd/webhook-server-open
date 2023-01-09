@@ -96,6 +96,14 @@ test('buckets', async (t) => {
   }
 })
 
+test('bucket-list-objects', async (t) => {
+  t.plan(1)
+  cloudStroage.objects.list({ bucket: uploadOptions.bucket }, function (error, listResult) {
+    t.assert(error === null, 'got list objects without error')
+    console.log(listResult)
+  })
+})
+
 test( 'delete-bucket', async function ( t ) {
   t.plan( 2 )
   

@@ -4,6 +4,7 @@ Redirects management via Fastly.
 
 */
 
+const debug = require('debug')('redirects')
 var _ = require( 'lodash' )
 var async = require( 'async' )
 var FastlyWebhook = require( './fastly/index' )
@@ -30,7 +31,7 @@ function configure (config) {
     siteName = firebaseUnescape(siteName)
     try {
       const deployConfiguration = await deploys.get({ siteName })
-      const siteBuckets = deployConfiguration.map(c => c.bucket)
+      const siteBuckets = deployConfiguration.deploys.map(c => c.bucket)
       const fastlyRedirectDomains = []
       for (const siteBucket of siteBuckets) {
         const maskDomain = await fastly.maskForContentDomain(siteBucket)
@@ -43,8 +44,7 @@ function configure (config) {
       const siteKeySnapshot = await firebase.siteKey({ siteName })
       const siteKey = siteKeySnapshot.val()
       const redirectsSnapshot = await firebase.siteRedirects({ siteName, siteKey })
-      const redirects = redirectsSnapshot.val()
-      if (!(typeof redirects === 'object' && redirects !== null)) throw new Error('No redirects set in CMS')
+      const redirects = redirectsSnapshot.val() || []
       let cmsRedirects = []
       Object.keys( redirects ).forEach( function ( redirectKey ) {
         cmsRedirects.push( redirects[ redirectKey ] )
@@ -56,7 +56,7 @@ function configure (config) {
       const errorDomains = []
       for (const redirectDomain of fastlyRedirectDomains) {
         try {
-          await fast.redirects({ host: redirectDomain, redirects: cmsRedirects })  
+          await fastly.redirects({ host: redirectDomain, redirects: cmsRedirects })  
         }
         catch (error) {
           errorDomains.push(redirectDomain)
