@@ -9,7 +9,7 @@ var firebaseUnescape = require( './utils/firebase-unescape.js' )
 
 module.exports = configure
 function configure (config) {
-  const search = WebHookElasticSearch(confg.get('elastic'))
+  const search = WebHookElasticSearch(config.get('elastic'))
   const firebase = Firebase({
     initializationName: 'cms-search-indexer',
     ...config.get('firebase'),
@@ -77,5 +77,5 @@ module.exports.start = function (config) {
   console.log('Waiting for commands'.red);
 
   // Wait for a searhc index job, extract info from payload
-  jobQueue.reserveJob('siteSearchReindex', 'siteSearchReindex', siteSearchReindexJob);
+  jobQueue.reserveJob('siteSearchReindex', 'siteSearchReindex', wrapJob);
 }
