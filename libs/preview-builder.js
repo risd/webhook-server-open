@@ -18,6 +18,7 @@ const runBuildEmitter = require('./utils/run-build-emitter')
 var path = require( 'path' )
 var fs = require( 'fs' )
 const fsp = require('fs/promises')
+const Fastly = require( './fastly/index.js' )
 
 
 module.exports.configure = configure
@@ -27,6 +28,7 @@ function configure (config) {
     initializationName: 'preview-builder',
     ...config.get('firebase'),
   })
+  const fastly = Fastly(config.get( 'fastly' ))
   const buildFolderRoot = config.get('builder').buildFolderRoot
 
   return async function previewBuilder ({
@@ -40,7 +42,7 @@ function configure (config) {
     const buildFolderName = Deploys.utilities.nameForSiteBranch(siteName, siteBucket)
     const buildFolder = path.join(buildFolderRoot, buildFolderName)
     const builtFolder = path.join(buildFolder, '.build')
-    const cacheData = path.join(buildFolder, 'data.json')
+    const cacheData = path.join(builtFolder, 'data.json')
 
     try {
 
