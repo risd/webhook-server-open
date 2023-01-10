@@ -9,12 +9,11 @@
 const debug = require('debug')('cloud-storage')
 const { pipeline } = require('node:stream/promises');
 const { Storage } = require('@google-cloud/storage')
-const stream = require('stream')
+const stream = require('node:stream')
 var mime = require('mime');
 var fs = require('fs');
 const chainCallbackResponse = require('./utils/chain-callback-response')
 
-var oauthToken = '';
 var projectName = process.env.GOOGLE_PROJECT_ID || '';
 var googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT || '';
 
