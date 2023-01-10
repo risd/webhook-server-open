@@ -74,8 +74,7 @@ module.exports.start = async function(config) {
 
   async function siteBillingActive (request, reply) {
     debug('siteBillingActive')
-    const siteName = request.body.site
-    debug({ siteName })
+    const siteName = request.body?.site || request.query?.site
     const isActive = await firebase.siteBillingActive({ siteName })
     if (!isActive) {
       cleanUpFiles(request)
@@ -86,8 +85,8 @@ module.exports.start = async function(config) {
 
   async function siteKeyEqualsToken (request, reply) {
     debug('siteKeyEqualsToken')
-    const siteName = request.body.site
-    const token = request.body.token
+    const siteName = request.body?.site || request.query?.site
+    const token = request.body?.token || request.query?.token
     const siteKeySnapshot = await firebase.siteKey({ siteName })
     const siteKey = siteKeySnapshot.val()
     if (!siteKey) {
@@ -128,9 +127,9 @@ module.exports.start = async function(config) {
   }
 
   async function getBackupHandler (request, reply) {
-    const siteName = request.body.site
-    const token = request.body.token
-    const timestamp = request.body.timestamp
+    const siteName = request.query.site
+    const token = request.query.token
+    const timestamp = request.query.timestamp
 
     const backupStream = await cloudStorage.objects.createReadStream({
       bucket: backupBucket,
