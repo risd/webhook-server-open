@@ -8,5 +8,4 @@ build_worker: DEBUG=* npm run build-worker
 site_index: DEBUG=* npm run site-index-worker
 preview_build_worker: DEBUG=* npm run preview-build-worker
 redirects_worker: DEBUG=* npm run redirects-worker
-timeout_worker: DEBUG=* npm run timeout-worker
 domain_mapper: DEBUG=* npm run domain-mapper

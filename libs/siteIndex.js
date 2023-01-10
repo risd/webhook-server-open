@@ -48,12 +48,7 @@ function configure (config) {
 }
 
 /**
- * The main reindex worker. The way this works is that it first checks to
- * see if it has a local up-to-date copy of the site, if it doesn't then it
- * downloads them from the cloud storage archive. After downloading it simply
- * runs `grunt build` in the sites directory, then uploads the result to cloud storage.
- *
- * @param  {Object}   config     Configuration options from Grunt
+ * JobQueue wrapper used by the command delegator
  */
 module.exports.start = function (config) {
   const job = configure(config)

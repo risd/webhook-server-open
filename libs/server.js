@@ -31,15 +31,6 @@ var Deploys = require( 'webhook-deploy-configuration' );
 const {pipeline} = require('node:stream/promises')
 const {fileNameForTimestamp} = require( './backup.js' )
 
-// Some string functions worth having
-String.prototype.endsWith = function(suffix) {
-    return this.indexOf(suffix, this.length - suffix.length) !== -1;
-};
-
-String.prototype.startsWith = function (str){
-  return this.indexOf(str) == 0;
-};
-
 module.exports.start = async function(config) {
 
   var elastic = Elastic(config.get('elastic'))

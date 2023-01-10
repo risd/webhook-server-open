@@ -55,7 +55,9 @@ function configure (config) {
   }
 }
 
-
+/**
+ * JobQueue wrapper used by the command delegator
+ */
 module.exports.start = function ( config, logger ) {
   const job = configure(config)
 

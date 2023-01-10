@@ -28,7 +28,6 @@ var backup = require('./libs/backup.js');
 var extractKey = require('./libs/extractKey.js');
 var previewBuilder = require('./libs/preview-builder.js');
 var domainMapper = require('./libs/domain-mapper.js');
-var timeoutWorker = require('./libs/timeout-worker.js');
 const path = require('path')
 
 module.exports = function(grunt) {
