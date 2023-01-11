@@ -33,7 +33,7 @@ function WebhookSiteDelete ( siteName ) {
       return deployConfiguration.deploys.map(d => d.bucket)
     }
     catch (error) {
-      console.log('Could not get deploys for site.')
+      console.log('Could not get deploys for site', siteName)
       console.log(error)
       throw error
     }
@@ -50,42 +50,30 @@ function WebhookSiteDelete ( siteName ) {
     return Promise.all( deletors )
   }
 
-  function deleteCnameForSiteNameTask ( siteName ) {
-    return self._cloudflare.deleteCnameForSiteName( siteName )
+  function deleteCnameForSiteNameTask ( bucket ) {
+    return self._cloudflare.deleteCnameForSiteName( bucket )
       .catch( function () {
-        console.log( 'Could not find a CNAME to remove.' )
+        console.log( 'Could not find a Cloudflare CNAME to remove', bucket )
         return Promise.resolve()
       } )
   }
 
-  function deleteCDNDomain ( siteName ) {
-    return new Promise( function ( resolve, reject ) {
-      self._fastly.removeDomain( siteName, function ( error ) {
-        console.log( 'delete-cdn-domain' )
-        console.log( error )
-        if ( error ) reject( error )
-        else resolve()
-      } )
-    } )
+  function deleteCDNDomain ( bucket ) {
+    return self._fastly.removeDomain(bucket)
+      .catch(function () {
+        console.log('Could not remove domain from Fastly ', bucket)
+        return Promise.resolve()
+      })
   }
 
-  function deleteStorageBucketTask ( siteName ) {
-    return new Promise( function ( resolve, reject ) {
-      cloudStorage.objects.deleteAll( siteName, function ( error ) {
-        if ( error ) {
-          console.log('delete:bucket:error:')
-          console.log(error)
-          return reject(resolve)
-        }
-
-        cloudStorage.buckets.del( siteName, function ( error ) {
-          if ( ( error && error === 204 ) ) return resolve()
-          else if ( ( error && error === 404 ) ) return resolve()
-          else if ( ! error ) return resolve()
-          else return reject( error )
-        } )
-      } )
-    } )
+  function deleteStorageBucketTask ( bucket ) {
+    return cloudStorage.objects.deleteAll(bucket)
+      .then(() => {
+        return cloudStorage.buckets.del(bucket)
+      })
+      .catch(() => {
+        console.log('Could not delete cloud storage bucket ', bucket)
+      })
   }
 }
 

@@ -212,13 +212,31 @@ var objectsAPI = {
   deleteAll: function ( bucket, callback ) {
     debug('cloud-storage:delete-all:', bucket)
 
-    const chain = objectsAPI.list({ bucket })
-      .then(async (files) => {
-        for (const file of files) {
-          debug('cloud-storage:delete-all:delete-file:', file.name)
-          await objectsAPI.del({ bucket, file: file.name })
-        }
-      })
+    async function listAndDeleteAll (nextPageQuery) {
+      const listOptions = { bucket }
+      if (nextPageQuery) {
+        listOptions.options = nextPageQuery
+      }
+      const results = objectsAPI.list(listOptions)
+      const files = results[0]
+      if (!Array.isArray(files)) return
+      for (const file in files) {
+        await objectsAPI.del({ bucket, file: file.name })
+      }
+      const nextPageQueryOptions = results[1]
+      if (nextPageQueryOptions) return await listAndDeleteAll(nextPageQueryOptions)
+      return
+    }
+
+    const chain = new Promise(async (resolve, reject) => {
+      try {
+        await listAndDeleteAll()
+        resolve()
+      }
+      catch (error) {
+        reject(error)
+      }
+    })
 
     if (typeof callback === 'function') chainCallbackResponse(chain, callback)
     else return chain
