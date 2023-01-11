@@ -1,3 +1,4 @@
+const debug = require('debug')('deletor')
 const Deploys = require( 'webhook-deploy-configuration' )
 const Fastly = require( './fastly/index.js' )
 const Cloudflare = require( './cloudflare/index.js' )
@@ -52,16 +53,18 @@ function WebhookSiteDelete ( siteName ) {
 
   function deleteCnameForSiteNameTask ( bucket ) {
     return self._cloudflare.deleteCnameForSiteName( bucket )
-      .catch( function () {
+      .catch( function (error) {
         console.log( 'Could not find a Cloudflare CNAME to remove', bucket )
+        debug(error)
         return Promise.resolve()
       } )
   }
 
   function deleteCDNDomain ( bucket ) {
     return self._fastly.removeDomain(bucket)
-      .catch(function () {
+      .catch(function (error) {
         console.log('Could not remove domain from Fastly ', bucket)
+        debug(error)
         return Promise.resolve()
       })
   }
@@ -71,8 +74,10 @@ function WebhookSiteDelete ( siteName ) {
       .then(() => {
         return cloudStorage.buckets.del(bucket)
       })
-      .catch(() => {
+      .catch((error) => {
         console.log('Could not delete cloud storage bucket ', bucket)
+        debug(error)
+        return Promise.resolve()
       })
   }
 }
