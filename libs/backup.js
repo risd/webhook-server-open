@@ -89,7 +89,7 @@ module.exports.start = async function (config) {
   const backupKeys = Object.keys(backupsLog)
   if (backupKeys.length < 30) {
     // we have less than 30 backups, we can return here
-    return
+    return { file, timestamp }
   }
 
   const oldestBackupKey = backupKeys[0]
