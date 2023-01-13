@@ -1,22 +1,21 @@
 const config = require('../config')
-const test = require('tape')
 const grunt = require('grunt')
 const test = require('tape')
 const {spawn} = require('node:child_process')
 const path = require('node:path')
 const {lib} = require('@risd/wh')
 const mkdirp = require('mkdirp')
-const Server = require('../libs/server')
 const axios = require('axios')
 const FormData = require('form-data')
 
 require('../../Gruntfile.js')(grunt)
 
-const creator = require( '../../libs/creator.js' )
+const Server = require('../libs/server')
+const Deletor = require('../libs/delete')
 const Firebase = require( '../../libs/firebase/index.js' )
-const firebaseEscape = require( '../../libs/utils/firebase-escape.js' )
 
 const firebase = Firebase(grunt.config.get('firebase'))
+const deletor = Deletor(grunt.config())
 
 const whGlobalOpts = require(config.wh)
 whGlobalOpts.firebaseName = whGlobalOpts.firebase
@@ -94,7 +93,10 @@ test('setup-creator', async (t) => {
 
 test('server-deploy-cycle', async (t) => {
   try {
-    if (!subprocesses.server) subprocesses.server = await Server(grunt.config)
+    if (!subprocesses.server) subprocesses.server = async () => {
+      const server = await Server(grunt.config)
+      return () => delete server 
+    }
     subprocesses.builder = await subprocess('npm run build-worker', {
       onDone: (error) => {
         t.ok(!error, 'Finished deploy build cycle without error')
@@ -123,8 +125,11 @@ test('server-deploy-cycle', async (t) => {
 // axios requests against server
 
 test('server-cms-requests', async (t) => {
-  if (!subprocesses.server) subprocesses.server = await Server(grunt.config)
-  const urlForServer = (frag) => `http://localhost:${subprocesses.server.port}${frag}`
+  if (!subprocesses.server) subprocesses.server = async () => {
+    const server = await Server(grunt.config)
+    return () => delete server 
+  }
+  const urlForServer = (frag) => `http://localhost:${grunt.config.get('server').port}${frag}`
   const siteKeySnapshot = await firebase.siteKey({ siteName: config.creator.siteName })
   const siteKey = siteKeySnapshot.val()
 
@@ -440,4 +445,22 @@ test('redirects', async (t) => {
     t.fail(error, 'Could not signal redirects')
     t.end()
   }
+})
+
+test('delete', async (t) => {
+  try {
+    await deletor.delete(config.creator.siteName)
+    t.ok(true, 'Successfully deleted the site created for the lifecycle test')
+  }
+  catch (error) {
+    t.fail(error, 'Error in deletor')
+  }
+})
+
+test.onFinish(() => {
+  // kill all subprocesses
+  for (const key in subprocesses) {
+    subprocesses[key]()
+  }
+  process.exit()
 })
