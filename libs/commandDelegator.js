@@ -10,13 +10,12 @@
 var {EventEmitter} = require('events');
 var util = require('util');
 var Firebase = require('./firebase/index.js');
-var colors = require('colors');
 var _ = require('lodash');
 var async = require('async');
 var beanstalkd = require('./node-beanstalkd.js');
 var Memcached = require('memcached');
 var Deploys = require( 'webhook-deploy-configuration' )
-var jobLifetime = require('./jobQueue.js').jobLifetime;
+var {jobLifetime} = require('./jobQueue.js');
 
 var escapeUserId = require('./utils/firebase-escape')
 
@@ -71,7 +70,7 @@ function CommandDelegator (config) {
   var commandHandlersStore = commandHandlersInterface();
 
   // For each command we listen on a seperate tube and firebase url
-  console.log('Starting clients'.red);
+  console.log('Starting clients');
 
   var commandTasks = commandUrls.map( connectionForCommandTasks );
 

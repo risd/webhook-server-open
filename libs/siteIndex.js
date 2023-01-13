@@ -1,4 +1,3 @@
-require('colors');
 var fs = require('fs');
 var _ = require('lodash');
 var Firebase = require('./firebase/index.js');
@@ -69,7 +68,7 @@ module.exports.start = function (config) {
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init(config);
 
-  console.log('Waiting for commands'.red);
+  console.log(JobQueue.MESSAGES.WAITING)
 
   // Wait for a searhc index job, extract info from payload
   jobQueue.reserveJob('siteSearchReindex', 'siteSearchReindex', wrapJob);

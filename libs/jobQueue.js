@@ -6,7 +6,6 @@
 * The job queue is run by each worker internally on their own tubes.
 */
 
-var colors = require('colors');
 var beanstalkd = require('./node-beanstalkd.js');
 var Memcached = require('memcached');
 var async = require('async');
@@ -18,6 +17,11 @@ var jobLifetime = 60 * 60 * 2;
 var jobRecheckDelay = 60;
 
 module.exports.jobLifetime = jobLifetime;
+const MESSAGES = {
+  WAITING: 'job-queue:waiting-for-commands',
+  JOB_DONE: 'job-queue:job-done',
+}
+module.exports.MESSAGES = MESSAGES
 
 module.exports.init = function (config) {
 
@@ -116,7 +120,7 @@ module.exports.init = function (config) {
                   domainInstance.run(function() {
 
                     cb(payload.payload, function(err) { 
-                      console.log('job-queue:done-job');
+                      console.log(MESSAGES.JOB_DONE);
                       console.log('job-queue:err')
                       console.log(err)
                       callback(function() { 

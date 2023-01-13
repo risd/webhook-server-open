@@ -105,7 +105,7 @@ module.exports.start = function (config) {
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init(config);
 
-  console.log( 'Waiting for commands'.red )
+  console.log(JobQueue.MESSAGES.WAITING)
 
   // Wait for create commands from firebase
   jobQueue.reserveJob( 'redirects', 'redirects', wrapJob )

@@ -7,6 +7,7 @@ const {lib} = require('@risd/wh')
 const mkdirp = require('mkdirp')
 const axios = require('axios')
 const FormData = require('form-data')
+const {MESSAGES} = require('../libs/jobQueue.js')
 
 require('../../Gruntfile.js')(grunt)
 
@@ -38,11 +39,11 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
       if (done) return
       if (ready) return
       const str = data.toString()
-      if (str && str.toLowerCase().indexOf('waiting') !== -1) {
+      if (str && str.toLowerCase().indexOf(MESSAGES.WAITING) !== -1) {
         ready = true
         resolve(() => kill())
       }
-      if (str && str.toLowerCase().indexOf('job-queue:done-job') !== -1) {
+      if (str && str.toLowerCase().indexOf(MESSAGES.JOB_DONE) !== -1) {
         kill()
       }
     })

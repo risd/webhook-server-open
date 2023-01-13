@@ -76,5 +76,5 @@ module.exports.start = function ( config, logger ) {
       })
   }
 
-  console.log('Waiting for commands'.red);
+  console.log(JobQueue.MESSAGES.WAITING)
 }

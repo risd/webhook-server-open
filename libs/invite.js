@@ -8,7 +8,6 @@
 
 var fs = require('fs');
 var Firebase = require('./firebase/index.js');
-var colors = require('colors');
 var _ = require('lodash');
 var uuid = require('node-uuid');
 var async = require('async');
@@ -90,7 +89,7 @@ module.exports.start = function (config) {
   }
 
   var jobQueue = JobQueue.init(config)
-  console.log('Waiting for invites'.red);
+  console.log(JobQueue.MESSAGES.WAITING)
 
   // Wait for jobs
   jobQueue.reserveJob('invite', 'invite', wrapJob)

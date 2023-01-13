@@ -13,7 +13,6 @@ const Fastify = require('fastify')
 const cors = require('@fastify/cors')
 const formbody = require('@fastify/formbody')
 const multipart = require('@fastify/multipart')
-var colors = require('colors');
 const axios = require('axios')
 var fs = require('fs');
 const fsp = require('node:fs/promises')
@@ -119,7 +118,7 @@ module.exports.start = async function(config) {
 
   const port = serverConfig.port
   await app.listen(port)
-  console.log(`listening on ${ port }...`.red);
+  console.log(`listening on ${ port }...`);
 
   return { app, port }
 

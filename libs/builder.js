@@ -8,7 +8,6 @@ var url = require( 'url' )
 var assert = require( 'assert' )
 const tar = require('tar')
 var Firebase = require('./firebase/index.js');
-var colors = require('colors');
 var _ = require('lodash');
 var async = require('async');
 var mkdirp = require('mkdirp');
@@ -622,7 +621,7 @@ module.exports.start = function (config) {
 
   var jobQueue = JobQueue.init(config);
 
-  console.log('Waiting for commands'.red);
+  console.log(JobQueue.MESSAGES.WAITING)
 
   jobQueue.reserveJob('build', 'build', wrapJob)
 }
