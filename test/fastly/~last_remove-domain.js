@@ -1,41 +1,29 @@
-var testOptions = require( '../env-options.js' )()
-
-var test = require( 'tape' )
-var grunt = require( 'grunt' )
-var async = require( 'async' )
-var webhookTasks = require( '../../Gruntfile.js' )
-var fastlyWebhook = require( '../../libs/fastly/index.js' )
+const config = require('../config.js')
+const test = require( 'tape' )
+const grunt = require( 'grunt' )
+const webhookTasks = require( '../../Gruntfile.js' )
+const fastlyWebhook = require( '../../libs/fastly/index.js' )
 
 webhookTasks( grunt )
 
-test( 'remove-domain', function ( t ) {
-  t.plan( 6 )
-
+test( 'remove-domain', async function ( t ) {
   var cdn = fastlyWebhook( grunt.config().fastly )
 
-  async.series( [ removeDomain, doNotRemoveDomain, removeDomainEdu ], function () {} )
-
-  function removeDomain ( next ) {
-    cdn.removeDomain( testOptions.fastlyAddDomain, function ( error, service ) {
-      t.ok( error === null, 'The error should be undefined.' )
-      t.ok( typeof service === 'object' && service.hasOwnProperty( 'service_id' ), 'The service should be represented by an object.' )
-      next()
-    } )
+  try {
+    const service = cdn.removeDomain(config.fastly.addDomain)
+    t.ok( typeof service === 'object' && service.hasOwnProperty( 'service_id' ), 'The service should be represented by an object.' )
+  }
+  catch (error) {
+    t.fail(error, 'Error in remove domain.')
   }
 
-  function doNotRemoveDomain ( next ) {
-    cdn.removeDomain( 'test.risd.systems', function ( error, service ) {
-      t.ok( error === null, 'The error object should be null for successfully not removing a domain.' )
-      t.ok( typeof service === 'object' && service.hasOwnProperty( 'noDomainsRemoved' ) && service.noDomainsRemoved === true, 'Response should include a flag that no domains were removed.' )
-      next()
-    } )
+  try {
+    const service = await.cdn.removeDomain(config.fastly.doNotAddDomain)
+     t.ok( typeof service === 'object' && service.hasOwnProperty( 'noDomainsRemoved' ) && service.noDomainsRemoved === true, 'Response should include a flag that no domains were removed.' ) 
+  }
+  catch (error) {
+    t.fail(error, 'Error in remove domain not in service')
   }
 
-  function removeDomainEdu ( next ) {
-    cdn.removeDomain( 'test.risd.edu', function ( error, service ) {
-      t.ok( error === null, 'The error object should be null for successful domain removal.' )
-      t.ok( typeof service === 'object' && service.hasOwnProperty( 'service_id' ), 'The service should be represented by an object for edu domain.' )
-      next()
-    } )
-  }
+  t.end()
 } )

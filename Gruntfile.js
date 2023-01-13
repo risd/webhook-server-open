@@ -82,6 +82,9 @@ module.exports = function(grunt) {
       domains: parseJson( process.env.FASTLY_DOMAINS, [] ),
     },
     developmentDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
+    server: {
+      port: 3000,
+    },
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {

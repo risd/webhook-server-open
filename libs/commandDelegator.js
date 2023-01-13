@@ -62,7 +62,6 @@ function CommandDelegator (config) {
     { command: 'management/commands/build/', lock: 'build', tube: 'build' },
     { command: 'management/commands/create/', lock: 'create', tube: 'create' },
     { command: 'management/commands/invite/', lock: 'invite', tube: 'invite' },
-    { command: 'management/commands/dns/', lock: 'dns', tube: 'dns' },
     { command: 'management/commands/siteSearchReindex/', lock: 'siteSearchReindex', tube: 'siteSearchReindex' },
     { command: 'management/commands/previewBuild/', lock: 'previewBuild', tube: 'previewBuild' },
     { command: 'management/commands/redirects/', lock: 'redirects', tube: 'redirects' },

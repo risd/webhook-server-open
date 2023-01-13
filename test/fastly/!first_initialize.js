@@ -1,18 +1,20 @@
-var test = require( 'tape' )
-var grunt = require( 'grunt' )
-var webhookTasks = require( '../../Gruntfile.js' )
-var fastlyWebhook = require( '../../libs/fastly/index.js' )
+const test = require( 'tape' )
+const grunt = require( 'grunt' )
+const webhookTasks = require( '../../Gruntfile.js' )
+const fastlyWebhook = require( '../../libs/fastly/index.js' )
 
 webhookTasks( grunt )
 
-test( 'cdn-service-initialize', function ( t ) {
-  t.plan( 2 )
+test( 'cdn-service-initialize', async function ( t ) {
+  const cdn = fastlyWebhook( grunt.config().fastly )
 
-  var cdn = fastlyWebhook( grunt.config().fastly )
-
-  cdn.initialize( function ( error, service ) {
-    t.ok( error === null, 'The error should be undefined.' )
+  try {
+    const service = await cdn.initialize()
     t.ok( typeof service === 'object', 'The service should be represented by an object.' )
-  } )
+  }
+  catch (error) {
+    t.fail(error, 'Error in fastly service initialization')
+  }
 
-} )
+  t.end()
+})

@@ -33,7 +33,8 @@ const {fileNameForTimestamp} = require( './backup.js' )
 
 module.exports.start = async function(config) {
 
-  var elastic = Elastic(config.get('elastic'))
+  const serverConfig = config.get('server')
+  const elastic = Elastic(config.get('elastic'))
 
   const firebase = Firebase({
     initializationName: 'server',
@@ -116,7 +117,7 @@ module.exports.start = async function(config) {
   app.post('/search/delete/index/', protectedRouteOptions, postSearchDeleteIndexHandler)
   app.post('/upload/', protectedRouteOptions, postUploadHandler)
 
-  const port = 3000
+  const port = serverConfig.port
   await app.listen(port)
   console.log(`listening on ${ port }...`.red);
 

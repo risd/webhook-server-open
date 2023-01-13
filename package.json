@@ -58,7 +58,9 @@
     "webhook-elastic-search": "^3.0.1"
   },
   "devDependencies": {
+    "@risd/wh": "^3.0.10",
     "foreman": "^2.0.0",
+    "form-data": "^4.0.0",
     "tape": "^4.6.3"
   }
 }
