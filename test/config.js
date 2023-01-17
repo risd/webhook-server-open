@@ -1,5 +1,6 @@
 const path = require('path')
 const date = dateString()
+const siteName = `automated-server-creator-test-${date}.risd.systems`
 
 const config = {
   backupExtractor: {
@@ -10,8 +11,8 @@ const config = {
     bucket: `automated-server-cloud-storage-test-bucket-${date}.risd.systems`,
   },
   creator: {
-    cwd: path.join(process.cwd(), 'test', 'createSiteDir')
-    siteName: `automated-server-creator-test-${date}.risd.systems`,
+    cwd: path.join(process.cwd(), 'test', 'createSiteDir'),
+    siteName,
     userId: 'rrodrigu@risd.edu',
     deploy: {
       bucket: `automated-server-creator-test-${date}.risd.systems`
@@ -27,7 +28,7 @@ const config = {
     },
   },
   wh: {
-    config: `/Users/rdr/.risd-media/wh-next.json`,
+    config: `/Users/rdr/.risdmedia/wh-next.json`,
     opts: {
       email: 'rrodrigu@risd.edu',
       password: 'TxasDq@[cRw72FKtG+7iyTm)Ju',
@@ -46,12 +47,12 @@ const config = {
     from_userid: 'rrodrigu@risd.edu',
   },
   domainMapper: {
-    siteName: config.creator.siteName,
-    contentDomain: config.creator.siteName,
-    maskDomain: `mask-${config.creator.siteName}`,
+    siteName,
+    contentDomain: siteName,
+    maskDomain: `mask-${siteName}`,
   },
   searchIndex: {
-    siteName: config.creator.siteName,
+    siteName,
   },
   deploySet: {
     bucketSet: 'webhook-dev.risd.edu',

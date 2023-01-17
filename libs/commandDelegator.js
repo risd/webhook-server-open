@@ -15,7 +15,7 @@ var async = require('async');
 var beanstalkd = require('./node-beanstalkd.js');
 var Memcached = require('memcached');
 var Deploys = require( 'webhook-deploy-configuration' )
-var {jobLifetime} = require('./jobQueue.js');
+var {jobLifetime, MESSAGES} = require('./jobQueue.js');
 
 var escapeUserId = require('./utils/firebase-escape')
 
@@ -83,6 +83,8 @@ function CommandDelegator (config) {
       return self.emit( 'error', error )
     }
     commandHandlers.forEach( commandHandlersStore.add )
+
+    console.log(MESSAGES.DELEGATOR_READY)
 
     self.emit( 'ready', commandHandlersStore.external() )
   }

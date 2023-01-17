@@ -20,6 +20,7 @@ module.exports.jobLifetime = jobLifetime;
 const MESSAGES = {
   WAITING: 'job-queue:waiting-for-commands',
   JOB_DONE: 'job-queue:job-done',
+  DELEGATOR_READY: 'job-queue:waiting-for-commands:delegator-ready',
 }
 module.exports.MESSAGES = MESSAGES
 
@@ -56,9 +57,9 @@ module.exports.init = function (config) {
   * 
   * @param tube      The tube to listen for jobs on
   * @param lockRoot  A unique identifer to lock jobs on
-  * @param cb        Callback to call with reserved job data
+  * @param job        Callback to call with reserved job data
   */
-  self.reserveJob = function(tube, lockRoot, cb) {
+  self.reserveJob = function(tube, lockRoot, job) {
     var client = new beanstalkd.Client();
 
     client.on( 'error', function ( error ) {
@@ -119,7 +120,7 @@ module.exports.init = function (config) {
 
                   domainInstance.run(function() {
 
-                    cb(payload.payload, function(err) { 
+                    job(payload.payload, function(err) { 
                       console.log(MESSAGES.JOB_DONE);
                       console.log('job-queue:err')
                       console.log(err)

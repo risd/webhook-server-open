@@ -7,18 +7,18 @@ const {lib} = require('@risd/wh')
 const mkdirp = require('mkdirp')
 const axios = require('axios')
 const FormData = require('form-data')
-const {MESSAGES} = require('../libs/jobQueue.js')
+const {MESSAGES} = require('../../libs/jobQueue.js')
 
 require('../../Gruntfile.js')(grunt)
 
-const Server = require('../libs/server')
-const Deletor = require('../libs/delete')
-const Firebase = require( '../../libs/firebase/index.js' )
+const Server = require('../../libs/server')
+const Deletor = require('../../libs/delete')
+const Firebase = require('../../libs/firebase/index.js')
 
 const firebase = Firebase(grunt.config.get('firebase'))
 const deletor = Deletor(grunt.config())
 
-const whGlobalOpts = require(config.wh)
+const whGlobalOpts = require(config.wh.config)
 whGlobalOpts.firebaseName = whGlobalOpts.firebase
 
 function noop () {}
@@ -56,9 +56,20 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
   }
 }
 
-const subprocesses = {
-  commandDelegator: await subprocess('npm run command-delegator'),
-}
+const subprocesses = {}
+
+test('setup-delegator', async (t) => {
+  try {
+    subprocesses.commandDelegator = await subprocess('npm run command-delegator')
+    t.ok(true, 'Setup command delegator')
+  }
+  catch (error) {
+    t.fail(error, 'Could not set up command delegator')
+  }
+  finally {
+    t.end()
+  }
+})
 
 // spawn npm run command-delegator
 // spawn npm run create-worker
@@ -176,7 +187,7 @@ test('server-cms-requests', async (t) => {
     form.append('resize_url', true)
     form.append('url', 'https://lh3.googleusercontent.com/G6Tkw7hXhmR34zpkXA3nBHZ05tgAb2OewVO5NOrv5LUovd-UIqtaZ3rOoNemzXosxFt4HrQXshJ3UIbDuwQOf2sIjQJcuuGeSalc4QG1E1s=s760')
     const uploadUrlResponse = await axios.post(
-      urlForServer('/upload-url/')
+      urlForServer('/upload-url/'),
       form,
       { headers: form.getHeaders() }
     )

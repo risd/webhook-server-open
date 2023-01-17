@@ -14,8 +14,6 @@ var getAccessToken = require( './access-token.js' )
 var unescape = require( '../utils/firebase-unescape.js' )
 var escape = require( '../utils/firebase-escape.js' )
 
-var continuationUrlFn = require( '../../src/firebase-auth-continuation-url.js' )
-
 module.exports = WHFirebase;
 
 /**
@@ -65,7 +63,6 @@ WHFirebase.prototype.siteMessageAdd = WebhookSiteMessagesAdd;
 WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
 WHFirebase.prototype.allUsers = WebhookUsers;
-WHFirebase.prototype.resetUserPasswordLink = WebhookUserPasswordResetLink;
 WHFirebase.prototype.deleteSite = WebhookSiteDelete;
 WHFirebase.prototype.backupUrl = WebhookSiteBackupURL;
 WHFirebase.prototype.backups = WebhookBackups;
@@ -199,14 +196,6 @@ function WebhookUserExists ({ userEmail }) {
 function WebhookUserManagementSetSiteOwner ({ siteName, userEmail }) {
   const keyPath = usersManagementPath({ siteName, userEmail, owner: true })
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, true)
-}
-
-function WebhookUserPasswordResetLink ( options ) {
-  var userEmail = unescape( options.userEmail )
-
-  // options : { siteName : string, userEmail : string } => continuationUrl : string
-  var continuationUrl = continuationUrlFn( options )
-  return this._app.auth().generatePasswordResetLink( userEmail, { url: continuationUrl } )
 }
 
 function WebhookSiteKeyDataRemove ( options ) {
