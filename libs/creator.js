@@ -75,7 +75,7 @@ function configure (config) {
         catch (error) {
           console.log(`create-site:${siteName}:setup-site:error`)
           console.log(error)
-          await siteManagementError({ siteName }, true)
+          await firebase.siteManagementError({ siteName }, true)
           throw error
         }
       }  

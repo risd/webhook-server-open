@@ -30,15 +30,15 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
   const args = cmdString.split(' ').slice(1)
   const p = spawn(cmd, args)
   p.on('exit', (code, signal) => {
-    onDone(code === 0 ? null : new Error(`cmd`))
+    if (!done) onDone(code === 0 ? null : new Error(`cmd`))
   })
   let ready = false
   let done = false
   return new Promise((resolve, reject) => {
     p.stdout.on('data', (data) => {
       if (done) return
-      if (ready) return
       const str = data.toString()
+      console.log(args[1], str)
       if (str && str.toLowerCase().indexOf(MESSAGES.WAITING) !== -1) {
         ready = true
         resolve(() => kill())
@@ -76,11 +76,12 @@ test('setup-delegator', async (t) => {
 // {siteDir} = wh.create({siteName})
 
 test('setup-creator', async (t) => {
+  // 1 for the creator, 1 for the create subprocess
+  t.plan(2)
   try {
     subprocesses.creator = await subprocess('npm run create-worker', {
       onDone: (error) => {
         t.ok(!error, 'Finished create cycle without error')
-        t.end()
       },
     })
     mkdirp.sync(config.creator.cwd)
@@ -103,15 +104,22 @@ test('setup-creator', async (t) => {
 // wh.deploy() {cwd:siteDir}
 // kill build-worker
 
+async function ensureServer () {
+  if (!subprocesses.server) subprocesses.server = async () => {
+    const server = await Server.start(grunt.config)
+    return () => delete server 
+  }
+}
+
+
 test('server-deploy-cycle', async (t) => {
   try {
-    if (!subprocesses.server) subprocesses.server = async () => {
-      const server = await Server(grunt.config)
-      return () => delete server 
-    }
+    await ensureServer()
     subprocesses.builder = await subprocess('npm run build-worker', {
       onDone: (error) => {
         t.ok(!error, 'Finished deploy build cycle without error')
+        // the build process will finish after the upload is complete
+        // so we can end the test here
         t.end()
       },
     })
@@ -137,10 +145,7 @@ test('server-deploy-cycle', async (t) => {
 // axios requests against server
 
 test('server-cms-requests', async (t) => {
-  if (!subprocesses.server) subprocesses.server = async () => {
-    const server = await Server(grunt.config)
-    return () => delete server 
-  }
+  await ensureServer()
   const urlForServer = (frag) => `http://localhost:${grunt.config.get('server').port}${frag}`
   const siteKeySnapshot = await firebase.siteKey({ siteName: config.creator.siteName })
   const siteKey = siteKeySnapshot.val()
