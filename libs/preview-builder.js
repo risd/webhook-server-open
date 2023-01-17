@@ -153,7 +153,6 @@ module.exports.start = function ( config, logger ) {
   }
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init(config);
-  console.log(jobQueue.MESSAGES.WAITING)
 
   // Wait for a build job, extract info from payload
   jobQueue.reserveJob('previewBuild', 'previewBuild', wrapJob)

@@ -93,6 +93,7 @@ module.exports.init = function (config) {
           // with a reserve call in the middle. The call blocks until the callback
           // is done processing.
           async.whilst(function() {return true; }, function(done) {
+            console.log(MESSAGES.WAITING)
             conn.reserve(function(err, id, payload) {
               processing = true;
               console.log('Reserved job ' + id);

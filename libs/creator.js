@@ -128,8 +128,6 @@ module.exports.start = function (config) {
 
   var jobQueue = JobQueue.init(config)
 
-  console.log(JobQueue.MESSAGES.WAITING)
-
   const job = configure(config)
 
   const wrapJob = ({ userId, siteName }, callback) => {

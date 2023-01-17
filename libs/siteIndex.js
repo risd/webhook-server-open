@@ -68,8 +68,6 @@ module.exports.start = function (config) {
   // This is a beanstalk based worker, so it uses JobQueue
   var jobQueue = JobQueue.init(config);
 
-  console.log(JobQueue.MESSAGES.WAITING)
-
   // Wait for a searhc index job, extract info from payload
   jobQueue.reserveJob('siteSearchReindex', 'siteSearchReindex', wrapJob);
 }

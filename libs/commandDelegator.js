@@ -6,7 +6,7 @@
 * worker is executing a specific job. The delegator uses memcached to make sure it does not accidentally
 * queue up multiple copies of the same job.
 */
-
+const debug = require('debug')('delegator')
 var {EventEmitter} = require('events');
 var util = require('util');
 var Firebase = require('./firebase/index.js');
@@ -194,7 +194,7 @@ function CommandDelegator (config) {
     return handleCommandData;
 
     function onCommandSnapshot ( snapshot ) {
-
+      debug('on-command-child-added')
       var payload = snapshot.val();
       var identifier = snapshot.key;
       

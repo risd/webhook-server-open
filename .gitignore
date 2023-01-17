@@ -22,3 +22,5 @@ service-accounts
 beanstalk
 
 test/config.js
+test/createSiteDir/*
+.wh-generate

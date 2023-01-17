@@ -61,8 +61,6 @@ function configure (config) {
 module.exports.start = function ( config, logger ) {
   const job = configure(config)
 
-  var jobQueue = JobQueue.init(config);
-
   const wrapJob = ({ siteName, contentDomain, maskDomain }, callback) => {
     job({ siteName, contentDomain, maskDomain })
       .then(() => {
@@ -76,5 +74,6 @@ module.exports.start = function ( config, logger ) {
       })
   }
 
-  console.log(JobQueue.MESSAGES.WAITING)
+  var jobQueue = JobQueue.init(config);
+  jobQueue.reserveJob('domainMap', 'domainMap', wrapJob)
 }

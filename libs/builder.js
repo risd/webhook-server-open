@@ -620,8 +620,5 @@ module.exports.start = function (config) {
   }
 
   var jobQueue = JobQueue.init(config);
-
-  console.log(JobQueue.MESSAGES.WAITING)
-
   jobQueue.reserveJob('build', 'build', wrapJob)
 }
