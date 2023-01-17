@@ -692,7 +692,7 @@ function removeDomains (domains) {
 
   domains = domains.filter( this.isFastlyDomain.bind( this ) )
 
-  if ( domains.length === 0 ) return complete( null, { status: 'ok', noDomainsRemoved: true } )
+  if ( domains.length === 0 ) return Promise.resolve({ status: 'ok', noDomainsRemoved: true })
 
   // remove the domain
   // remove the redirects
