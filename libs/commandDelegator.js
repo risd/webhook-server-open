@@ -254,7 +254,7 @@ function CommandDelegator (config) {
             return siteBuckets.map( toBuildCommandArgs ).forEach( queueCommandForArgs )
 
             function toBuildCommandArgs ( siteBucket ) {
-              var identifier = Deploys.utilities.nameForSiteBranch( payload.sitename, siteBucket )
+              var identifier = Deploys.utilities.nameForSiteBranch( payload.siteName, siteBucket )
               var memcacheLockId = [ item.lock, identifier, 'queued' ].join( '_' )
               var deploysForBuild = configuration.deploys.filter( function ( deploy ) { return deploy.bucket === siteBucket } )
               var payloadArgs = {
@@ -275,7 +275,7 @@ function CommandDelegator (config) {
       else if ( item.tube ==='previewBuild' ) {
         // preview builds piggy back on regular build signals
         if (!payload.contentType || !payload.itemKey) return
-        deploys.get({ siteName: payload.sitename })
+        deploys.get({ siteName: payload.siteName })
           .then((configuration) => {
             var siteBuckets = configuration.deploys.map( function ( deploy ) { return deploy.bucket } )
             siteBuckets = _.uniq( siteBuckets )
@@ -283,7 +283,7 @@ function CommandDelegator (config) {
             return siteBuckets.map( toPreviewBuildArgs ).forEach( queueCommandForArgs )
 
             function toPreviewBuildArgs ( siteBucket ) {
-              var previewIdentifier = [ payload.sitename, siteBucket, payload.contentType, payload.itemKey ].join( '_' )
+              var previewIdentifier = [ payload.siteName, siteBucket, payload.contentType, payload.itemKey ].join( '_' )
               var memcacheLockId = [ 'previewBuild', previewIdentifier, 'queued' ].join( '_' )
               return {
                 identifier: previewIdentifier,
