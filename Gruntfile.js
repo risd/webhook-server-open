@@ -28,6 +28,7 @@ var backup = require('./libs/backup.js');
 var extractKey = require('./libs/extractKey.js');
 var previewBuilder = require('./libs/preview-builder.js');
 var domainMapper = require('./libs/domain-mapper.js');
+var flusher = require('./libs/flush-queue.js')
 const path = require('path')
 
 module.exports = function(grunt) {
@@ -134,9 +135,11 @@ module.exports = function(grunt) {
   });
 
   grunt.registerTask('backupCron', 'Job to run for backup cron', async function() {
+    const done = this.async()
     let exitCode
     try {
-      await backup.start(grunt.config)
+      const { file, timestamp } = await backup.start(grunt.config)
+      console.log({ file, timestamp })
       exitCode = 0
     }
     catch (error) {
@@ -161,7 +164,6 @@ module.exports = function(grunt) {
 
   grunt.registerTask('flushBuildQueue', 'Stop build workers, flush build queue, and restart build workers.', function () {
     var done = this.async()
-    var flusher = require('./libs/flush-queue.js')
     flusher.start(grunt.config, grunt.log, done)
   })
 
