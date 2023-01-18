@@ -260,7 +260,7 @@ function activateVersion ( options, complete ) {
   const chain = new Promise((resolve, reject) => {
     request( 'PUT', urlStr, (error, response, body) => {
       if (error) reject(error)
-      else resolve({ resposne, body })
+      else resolve({ response, body })
     })
   })
   if (typeof complete === 'function') chainCallbackResponse(chain, complete)
