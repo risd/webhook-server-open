@@ -24,7 +24,7 @@ var compressedUploadOptions = Object.assign(
 
 test('create-bucket', async (t) => {
   try {
-    await cloudStorage.buckets.create(uploadOptions.bucket)
+    await cloudStorage.buckets.create({ bucket: uploadOptions.bucket })
     t.ok(true, 'created bucket')
   }
   catch (error) {
@@ -79,10 +79,10 @@ test( 'matching-metadata', function ( t ) {
 
 test('buckets', async (t) => {
   try {
-    const existingBucket = await cloudStorage.buckets.get(uploadOptions.bucket)
+    const existingBucket = await cloudStorage.buckets.get({ bucket: uploadOptions.bucket })
     t.ok('got bucket')
     try {
-      const nonExistentBucket = await cloudStorage.buckets.get(`non-existing-bucket-${new Date().toISOString()}`)  
+      const nonExistentBucket = await cloudStorage.buckets.get({ bucket: `non-existing-bucket-${new Date().toISOString()}` })
     }
     catch (error) {
       t.ok('non existent bucket errors')

@@ -69,7 +69,7 @@ module.exports.setKeyFile = function(file) {
 
 var bucketsAPI = {
   // Get a bucket's meta data from google cloud storage
-  get: function(bucket, callback) {
+  get: function({ bucket }, callback) {
     const chain = storage.bucket(bucket).getMetadata()
       .then((results) => {
         return results[0]
@@ -79,11 +79,11 @@ var bucketsAPI = {
   },
 
   // Create a new bucket, makes the bucket a website hosting bucket
-  create: function(bucket, callback) {
+  create: function({ bucket }, callback) {
     debug('cloud-storage:create:bucket', bucket)
     const chain = storage.createBucket(bucket)
       .then(() => {
-        return bucketsAPI.updateAcls(bucket)
+        return bucketsAPI.updateAcls({ bucket })
       })
       .then(() => {
         return bucketsAPI.updateIndex({ bucket })
@@ -97,7 +97,7 @@ var bucketsAPI = {
 
   // Changes the ACLs on the bucket to allow the service account write access
   // and allow the public read access
-  updateAcls: function(bucket, callback) {
+  updateAcls: function({ bucket }, callback) {
     const chain = storage.bucket(bucket)
       .makePublic()
       .then(() => {

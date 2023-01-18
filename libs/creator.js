@@ -174,13 +174,13 @@ async function setupBucket (options) {
 
   try {
     console.log('setup-bucket:get-bucket')
-    await cloudStorage.buckets.get(siteBucket)
+    await cloudStorage.buckets.get({ bucket: siteBucket })
   }
   catch (error) {
     try {
       // make the bucket
       console.log('setup-bucket:create-bucket')
-      await cloudStorage.buckets.create(siteBucket)
+      await cloudStorage.buckets.create({ bucket: siteBucket })
     }
     catch (error) {
       console.log('setup-bucket:create-bucket:error')
@@ -188,15 +188,6 @@ async function setupBucket (options) {
       throw error
     }
   }
-
-  // these are run on create, but verified in case
-  // that process was interrupted
-  console.log('setup-bucket:update-bucket-acls')
-  await cloudStorage.buckets.updateAcls(siteBucket)
-  console.log('setup-bucket:update-bucket-index')
-  await cloudStorage.buckets.updateIndex({ bucket: siteBucket })
-  console.log('setup-bucket:update-cors')
-  await cloudStorage.buckets.updateCors({ bucket: siteBucket })
 
   console.log('setup-bucket:fastly-setup')
   const service = await fastly.domain(siteBucket)
