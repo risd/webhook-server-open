@@ -28,7 +28,8 @@ var backup = require('./libs/backup.js');
 var extractKey = require('./libs/extractKey.js');
 var previewBuilder = require('./libs/preview-builder.js');
 var domainMapper = require('./libs/domain-mapper.js');
-var timeoutWorker = require('./libs/timeout-worker.js');
+var flusher = require('./libs/flush-queue.js')
+const path = require('path')
 
 module.exports = function(grunt) {
   // Project configuration.
@@ -37,9 +38,11 @@ module.exports = function(grunt) {
       name: process.env.FIREBASE,                                           // The name of your firebase
       serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,          // Your firebase's service account key
     },
-    mailgunKey: process.env.MAILGUN_SECRET_KEY,                             // The API key from mailgun
-    mailgunDomain: process.env.MAILGUN_DOMAIN,                              // The domain that uses mailgun
-    fromEmail: process.env.FROM_EMAIL,                                      // Mailgun will send ALL emails for ALL sites from this email address.
+    mailgun: {
+      apiKey: process.env.MAILGUN_SECRET_KEY,
+      domain: process.env.MAILGUN_DOMAIN,
+      fromEmail: process.env.FROM_EMAIL,
+    },
     elastic: {
       host: process.env.ELASTIC_SEARCH_SERVER,
       port: 9200,
@@ -53,7 +56,11 @@ module.exports = function(grunt) {
     backupBucket: process.env.BACKUPS_BUCKET,                               // The name of the backup bucket on Google Cloud Storage
     uploadsBucket: process.env.UPLOADS_BUCKET,                              // The name of the bucket to push all file uploads to
     googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,               // The email of your projects Service Acccount
-    newrelicEnabled: false,                                                 // Set to true to enable NewRelic monitoring (also make sure that a newrelic.js file exists)
+    cloudStorage: {
+      keyFilename: process.env.GOOGLE_KEY_JSON,
+      defaultCors: parseJson(process.env.GOOGLE_BUCKET_DEFAULT_CORS),
+    },
+    googleCloudServiceAccountKeyJson: process.env.GOOGLE_KEY_JSON,
     memcachedServers: [
       'localhost:11211'
     ],
@@ -68,6 +75,7 @@ module.exports = function(grunt) {
     builder: {
       forceWrite: process.env.BUILDER_FORCE_WRITE || false,
       maxParallel: concurrencyOption( process.env.BUILDER_MAX_PARALLEL ),
+      buildFolderRoot: process.env.BUILD_FOLDER || path.join(process.cwd(), '..', 'build-folders')
     },
     fastly: {
       token: process.env.FASTLY_TOKEN,
@@ -75,6 +83,9 @@ module.exports = function(grunt) {
       domains: parseJson( process.env.FASTLY_DOMAINS, [] ),
     },
     developmentDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
+    server: {
+      port: 3000,
+    },
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {
@@ -120,12 +131,24 @@ module.exports = function(grunt) {
 
   grunt.registerTask('startServer', 'Starts node server', function() {
     var done = this.async();
-    server.start(grunt.config, grunt.log);
+    server.start(grunt.config);
   });
 
-  grunt.registerTask('backupCron', 'Job to run for backup cron', function() {
-    var done = this.async();
-    backup.start(grunt.config, grunt.log);
+  grunt.registerTask('backupCron', 'Job to run for backup cron', async function() {
+    const done = this.async()
+    let exitCode
+    try {
+      const { file, timestamp } = await backup.start(grunt.config)
+      console.log({ file, timestamp })
+      exitCode = 0
+    }
+    catch (error) {
+      console.log(error)
+      exitCode = 1
+    }
+    finally {
+      process.exit(exitCode)
+    }
   });
 
   grunt.registerTask('extractKey', 'Extract RSA key from JSON file', function() {
@@ -141,7 +164,6 @@ module.exports = function(grunt) {
 
   grunt.registerTask('flushBuildQueue', 'Stop build workers, flush build queue, and restart build workers.', function () {
     var done = this.async()
-    var flusher = require('./libs/flush-queue.js')
     flusher.start(grunt.config, grunt.log, done)
   })
 

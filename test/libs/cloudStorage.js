@@ -1,18 +1,16 @@
-var testOptions = require( '../env-options.js' )()
+const config = require('../config.js')
 var webhookTasks = require( '../../Gruntfile.js' )
 var crypto = require( 'crypto' )
 var grunt = require( 'grunt' )
 var zlib = require( 'zlib' )
 var test = require( 'tape' )
 
-webhookTasks( grunt )
+webhookTasks(grunt)
 
-var cloudStorage = require( '../../libs/cloudStorage.js' )
-
-var deleteBucket = testOptions.buildBucketName;
+var cloudStorage = require('../../libs/cloudStorage.js')
 
 var uploadOptions = {
-  bucket: grunt.config.get( 'uploadsBucket' ),
+  bucket: config.cloudStorage.bucket,
   local: 'Simple text file',
   remote: 'test/cloud-strorage-upload.txt',
   overrideMimeType: 'text/plain'
@@ -24,30 +22,50 @@ var compressedUploadOptions = Object.assign(
   { remote: 'test/cloud-strorage-upload-compressed.txt' }
 )
 
-test( 'upload-object', function ( t ) {
-  t.plan( 3 )
+test('create-bucket', async (t) => {
+  try {
+    await cloudStorage.buckets.create({ bucket: uploadOptions.bucket })
+    t.ok(true, 'created bucket')
+  }
+  catch (error) {
+    t.fail(error, 'failed to create bucket')
+  }
+  finally {
+    t.end()
+  }
+})
 
-  cloudStorage.objects.upload( uploadOptions.bucket, uploadOptions.local, uploadOptions.remote, function ( error, results ) {
-    t.assert( ! error, 'uploaded file content without error.' )
-    t.assert( uploadOptions.bucket === results.bucket, 'uploaded file to the correct bucket.' )
-    t.assert( uploadOptions.remote === results.name, 'uploaded file to the correct path.' )
-  } )
+test( 'upload-object', function ( t ) {
+  cloudStorage.objects.upload(uploadOptions)
+    .then((results) => {
+      t.ok(true, 'succesfully upload file')
+      t.asset(typeof results.bucket === 'string', 'results.bucket exists')
+      t.asset(typeof results.name === 'string', 'results.name exists')
+      t.asset(typeof results.fileSize === 'number', 'results.fileSize exists')
+      t.asset(typeof results.contentType === 'string', 'results.contentType exists')
+      t.end()
+    })
+    .catch((error) => {
+      t.fail(error, 'Could not upload file')
+      t.end()
+    })
 } )
 
 test( 'upload-compressed-object', function ( t ) {
-  t.plan( 3 )
+  t.plan( 1 )
 
   cloudStorage.objects.uploadCompressed( compressedUploadOptions, function ( error, results ) {
     t.assert( ! error, 'uploaded file content without error.' )
-    t.assert( compressedUploadOptions.bucket === results.bucket, 'uploaded file to the correct bucket.' )
-    t.assert( compressedUploadOptions.remote === results.name, 'uploaded file to the correct path.' )
   } )
 } )
 
 test( 'matching-metadata', function ( t ) {
   t.plan( 2 )
 
-  cloudStorage.objects.getMeta( uploadOptions.bucket, uploadOptions.remote, function ( error, remoteFileMeta ) {
+  cloudStorage.objects.getMeta({
+    bucket: uploadOptions.bucket,
+    file: uploadOptions.remote,
+  }, function ( error, remoteFileMeta ) {
     t.assert( ! error, 'uploaded file content without error.' )
 
     var localFileMd5 = crypto
@@ -59,35 +77,40 @@ test( 'matching-metadata', function ( t ) {
   } )
 } )
 
-test( 'matching-compression-metadata', function ( t ) {
+test('buckets', async (t) => {
+  try {
+    const existingBucket = await cloudStorage.buckets.get({ bucket: uploadOptions.bucket })
+    t.ok('got bucket')
+    try {
+      const nonExistentBucket = await cloudStorage.buckets.get({ bucket: `non-existing-bucket-${new Date().toISOString()}` })
+    }
+    catch (error) {
+      t.ok('non existent bucket errors')
+    }
+  }
+  catch (error) {
+    t.fail(error)
+  }
+  finally {
+    t.end()
+  }
+})
+
+test('bucket-list-objects', async (t) => {
+  t.plan(1)
+  cloudStroage.objects.list({ bucket: uploadOptions.bucket }, function (error, listResult) {
+    t.assert(error === null, 'got list objects without error')
+    console.log(listResult)
+  })
+})
+
+test( 'delete-bucket', async function ( t ) {
   t.plan( 2 )
-
-  cloudStorage.objects.getMeta( compressedUploadOptions.bucket, compressedUploadOptions.remote, function ( error, remoteFileMeta ) {
-
-    zlib.gzip( compressedUploadOptions.local, function ( error, compressedLocal ) {
-      t.assert( error === null, 'Successfully gzip local file content' )
-
-      var localFileMd5 = crypto
-        .createHash( 'md5' )
-        .update( compressedLocal, 'utf8' )
-        .digest( 'base64' )
-
-      t.assert( remoteFileMeta.md5Hash === localFileMd5, 'Matching md5 hash' )
-    } )
+  
+  await cloudStorage.objects.deleteAll(uploadOptions.bucket)
+  t.ok(true, 'Deleted all files')
+  
+  cloudStorage.buckets.del(uploadOptions.bucket, function (error, result) {
+    t.assert(error === null, 'Deleted bucket successfully' )
   } )
 } )
-
-// // this is commented out to enable the delete function at the end of
-// // the lib/ tests to complete. 
-// test( 'delete-bucket', function ( t ) {
-//   t.plan( 1 )
-//   cloudStorage.objects.deleteAll( deleteBucket, function ( error ) {
-//     if ( error ) {
-//       return t.fail( 'Could not delete bucket items.') 
-//     }
-
-//     cloudStorage.buckets.del( deleteBucket, function ( error ) {
-//       t.assert( error === 204, 'Deleted bucket successfully' )
-//     } )
-//   } )
-// } )

@@ -1,41 +1,22 @@
-var testOptions = require( '../env-options.js' )()
+const config = require('../config')
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
 var webhookTasks = require( '../../Gruntfile.js' )
 
-webhookTasks( grunt )
+webhookTasks(grunt)
 
-grunt.config.merge( {
-  suppressJobQueue: true,
-} )
+const buildSite = require( '../../libs/builder.js' ).configure(grunt.config)
 
-var builder = require( '../../libs/builder.js' )
-
-grunt.config.merge( { suppressJobQueue: true } )
-
-test( 'builder', function ( t ) {
-  t.plan( 1 )
-
-  var command = {
-    identifier: `${testOptions.createSiteName}_${testOptions.buildBucketName}`,
-    payload: {
-      userid: testOptions.buildUserId,
-      sitename: testOptions.createSiteName,
-      siteBucket: testOptions.createDeployBucket,
-      branch: testOptions.buildDeployBranch,
-    }
+test( 'builder', async function (t) {
+  t.plan(1)
+  try {
+    await buildSite(config.builder.buildOptions)
+    t.ok(true, 'built site')
   }
-
-  var mockClient = { put: function () {} }
-
-  var build = builder.start( grunt.config, console.log )
-
-  build( command, command.identifier, command.payload, mockClient, jobCallback )
-  
-  function jobCallback ( error ) {
-    t.assert( error === undefined, 'Build completed without error.' )
+  catch (error) {
+    console.log(error)
+    t.fail(error, 'failed to build site')
   }
-
-} )
+})
 
 test.onFinish( process.exit )

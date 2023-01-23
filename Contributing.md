@@ -63,7 +63,7 @@ Here is a description of the various files that are in the server repo, and what
 * Contains the cron job used to backup data from firebase
 * Should be set to run at least once a day
 
-[libs/backupExtractor.js](https://github.com/webhook/webhook-server-open/blob/master/libs/backupExtractor.js)
+[libs/backup-extractor.js](https://github.com/webhook/webhook-server-open/blob/master/libs/backup-extractor.js)
 
 * Contains the utilities used to extract the backup of a specific site from the nightly backups
 

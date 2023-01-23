@@ -6,132 +6,100 @@
 * if we need to
 */
 
-var request = require( 'request' )
-var async = require( 'async' )
-var cloudStorage = require( './cloudStorage.js' )
-var Firebase = require( './firebase/index.js' )
-var _ = require( 'lodash' )
+const fs = require('node:fs')
+const fsp = require('node:fs/promises')
+const axios = require('axios')
+const cloudStorage = require( './cloudStorage.js' )
+const Firebase = require( './firebase/index.js' )
+const {JWT} = require('google-auth-library')
+const path = require('path')
+const {pipeline} = require('node:stream')
 
+const fileNameForTimestamp = (timestamp) => {
+  return `backup-${timestamp}`
+}
+
+module.exports.fileNameForTimestamp = fileNameForTimestamp
 
 /**
 * @params config The configuration from Grunt
-* @params logger Logger to use, deprecated, does not actually get used at all
 */
-module.exports.start = function (config, logger, callback) {
-  if ( typeof callback !== 'function' ) callback = exit;
+module.exports.start = async function (config) {
 
   // Necessary setup for cloud storage module
-  cloudStorage.setProjectName(config.get('googleProjectId'));
-  cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
+  cloudStorage.configure(config.get('cloudStorage'))
 
-  var self = this;
+  const firebase = Firebase(config.get('firebase'))
+  const bucket = config.get('backupBucket')
+  const timestamp = Date.now()
+  const file = fileNameForTimestamp(timestamp)
 
-  var firebase = Firebase( config().firebase )
+  const serviceAccountKeys = require(
+    path.join(
+      process.cwd(),
+      config.get('googleCloudServiceAccountKeyJson')))
 
-  var options = {
-    backupBucket: config.get( 'backupBucket' ),
-    backupTimestamp: Date.now(),
-    firebase: config.get( 'firebase' ),
-    removeBackup: { timestamp: false, key: false },
+  const gcloudClient = new JWT({
+    email: serviceAccountKeys.client_email,
+    key: serviceAccountKeys.private_key,
+    scopes: [
+      'https://www.googleapis.com/auth/devstorage.full_control',
+      'https://www.googleapis.com/auth/siteverification'
+    ],
+  })
+  const gcloudCredentials = await gcloudClient.authorize()
+  const gcloudAccessToken = gcloudCredentials.access_token
+
+  const backupUrl = await firebase.backupUrl()
+
+  const backupResponseStream = await axios({
+    method: 'get',
+    url: backupUrl,
+    responseType: 'stream',
+  })
+
+  const promisePipeline = (...streams) => {
+    return new Promise((resolve, reject) => {
+      pipeline(...streams, (error) => {
+        if (error) return reject(error)
+        resolve()
+      })
+    })
   }
 
-  async.series( [
-    getCloudStorageToken,    // adds { cloudStorageToken } to options
-    getUploadUrl,            // adds { uploadUrl } to options
-    createBackup,
-    storeBackupTimestampReference,
-    checkRemoveOldestBackup, // adds { removeBackupOfTimestamp? } to options
-    removeBackupKey,
-    removeBackupTimestamp,
-  ], callback )
+  await promisePipeline(
+    backupResponseStream.data,
+    fs.createWriteStream(file)
+  )
 
-  function getCloudStorageToken ( next ) {
-    // We force ourself to get the token first, because we will use it to bypass
-    // our cloud storage module, this request is very special so we build it manually
-    cloudStorage.getToken( function ( error, token ) {
-      if ( error ) return next( error )
-      options.cloudStorageToken = token;
-      next()
-    } )
+  await cloudStorage.objects.upload({
+    bucket,
+    local: file,
+    remote: file,
+    overrideMimeType: 'application/json',
+  })
+
+  await fsp.unlink(file)
+
+  await firebase.backups({ push: true }, timestamp)
+
+  const backupsLogSnapshot = await firebase.backups()
+  const backupsLog = backupsLogSnapshot.val()
+
+  const backupKeys = Object.keys(backupsLog)
+  if (backupKeys.length < 30) {
+    // we have less than 30 backups, we can return here
+    return { file, timestamp }
   }
 
-  function getUploadUrl ( next ) {
-    request( {
-      url: 'https://www.googleapis.com/upload/storage/v1/b/' + options.backupBucket + '/o',
-      qs: { uploadType: 'resumable', 'access_token' : options.cloudStorageToken },
-      method: 'POST',
-      headers: {
-        'X-Upload-Content-Type' : 'application/json',
-        'Content-Type' : 'application/json; charset=UTF-8',
-      },
-      body: JSON.stringify( {
-        name: 'backup-' + options.backupTimestamp,
-        cacheControl: "no-cache"
-      } )
-    }, function onComplete ( error, response, body ) {
-      if ( error ) return next( error )
-      options.uploadUrl = response.headers.location;
-      next()
-    } )
-  }
+  const oldestBackupKey = backupKeys[0]
+  const oldestBackupTimestamp = backupsLog[oldestBackupKey]
 
-  function createBackup ( next ) {
-    firebase.backupUrl().then( handleBackupUrl )
-    
-    function handleBackupUrl ( backupUrl ) {
-      request.get( backupUrl ).pipe( request.put( options.uploadUrl, next ) )
-    }
-  }
+  await firebase.backups({ key: oldestBackupKey }, null)
+  await cloudStorage.objects.del({
+    bucket,
+    file: fileNameForTimestamp(oldestBackupTimestamp)
+  })
 
-  function storeBackupTimestampReference ( next ) {
-    firebase.backups( { push: true }, options.backupTimestamp, next )
-  }
-
-  function checkRemoveOldestBackup ( next ) {
-    firebase.backups().then( handleBackups ).catch( next )
-
-    function handleBackups ( backupsSnapshot) {
-      var backups = backupsSnapshot.val()
-
-      // no backups set
-      if ( backups === null ) return next()
-
-      var backupKeys = _.keys( backups )
-
-      if ( backupKeys.length > 30 ) {
-        var oldestBackupKey = backupKeys[ 0 ]
-        var oldestBackupTimestamp = backups[ oldestBackupKey ]
-
-        options.removeBackup.key = oldestBackupKey;
-        options.removeBackup.timestamp = oldestBackupTimestamp;
-      }
-
-      next()
-    }
-  }
-
-  function removeBackupKey ( next ) {
-    if ( options.removeBackup.key === false ) return next()
-    firebase.backups( { key: options.removeBackup.key }, null )
-      .then( next )
-      .catch( next )
-  }
-
-  function removeBackupTimestamp ( next ) {
-    if ( options.removeBackup.timestamp === false ) return next()
-    cloudStorage.objects.del( options.backupBucket, 'backup-' + options.removeBackup.timestamp, deleteHandler )
-
-    function deleteHandler ( error ) {
-      // if the error is a 204 error, ths means that there was no backup to remove
-      if ( error && error === 204 ) return next()
-      else if ( error ) return next( error )
-      else return next()
-    }
-  }
-}
-
-function exit ( error ) {
-  var exitCode = 0
-  if ( error ) exitCode = 1
-  process.exit( exitCode )
+  return { file, timestamp }
 }

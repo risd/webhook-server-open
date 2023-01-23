@@ -7,11 +7,11 @@ function EnvOptions ( options ) {
   if ( ! ( this instanceof EnvOptions ) ) return new EnvOptions( options )
   if ( typeof options !== 'object' ) options = {}
 
-  require( 'dotenv-safe' ).load( {
+  require( 'dotenv-safe' ).load({
     allowEmptyValues: true,
     path: path.join( process.cwd(), '.env.test' ),
     sample: path.join( process.cwd(), '.env.test.example' ),
-  } )
+  })
 
   var envOptions = {
     fastlyAddDomain: process.env.FASTLY_ADD_DOMAIN,
@@ -35,6 +35,8 @@ function EnvOptions ( options ) {
     siteIndexUserId: process.env.CREATE_USER_ID,
     firebaseAdminSiteName: process.env.CREATE_SITE_NAME,
     serverSiteName: process.env.CREATE_SITE_NAME,
+    lifeCycleSiteName: process.env.LIFECYCLE_SITE_NAME,
+    lifeCycleDomain: process.env.LIFECYCLE_DOMAIN,
   }
 
   Object.assign( envOptions, options )

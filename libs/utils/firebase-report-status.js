@@ -11,15 +11,14 @@ module.exports = ReportStatus;
  *  @param code    The code to use to categorize the type of message being sent
  *  @param callback  Function called at the end of the status report
  */
-function ReportStatus ( firebase ) {
+function ReportStatus (firebase) {
 
-  return function reportStatus ( site, message, status, code, callback ) {
+  return async function reportStatus (site, message, status, code, callback) {
     if ( typeof code === 'function' ) {
       callback = code
       code = undefined
     }
     if ( ! code ) code = 'BUILT'
-    if ( ! callback ) callback = function noop () {}
     
     // project::firebase::ref::done
     var messagesRef = firebase.ref('/management/sites/' + site + '/messages/');

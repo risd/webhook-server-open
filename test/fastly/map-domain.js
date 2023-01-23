@@ -1,5 +1,4 @@
-var testOptions = require( '../env-options.js' )()
-
+const config = require('../config.js')
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
 var webhookTasks = require( '../../Gruntfile.js' )
@@ -8,31 +7,43 @@ var fastlyWebhook = require( '../../libs/fastly/index.js' )
 webhookTasks( grunt )
 
 var cdn = fastlyWebhook( grunt.config().fastly )
-var mapOptions = { maskDomain: testOptions.fastlyMapDomainKey, contentDomain: testOptions.fastlyMapDomainValue }
+var mapOptions = 
 
-test( 'map-domain', function ( t ) {
-  t.plan( 2 )
-
-  cdn.mapDomain( mapOptions, function ( error, status ) {
-    t.ok( error === null, 'The add error should be null.' )
-    t.ok( typeof status === 'object', 'The add status should be represented by an object.' )
-  } )
+test( 'map-domain', async function ( t ) {
+  try {
+    const status = await cdn.mapDomain(config.fastly.mapDomain)
+    t.ok(true, 'Succesfully set fastly map domain')
+  }
+  catch (error) {
+    t.fail(error, 'Error in set fastly map domain')
+  }
+  finally {
+    t.end()
+  }
 } )
 
-test( 'get-mask-domain-for-content-domain', function ( t ) {
-  t.plan( 2 )
+test( 'get-mask-domain-for-content-domain', async function ( t ) {
+  try {
+    const maskDomain = await cdn.maskForContentDomain(config.fastly.mapDomain.contentDomain)  
+    t.ok(maskDomain === config.fastly.mapDomain.maskDomain, 'The maskDomain should be equal to its input.')
+  }
+  catch (error) {
+    t.fail(error, 'Error in get mask domain for content domain')
+  }
+  finally {
+    t.end()
+  }
+})
 
-  cdn.maskForContentDomain( mapOptions.contentDomain, function ( error, maskDomain ) {
-    t.ok( error === null, 'The mask domain getter error should be null.' )
-    t.ok( maskDomain === mapOptions.maskDomain, 'The maskDomain should be equal to its input.' )
-  } )
-} )
-
-test( 'remove-map-domain', function ( t ) {
-  t.plan( 2 )
-
-  cdn.removeMapDomain( mapOptions, function ( error, status ) {
-    t.ok( error === null, 'The remove error should be null.' )
-    t.ok( typeof status === 'object', 'The remove status should be represented by an object.' )
-  } )
+test( 'remove-map-domain', async function ( t ) {
+  try {
+    await cdn.removeMapDomain(config.fastly.mapDomain)
+    t.ok(true, 'Succcessfully removed map domain.')
+  }
+  catch (error) {
+    t.fail(error, 'Error in removing map domain')
+  }
+  finally {
+    t.end()
+  }
 } )

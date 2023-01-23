@@ -6,6 +6,7 @@ var crypto = require( 'crypto' )
 var Fastly = require( 'fastly' )
 var async = require( 'async' )
 var url = require( 'url' )
+const chainCallbackResponse = require('../utils/chain-callback-response')
 
 // base configuration of the service
 var DICTIONARY_REDIRECT_HOSTS = 'dictionary_redirect_hosts';
@@ -70,7 +71,7 @@ FastlyWebhookService.prototype.redirects = setRedirects;
 FastlyWebhookService.prototype.mapDomain = mapDomain;
 FastlyWebhookService.prototype.removeMapDomain = removeMapDomain;
 FastlyWebhookService.prototype.maskForContentDomain = maskForContentDomain;
-FastlyWebhookService.prototype.activate =activator;
+FastlyWebhookService.prototype.activate = activator;
 
 /**
  * Activate the current service_id & version if it is not
@@ -84,17 +85,20 @@ function activator ( complete ) {
     version: this.version(),
   }
 
-  if ( this._version_is_active === true ) return complete( null, serviceOptions )
+  if (this._version_is_active === true && typeof complete === 'function') return complete( null, serviceOptions )
+  else if (this._version_is_active === true) return Promise.resolve(serviceOptions)
 
   var self = this;
   var activateOptions = Object.assign( { request: this.request }, serviceOptions )
 
-  return activateVersion( activateOptions, function ( error, version ) {
-    if ( error ) return complete( error )
-    self._version_is_active = true;
+  const chain = activateVersion(activateOptions)
+    .then((results) => {
+      self._version_is_active = true
+      return serviceOptions
+    })
 
-    return complete( null, serviceOptions )
-  } )
+  if (typeof complete === 'function') chainCallbackResponse(chain, complete)
+  else return chain
 }
 
 /**
@@ -104,27 +108,17 @@ function activator ( complete ) {
  * activated as they are made.
  *
  * @param  {string} service_id  The `service_id` to initialize
- * @param  {function} complete  Called when the service has been initialized.
- *                              Returns ( error, ServiceVersion )
  */
-function initializeService ( service_id, complete ) {
+function initializeService (service_id) {
   if ( typeof service_id === 'string' ) this._service_id = service_id;
-  if ( typeof service_id === 'function' ) complete = service_id;
 
   var self = this;
 
-  // if any errors occur, bail and complete early
-  var ifSuccess = handleError( complete )
-
-  return this._activeVersion( ifSuccess( configureService( self.activate.bind( self, complete ) ) ) )
-
-  function configureService ( continuation ) {
-    return configurer;
-
-    function configurer ( version ) {
-
-      var updator = serviceConfigurationUpdater.apply( self )
-      var getOrCreateTasks = [
+  return new Promise((resolve, reject) => {
+    self._activeVersion((error) => {
+      if (error) return reject(error)
+      const updator = serviceConfigurationUpdater.apply( self )
+      const getOrCreateTasks = [
           dictionaryArguments( DICTIONARY_REDIRECT_HOSTS ),
           dictionaryArguments( DICTIONARY_REDIRECT_URLS ),
           dictionaryArguments( DICTIONARY_HOST_BACKENDS ),
@@ -140,9 +134,15 @@ function initializeService ( service_id, complete ) {
         ]
         .map( updator.mapVersionedTask )
 
-      return async.series( getOrCreateTasks, continuation )
-    }
-  }
+      async.series(getOrCreateTasks, (error) => {
+        if (error) return reject(error)
+        self.activate((error, serviceOptions) => {
+          if (error) return reject(error)
+          resolve(serviceOptions)
+        })
+      })
+    })
+  })
 }
 
 /**
@@ -257,7 +257,14 @@ function activateVersion ( options, complete ) {
   var service_id = options.service_id;
   var version = options.version;
   var urlStr = [ '/service', service_id, 'version', version, 'activate' ].join( '/' )
-  return request( 'PUT', urlStr, complete );
+  const chain = new Promise((resolve, reject) => {
+    request( 'PUT', urlStr, (error, response, body) => {
+      if (error) reject(error)
+      else resolve({ response, body })
+    })
+  })
+  if (typeof complete === 'function') chainCallbackResponse(chain, complete)
+  else return chain
 }
 
 /**
@@ -341,17 +348,15 @@ function addressForDomain ( domain ) {
  * The key will be opposite domain, with the value being the domain configured.
  *
  * @param {string|[string]} domains  String of domains to configure. Can be a single string, comman separated string, or array of strings representing domain names.
- * @param {function} complete  Called when the domain has been added.
- *                             Returns ( error, [ ServiceConfiguration ] )
  */
-function addDomains ( domains, complete ) {
+function addDomains (domains) {
   if ( typeof domains === 'string' ) domains = domains.split( ',' )
   var self = this;
 
   // filter ignored domains
   domains = domains.filter( this.isFastlyDomain.bind( this ) )
 
-  if ( domains.length === 0 ) return complete( null, { status: 'ok', noDomainsAdded: true } )
+  if ( domains.length === 0 ) return Promise.resolve({ status: 'ok', noDomainsAdded: true })
 
   // tasks to execute in order to add the domain
   var tasks = [];
@@ -364,7 +369,15 @@ function addDomains ( domains, complete ) {
 
   tasks = tasks.concat( redirectHostOperationsFor( domains ) )
 
-  return async.series( tasks, handleCallbackError( complete )( self.activate.bind( self, complete ) ) )
+  return new Promise((resolve, reject) => {
+    async.series(tasks, (error) => {
+      if (error) return reject(error)
+      self.activate((error, serviceOptions) => {
+        if (error) return reject(error)
+        resolve(serviceOptions)
+      })
+    })
+  })
 
   function activeVersionTask ( taskComplete ) {
     return self._activeVersion( taskComplete )
@@ -435,7 +448,7 @@ function addDomains ( domains, complete ) {
  * @param  {string} options[].contentDomain
  * @param  {function} complete The callback function to call upon completion
  */
-function mapDomain ( options, complete ) {
+function mapDomain (options) {
   var self = this;
   if ( ! Array.isArray( options ) && typeof options === 'object' ) options =  [ options ]
 
@@ -448,10 +461,12 @@ function mapDomain ( options, complete ) {
 
   var tasks = [ dictionaryIdForName( DICTIONARY_HOST_BACKENDS  ), mapDomainDictionaryUpdateFor( mapDomainItemArguments ) ];
 
-  return async.series( tasks, function ( error, taskResults ) {
-    if ( error ) return complete ( error )
-    complete( null, taskResults[ taskResults.length - 1 ] )
-  } )
+  return new Promise((resolve, reject) => {
+    async.series( tasks, function ( error, taskResults ) {
+      if ( error ) return reject ( error )
+      resolve( taskResults[ taskResults.length - 1 ] )
+    } )
+  })
 
   function toMapDomainOptions ( domainPair ) {
     return { item_key: domainPair.maskDomain, item_value: domainPair.contentDomain }
@@ -512,7 +527,7 @@ function mapDomain ( options, complete ) {
  * @param  {string} options[].maskDomain
  * @param  {function} complete The callback function to call upon completion
  */
-function removeMapDomain ( options, complete ) {
+function removeMapDomain (options) {
   var self = this;
   if ( ! Array.isArray( options ) && typeof options === 'object' ) options = [ options ]
 
@@ -525,10 +540,12 @@ function removeMapDomain ( options, complete ) {
 
   var tasks = [ dictionaryIdForName( DICTIONARY_HOST_BACKENDS ), mapDomainDictionaryUpdateFor( removeMapDomainItemArguments )  ]
 
-  return async.series( tasks, function ( error, taskResults ) {
-    if ( error ) return complete ( error )
-    complete( null, taskResults[ taskResults.length - 1 ] )
-  } )
+  return new Promise((resolve, reject) => {
+    async.series( tasks, function ( error, taskResults ) {
+      if ( error ) return reject(error)
+      resolve(taskResults[ taskResults.length - 1 ])
+    })
+  })
 
   function toRemoveMapDomainOptions( domainSingle ) {
     return { item_key: domainSingle.maskDomain }
@@ -584,14 +601,19 @@ function removeMapDomain ( options, complete ) {
  * @param  {string} contentDomain The value to find in the dictionary_host_backends table
  * @param  {function} complete    The function to invoke with the maskDomain value.
  */
-function maskForContentDomain ( contentDomain, complete ) {
+function maskForContentDomain (contentDomain) {
   assert( typeof contentDomain === 'string', 'Content domain is a string.')
-  assert( typeof complete === 'function', 'Complete callback is a function.' )
   var self = this;
 
   var tasks = [ getDictionaryId( DICTIONARY_HOST_BACKENDS ), getDictionaryItems ]
 
-  async.waterfall( tasks, returnMaskDomainFor( contentDomain, complete ) )
+  return new Promise((resolve, reject) => {
+    const handler = (error, maskDomain) => {
+      if (error) reject(error)
+      else resolve(maskDomain)
+    }
+    async.waterfall( tasks, returnMaskDomainFor( contentDomain, handler ) )
+  })
 
   function getDictionaryId ( dictionaryName ) {
     return function task ( taskComplete ) {
@@ -663,14 +685,14 @@ function redirectWwwArguments ( domain ) {
  * @param  {string|string[]} domains
  * @param  {Function} complete
  */
-function removeDomains ( domains, complete ) {
+function removeDomains (domains) {
   if ( typeof domains === 'string' ) domains = domains.split( ',' )
   var self = this;
   var service_id = self._service_id;
 
   domains = domains.filter( this.isFastlyDomain.bind( this ) )
 
-  if ( domains.length === 0 ) return complete( null, { status: 'ok', noDomainsRemoved: true } )
+  if ( domains.length === 0 ) return Promise.resolve({ status: 'ok', noDomainsRemoved: true })
 
   // remove the domain
   // remove the redirects
@@ -680,7 +702,15 @@ function removeDomains ( domains, complete ) {
     .concat( domains.map( mapPathRedirectsRemoveTask ) )
     .concat( domains.map( mapHostRedirectsRemoveTask ) )
 
-  return async.series( tasks, handleCallbackError( complete )( self.activate.bind( self, complete ) ) )
+  return new Promise((resolve, reject) => {
+    async.series(tasks, (error) => {
+      if (error) return reject(error)
+      self.activate((error, serviceOptions) => {
+        if (error) return reject(error)
+        resolve(serviceOptions)
+      })
+    })
+  })
 
   function activeVersionTask ( taskComplete ) {
     return self._activeVersion( taskComplete )
@@ -794,10 +824,18 @@ function setRedirects ( options, complete ) {
     .filter( patternWithProtocolOrHost )
     .filter( sameUrl )
 
-  async.series( [
-    setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: redirects.filter( isNotRegex ) } ) ),
-    setSnippetRedirectTasks( Object.assign( {}, options, { redirects: redirects.filter( isRegex ) } ) )
-  ], complete )
+  const chain = new Promise((resolve, reject) => {
+    async.series([
+      setDictionaryRedirectsTask( Object.assign( {}, options, { redirects: redirects.filter( isNotRegex ) } ) ),
+      setSnippetRedirectTasks( Object.assign( {}, options, { redirects: redirects.filter( isRegex ) } ) )
+    ], (error) => {
+      if (error) reject(error)
+      else resolve()
+    })    
+  })
+
+  if (typeof complete === 'function') chainCallbackResponse(chain, complete)
+  else return chain
 
   function setDictionaryRedirectsTask ( args ) {
     return function task ( taskComplete ) {

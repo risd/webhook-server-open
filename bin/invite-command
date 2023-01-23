@@ -1,54 +1,25 @@
 #!/usr/bin/env node
-
-require('dotenv').config()
+const argv = require('minimist')(process.argv.slice(2), {
+  alias: {
+    f: 'fromUser',
+    i: 'inviteUser',
+    n: 'siteName',
+    h: 'help,'
+  },
+})
 
 var grunt = require( 'grunt' );
 var webhookTasks = require( '../Gruntfile.js' );
 var inviter = require( '../libs/invite.js' );
 
-webhookTasks( grunt );
+webhookTasks(grunt)
 
-// merge this config in order to run just the builder command
-grunt.config.merge( {
-  suppressJobQueue: true,
-} )
+var invite = inviter.configure(grunt.config)
 
-var invite = inviter.start( grunt.config, grunt.log )
-
-var mockClient = {
-  put: function (first, second, third, fourth, jobExecuter) {
-    jobExecuter()
-  }
-}
-
-var jobCallback = function ( error ) {
-  if ( error ) {
-    console.log( error )
-    console.log( error.message )
-    console.log( error.stack )
-  }
-  else console.log( arguments )
-  process.exit( error ? 1 : 0 )
-}
-
-var cmd = invitee();
-
-invite( cmd, cmd.identifier, cmd.payload, mockClient, jobCallback  )
-
-
-function invitee () {
-  var data = {
-    "userid": "rubenrodriguez+invite-test-01@gmail.com",
-    "from_userid": "bclark@risd.edu",
-    "id":"14921826615387f45a2c5d80548b49b7c515b3c78822f",
-    "siteref":"risd-policies,1risd,1systems",
-  }
-  var identifier = "risd-policies,1risd,1systems_invite"
-
-  var cmd = {
-    "identifier": identifier,
-    "payload": data,
-  }
-
-  return cmd;
-}
+;(async () => {
+  await invite({
+    userId: argv.inviteUser,
+    from_userid: argv.fromUser,
+    siteref: argv.siteName,
+  })
+})

@@ -1,41 +1,30 @@
-var testOptions = require( '../env-options.js' )()
+const config = require('../config.js')
+const test = require( 'tape' )
+const grunt = require( 'grunt' )
+const webhookTasks = require( '../../Gruntfile.js' )
+const fastlyWebhook = require( '../../libs/fastly/index.js' )
 
-var test = require( 'tape' )
-var grunt = require( 'grunt' )
-var async = require( 'async' )
-var webhookTasks = require( '../../Gruntfile.js' )
-var fastlyWebhook = require( '../../libs/fastly/index.js' )
+webhookTasks(grunt)
 
-webhookTasks( grunt )
+test( 'add-domain', async function ( t ) {
 
-test( 'add-domain', function ( t ) {
-  t.plan( 6 )
+  const cdn = fastlyWebhook( grunt.config().fastly )
 
-  var cdn = fastlyWebhook( grunt.config().fastly )
-
-  async.series( [ addDomain, doNotAddDomain, addDomainEdu ], function () {} )
-
-  function addDomain ( next ) {
-    cdn.domain( testOptions.fastlyAddDomain, function ( error, service ) {
-      t.ok( error === null, 'The error should be null for successful domain addition.' )
-      t.ok( typeof service === 'object' && service.hasOwnProperty( 'service_id' ), 'The service should be represented by an object.' )
-      next()
-    } )
+  try {
+    const service = await cdn.domain(config.fastly.addDomain)
+    t.ok( typeof service === 'object' && service.hasOwnProperty( 'service_id' ), 'The service should be represented by an object.' )
+  }
+  catch (error) {
+     t.fail(error, 'Error in successful domain addition.')
   }
 
-  function doNotAddDomain ( next ) {
-    cdn.domain( 'test.risd.systems', function ( error, service ) {
-      t.ok( error === null, 'The error object should be null for successfully not adding a domain.' )
-      t.ok( typeof service === 'object' && service.hasOwnProperty( 'noDomainsAdded' ) && service.noDomainsAdded === true, 'Response should include a flag that no domains were addded.' )
-      next()
-    } )
+  try {
+    const service = await cdn.domain(config.fastly.doNotAddDomain)
+    t.ok( typeof service === 'object' && service.hasOwnProperty( 'noDomainsAdded' ) && service.noDomainsAdded === true, 'Response should include a flag that no domains were addded.' )
   }
- 
-  function addDomainEdu ( next ) {
-    cdn.domain( 'test.risd.edu', function ( error, service ) {
-      t.ok( error === null, 'The error object should be null for successful domain addition.' )
-      t.ok( typeof service === 'object' && service.hasOwnProperty( 'service_id' ), 'The service should be represented by an object for edu domain.' )
-      next()
-    } )
+  catch (error) {
+    t.fail(error, 'Error in successfully not adding a domain')
   }
-} )
+
+  t.end()
+})

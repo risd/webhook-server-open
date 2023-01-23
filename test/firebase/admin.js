@@ -1,71 +1,72 @@
-var testOptions = require( '../env-options.js' )()
-var test = require( 'tape' )
-var path = require( 'path' )
-var grunt = require( 'grunt' )
-var Firebase = require( '../../libs/firebase/index.js' )
-var webhookTasks = require( '../../Gruntfile.js' )
+const config = require('../config.js')
+const test = require( 'tape' )
+const grunt = require( 'grunt' )
+const Firebase = require( '../../libs/firebase/index.js' )
+const webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
 Error.stackTraceLimit = Infinity;
 
-test( 'firebase-admin', function ( t ) {
-  t.plan( 12 )
+const siteName = config.creator.siteName
+
+test( 'firebase-admin', async function ( t ) {
   
-  var firebase = Firebase( Object.assign( { initializationName: 'admin-test' }, grunt.config().firebase ) )
-  t.assert( typeof firebase === 'object', 'Firebase instance is an object.' )
-
-  var db = firebase.database()
-  t.assert( typeof db === 'object', 'Firebase database instance is an object.' )
-
-  var siteKeyPath = `/management/sites/${ testOptions.firebaseAdminSiteName }/key`
   try {
-    db.child( siteKeyPath )
-    t.fail( 'Should not be able to call `child` on the root database object.' )
-  } catch ( error ) {
-    t.pass( 'Deprecated: Child must be executed on a database reference, not the root database object.' )
-  }
+    const firebase = Firebase( Object.assign( { initializationName: 'admin-test' }, grunt.config().firebase ) )
+    t.assert( typeof firebase === 'object', 'Firebase instance is an object.' )  
 
-  var siteKeyPathRef = db.ref( siteKeyPath )
-  t.assert( siteKeyPathRef.key === 'key', 'Ref has correct key.' )
+    const db = firebase.database()
+    t.assert( typeof db === 'object', 'Firebase database instance is an object.' )
 
-  siteKeyPathRef.once( 'value', function ( siteKeySnapshot ) {
-    var siteKey = siteKeySnapshot.val()
-    t.assert( typeof siteKey === 'string' || siteKey === null, 'The site key value is a string.' )
-    t.assert( siteKeySnapshot.key === 'key', 'The key of the snapshot is the last part of the path to get the snapshot.' )
-    try {
-      var keyValueforSnapshot = siteKeySnapshot.name()
-    } catch ( error ) {
-      t.pass( 'Deprecated: `name` is no longer a function to access the key.' )
+    const token = await firebase._getAccessToken()
+    t.assert(typeof token === 'string', 'Firebase access token is a string')
+
+    const siteKeySnapshot = await firebase.siteKey({ siteName })
+    t.assert(typeof siteKeySnapshot.val() === 'string', 'Got site management key')
+
+    await firebase.siteKey({ siteName: 'non-existent-site' }, null)
+    t.pass('Set non-existent value to null is ok')
+
+    let siteDevDataSnapshot = await firebase.siteDevData({
+      siteName,
+      siteKey: siteKeySnapshot.val(),
+    })
+    if (siteDevDataSnapshot.val() === null) {
+      const baseSiteDevData = { data: {}, deploys: [], contentTypes: {} }
+      await firebase.siteDevData({
+        siteName,
+        siteKey: siteKeySnapshot.val(),
+      }, baseSiteDevData)
+      siteDevDataSnapshot = await firebase.siteDevData({
+        siteName,
+        siteKey: siteKeySnapshot.val(),
+      })
+      console.log(siteDevDataSnapshot.val())
+      t.deepEqual(baseSiteDevData, siteDevDataSnapshot.val(), 'Get/Set site data.')
+    }
+    else {
+      t.assert(typeof siteDevDataSnapshot.val() === 'object', 'Got site dev data')
+      await firebase.siteDevData({
+        siteName,
+        siteKey: siteKeySnapshot.val(),
+      }, siteDevDataSnapshot.val())
+      let recentSiteDevDataSnapshot = await firebase.siteDevData({
+        siteName,
+        siteKey: siteKeySnapshot.val(),
+      })
+      t.deepEqual(recentSiteDevDataSnapshot.val(), siteDevDataSnapshot.val(), 'Get/set site data')
     }
 
-    try {
-      var keyValueforSnapshot = siteKeySnapshot.key()
-    } catch ( error ) {
-      t.pass( 'Deprecated: `key` is no longer a function, instead, a property getter.' )
-    }
-  } )
-
-  db.ref( '/buckets/site-does-not-exist' ).set( null )
-    .then( handleNonExistentKeySetSuccess )
-    .catch( handleNonExistentKeySetError )
-
-  function handleNonExistentKeySetSuccess () {
-    t.pass( 'Setting a non-existent key path to null completes successfully.' )
+    const allSitesSnapshot = await firebase.allSites()
+    t.assert(allSitesSnapshot.val() !== null, 'Got all sites.')
   }
-
-  function handleNonExistentKeySetError () {
-    t.fail( 'Setting a non-existent key path to null errors.' )
+  catch (error) {
+    t.fail(error)
   }
-
-  var managementKey = db.ref( 'management/sites' ).key
-  t.assert( managementKey === 'sites', 'Acceptable usage of key on management ref' )
-
-  var rootKey = db.ref( 'management/sites' ).root.key
-  t.assert( rootKey === null, 'Root key is null' )
-
-  var refFromRoot = db.ref( 'management/sites' ).root.child( 'management/sites' ).key
-  t.assert( refFromRoot === 'sites', 'Acceptable usage of ref off of the root.' )
+  finally {
+    t.end()  
+  }
 } )
 
 test.onFinish( process.exit )

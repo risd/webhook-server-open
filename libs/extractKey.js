@@ -1,5 +1,4 @@
 var fs = require('fs');
-var colors = require('colors');
 var _ = require('lodash');
 
 /*
@@ -11,7 +10,7 @@ var _ = require('lodash');
 */
 module.exports.start = function (file, config, logger) {
   if(!file) {
-    console.log('Error, no file specified. Please specify with --file option.'.red);
+    console.log('Error, no file specified. Please specify with --file option.');
     return;
   }
 
@@ -20,6 +19,6 @@ module.exports.start = function (file, config, logger) {
 
   var keyFile = fs.writeFileSync(__dirname + '/keyfile.key', obj.private_key);
 
-  console.log('Keyfile written'.green);
+  console.log('Keyfile written');
 };
 
