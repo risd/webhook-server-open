@@ -1,17 +1,16 @@
 #!/usr/bin/env node
-require('dotenv').config()
+const grunt = require( 'grunt' )
+const webhookTasks = require( '../Gruntfile.js' )
+const fastly = require( '../libs/fastly' )
 
-var async = require( 'async' )
-var grunt = require( 'grunt' )
-var webhookTasks = require( '../Gruntfile.js' )
-var fastly = require( '../libs/fastly' )
+webhookTasks(grunt)
 
-webhookTasks( grunt )
-var cdn = fastly( grunt.config().fastly )
+const cdn = fastly(grunt.config.get('fastly'))
 
-var domains = process.argv.slice( 2 )
+const domains = process.argv.slice( 2 )
 
-cdn.removeDomain( domains, function ( error, service ) {
-  if ( error ) return console.log( error )
-  else console.log(`Fastly service '${ service.service_id }' is running on version ${ service.version }.`)
-} )
+;(async () => {
+  const service = await cdn.removeDomain(domains)
+  console.log(`Fastly service '${ service.service_id }' is running on version ${ service.version }.`)
+})()
+

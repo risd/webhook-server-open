@@ -1,4 +1,3 @@
-var testOptions = require( '../env-options.js' )()
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
 var Mailgun = require( 'mailgun-js' )

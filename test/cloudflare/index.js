@@ -1,14 +1,14 @@
-var testOptions = require( '../env-options.js' )()
-var test = require( 'tape' )
-var grunt = require( 'grunt' )
-var webhookTasks = require( '../../Gruntfile.js' )
+const config = require('../config.js')
+const test = require( 'tape' )
+const grunt = require( 'grunt' )
+const webhookTasks = require( '../../Gruntfile.js' )
 
 webhookTasks( grunt )
 
 var Cloudflare = require( '../../libs/cloudflare/index.js' )
 var cloudflare = Cloudflare( grunt.config().cloudflare.client )
 
-var siteName = testOptions.createSiteName;
+var siteName = config.creator.siteName;
 
 Error.stackTraceLimit = Infinity;
 

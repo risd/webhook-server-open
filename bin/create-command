@@ -1,60 +1,42 @@
 #!/usr/bin/env node
 
+const argv = require('minimist')(process.argv.slice(2), {
+  alias: {
+    u: 'userId',
+    s: 'siteName',
+    h: 'help,'
+  },
+})
 var grunt = require( 'grunt' );
 var Firebase = require( 'firebase' )
 var webhookTasks = require( '../Gruntfile.js' );
 var creator = require( '../libs/creator.js' );
+var Firebase = require( '../libs/firebase/index.js' );
+var firebaseEscape = require( '../libs/utils/firebase-escape.js' )
 
-webhookTasks( grunt );
+webhookTasks(grunt)
 
-// merge this config in order to run just the builder command
-grunt.config.merge( {
-  suppressJobQueue: true
-} )
+const createSite = creator.configure(grunt.config)
+const firebase = Firebase(grunt.config.get('firebase'))
 
-var create = creator.start( grunt.config, grunt.log )
+const userId = argv.userId
+const siteName = argv.siteName || argv._[0]
 
-var owners = {
-  "rrodrigu@risd,1edu": "rrodrigu@risd.edu"
+if ((!userId || !siteName) || argv.help) return help()
+
+const ownerData = {}
+ownerData[firebaseEscape(userId)] = userId
+
+;(async () => {
+  // typically coordinated by `wh` cli tool
+  await firebase.siteOwners({ siteName }, ownerData)
+  // typically handled by server worker
+  await createSite({ userId, siteName })
+})()
+
+function help () {
+  console.log(`usage:`)
+  console.log(`  create-command {siteName} -u {userId}`)
+  console.log(`  create-command -s {siteName} -u {userId}`)
+  console.log(`  create-command --siteName {siteName} --userId {userId}`)
 }
-
-var identifier = 'id'
-
-var data = {
-  "sitename": "create-command,1risd,1systems",
-  "userid": "rrodrigu@risd.edu",
-}
-
-var payload = {
-  "identifier": identifier,
-  "payload": data,
-}
-
-var mockClient = {
-  put: function (first, second, third, fourth, jobExecuter) {
-    jobExecuter()
-  }
-}
-
-var jobCallback = function ( error ) {
-  if ( error ) console.log( error )
-  else console.log( arguments )
-  process.exit( error ? 1 : 0 )
-}
-
-
-var management = new Firebase( 'https://' + grunt.config.get( 'firebase' ) + '.firebaseio.com/management' )
-
-management.auth( grunt.config.get( 'firebaseSecret' ), function ( error ) {
-  if ( error ) return console.log( error )
-
-  var owner = 
-
-  management.child( 'sites/'+ data.sitename + '/owners' ).set(owners, function(err) {
-    if ( error ) return console.log( error )
-
-    create( payload, identifier, data, mockClient, jobCallback  )
-
-  } )
-
-} )

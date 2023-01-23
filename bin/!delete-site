@@ -15,7 +15,7 @@ if ( ! site ) {
 }
 
 if ( ! please ) {
-  console.log( `Must include `please` after the command. As in:
+  console.log( `Must include \`please\` after the command. As in:
   
   ./bin/delete-site site-name please` )
   process.exit()

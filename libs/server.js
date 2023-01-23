@@ -8,117 +8,137 @@
 * site name + site token.
 */
 
-var express = require('express');
-var colors = require('colors');
-var Zip   = require('adm-zip');
-var request = require('request');
+const debug = require('debug')('server')
+const Fastify = require('fastify')
+const cors = require('@fastify/cors')
+const formbody = require('@fastify/formbody')
+const multipart = require('@fastify/multipart')
+const axios = require('axios')
 var fs = require('fs');
+const fsp = require('node:fs/promises')
 var mkdirp = require('mkdirp');
 var async = require('async');
-var Elastic = require( './elastic-search/index' )
+const Elastic = require('webhook-elastic-search')
 var Firebase = require('./firebase/index');
-var wrench = require('wrench');
 var path = require('path');
 var cloudStorage = require('./cloudStorage.js');
-var backupExtractor = require('./backupExtractor.js');
+var backupExtractor = require('./backup-extractor.js');
 var temp = require('temp');
 var mime = require('mime');
-var archiver   = require('archiver');
 var _ = require('lodash');
 var Deploys = require( 'webhook-deploy-configuration' );
+const {pipeline} = require('node:stream/promises')
+const {fileNameForTimestamp} = require( './backup.js' )
 
-// Some string functions worth having
-String.prototype.endsWith = function(suffix) {
-    return this.indexOf(suffix, this.length - suffix.length) !== -1;
-};
+module.exports.start = async function(config) {
 
-String.prototype.startsWith = function (str){
-  return this.indexOf(str) == 0;
-};
+  const serverConfig = config.get('server')
+  const elastic = Elastic(config.get('elastic'))
 
-// General error handling function
-function errorHandler (err, req, res, next) {
-  res.status(500);
-  res.send('error');
-}
+  const firebase = Firebase({
+    initializationName: 'server',
+    ...config.get('firebase'),
+  })
 
-module.exports.start = function(config, logger)
-{
-  if (config.get('newrelicEnabled')) {
-    require('newrelic');
-  }
-
-  cloudStorage.setProjectName(config.get('googleProjectId'));
-  cloudStorage.setServiceAccount(config.get('googleServiceAccount'));
-
-  var app = express();
-
-  var elastic = Elastic( config().elastic );
-
-  var firebaseOptions = Object.assign(
-    { initializationName: 'server-worker' },
-    config().firebase )
-
-  // project::firebase::initialize::done
-  var firebase = Firebase( firebaseOptions )
   var database = firebase.database()
 
-  var deploys = Deploys( database )
+  var deploys = Deploys(database.ref())
 
-  // Set up our request handlers for express
-  app.use(express.limit('1024mb'));
-  app.use(express.bodyParser({ maxFieldsSize: 10 * 1024 * 1024 }));
-  app.use(allowCrossDomain);
-  app.use(errorHandler);
-  
-  app.get('/', getRootHandler)
-  app.get('/backup-snapshot/', getBackupHandler)
-  app.post('/upload-url/',  postUploadUrlHandler)
-  app.post('/upload-file/', postUploadFileHandler)
-  app.post('/search/', postSearchHandler)
-  app.post('/search/index/', postSearchIndexHandler)
-  app.post('/search/delete/', postSearchDeleteHandler)
-  app.post('/search/delete/type/', postSearchDeleteTypeHandler)
-  app.post('/search/delete/index/', postSearchDeleteIndexHandler)
-  app.post('/upload/', postUploadHandler)
+  const backupBucket = config.get('backupBucket')
+  const uploadBucket = config.get('uploadsBucket')
+  const siteBucket = config.get('sitesBucket')
+  const googleProjectId = config.get('googleProjectId')
+  const cacheControl = 'public,max-age=86400'
 
-  var serverPort = 3000
-  app.listen(serverPort);
-  console.log(`listening on ${ serverPort }...`.red);
+  const app = Fastify()
+  await app.register(cors)
+  await app.register(formbody)
 
-  return { app: app, port: serverPort }
-
-  // Used to know that the program is working
-  function getRootHandler (req, res) {
-    res.send('Working...');
+  async function onFile (part) {
+    const localFile = await createTmpFile()
+    await pipeline(part.file, fs.createWriteStream(localFile))
+    part.value = {
+      filename: part.filename,
+      localFile,
+      mimeType: mime.lookup(part.filename),
+    }
   }
 
-  // Request for backup snapshots, passed a token, sitename, and a timestamp
-  // If the token matches the token for the site on record, returns
-  // a backup for the given site
-  function getBackupHandler (req, res) {
-    var token = req.query.token;
-    var timestamp = req.query.timestamp;
-    var site = req.query.site;
+  await app.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024,
+    },
+    attachFieldsToBody: 'keyValues',
+    onFile,
+  })
 
-    var validateRequestSeries = [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-    ]
-
-    async.series( validateRequestSeries, function handleValidationSeries ( error ) {
-      if ( error ) return handleResponseForSeries( res, error )
-      extractBackup( timestamp, res )
-    } )
-
-    function extractBackup ( timestamp, res ) {
-      cloudStorage.getToken(function() {
-        var backupStream = cloudStorage.objects.getStream(config.get('backupBucket'), 'backup-' + timestamp);
-        var extractor = backupExtractor.getParser(['buckets', site, token, 'dev']);
-
-        backupStream.pipe(extractor).pipe(res);
-      });
+  async function siteBillingActive (request, reply) {
+    debug('siteBillingActive')
+    const siteName = request.body?.site || request.query?.site
+    const isActive = await firebase.siteBillingActive({ siteName })
+    if (!isActive) {
+      cleanUpFiles(request)
+      reply.type('application/json').code(500)
+      return { error: 'Site not active, please check billing status.' }
     }
+  }
+
+  async function siteKeyEqualsToken (request, reply) {
+    debug('siteKeyEqualsToken')
+    const siteName = request.body?.site || request.query?.site
+    const token = request.body?.token || request.query?.token
+    const siteKeySnapshot = await firebase.siteKey({ siteName })
+    const siteKey = siteKeySnapshot.val()
+    if (!siteKey) {
+      cleanUpFiles(request)
+      reply.type('application/json').code(500)
+      return { error: 'Site does not exist.' }
+    }
+    if (token !== siteKey) {
+      cleanUpFiles(request)
+      reply.type('application/json').code(403)
+      return { error: 'Token is not valid' }
+    }
+  }
+
+  const protectedRouteOptions = {
+    preHandler: [siteBillingActive, siteKeyEqualsToken]
+  }
+
+  app.get('/', getRootHandler)
+  app.get('/backup-snapshot/', protectedRouteOptions, getBackupHandler)
+  app.post('/upload-url/', protectedRouteOptions, postUploadUrlHandler)
+  app.post('/upload-file/', protectedRouteOptions, postUploadFileHandler)
+  app.post('/search/', protectedRouteOptions, postSearchHandler)
+  app.post('/search/index/', protectedRouteOptions, postSearchIndexHandler)
+  app.post('/search/delete/', protectedRouteOptions, postSearchDeleteHandler)
+  app.post('/search/delete/type/', protectedRouteOptions, postSearchDeleteTypeHandler)
+  app.post('/search/delete/index/', protectedRouteOptions, postSearchDeleteIndexHandler)
+  app.post('/upload/', protectedRouteOptions, postUploadHandler)
+
+  const port = serverConfig.port
+  await app.listen(port)
+  console.log(`listening on ${ port }...`);
+
+  return { app, port }
+
+  function getRootHandler (request, reply) {
+    reply.send('Working...')
+  }
+
+  async function getBackupHandler (request, reply) {
+    const siteName = request.query.site
+    const token = request.query.token
+    const timestamp = request.query.timestamp
+
+    const backupStream = await cloudStorage.objects.createReadStream({
+      bucket: backupBucket,
+      file: fileNameForTimestamp(timestamp),
+    })
+    const extractor = backupExtractor.getParser(['buckets', siteName, token, 'dev'])
+    backupStream.pipe(extractor)
+    reply.header('Content-Type', 'application/octet-stream')
+    return extractor
   }
 
   // Handles uploading a file from a url
@@ -126,95 +146,74 @@ module.exports.start = function(config, logger)
   // site and token are the site and token for the site to upload to
   // resize_url is passed if the url is of an image and needs a resize_url returned
   // Finally url is the url of the object to upload
-  function postUploadUrlHandler (req, res) {
+  async function postUploadUrlHandler (request, reply) {
+    reply.type('application/json')
 
-    var site = req.body.site;
-    var token = req.body.token;
-    var resizeUrlRequested = req.body.resize_url || false;
-    var url = req.body.url; 
-    var originReq = req;
+    const siteName = request.body.site
+    const token = request.body.token
 
-    // If no url, get out of here
-    if ( ! url ) {
-      cleanUpFiles( req )
-      return handleResponseForSeries( res, {
-        statusCode: 400,
-        message: 'Body requires a `url` attribute to upload.'
-      } )
+    const resizeUrlRequested = request.body.resize_url
+    const url = request.body.url
+
+    if (!url) {
+      cleanUpFiles(request)
+      reply.code(400)
+      return { error: 'Body requires a `url` attribute to upload.' }
     }
 
-    var validateRequestSeries = [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-    ]
-
-    var uploadFileWaterfall = [
-      createTmpFile,
-      downloadUrlToPath.bind( null, url ),
-      limitFileSize,
-      uploadLocalFileToUploadsBucket,
-    ]
-
-    if ( resizeUrlRequested ) uploadFileWaterfall = uploadFileWaterfall.concat( [ getResizeUrl ] )
-
-    async.series( validateRequestSeries, function handleValidationSeries ( error ) {
-      if ( error ) {
-        cleanUpFiles( req )
-        return handleResponseForSeries( res, error )
-      }
-
-      async.waterfall( uploadFileWaterfall, handleUploadFileWaterfall.bind( null, req, res ) )
-    } )
-
-    // callback => localFile
-    function createTmpFile ( callback ) {
-      temp.open( { prefix: 'uploads', dir: '/tmp' }, function ( err, info ) {
-        if ( err ) return callback( err )
-        callback( null, info.path )
-      } )
+    const localFile = await createTmpFile()
+    await downloadUrlToPath({ url, localFile })
+    const stat = await fsp.stat(localFile)
+    if (stat.size > 50 * 1024 * 1024) {
+      fs.unlinkSync(localFile)
+      cleanUpFiles(request)
+      reply.code(500)
+      return { error: 'File too large. 50 MB is limit.' }
     }
+    const remote = timestampedUploadsPathForFileName(path.basename(url))
+    
+    const results = await cloudStorage.objects.upload({
+      bucket: uploadBucket,
+      local: localFile,
+      remote,
+      cacheControl,
+    })
+    results.url = `//${results.bucket}/${results.name}`
 
-    // url, localFile, callback => error?, { localFile, localFileOrigin }
-    function downloadUrlToPath ( url, localFile, callback ) {
-      var downloadError = { statusCode: 500, message: 'Could not download url.' }
+    if (resizeUrlRequested) {
       try {
-        var req = request( url )
-      } catch ( error ) {
-        return callback( downloadError )
+        const resizeUrl = await resizeUrlForUrl(results.url)
+        results.resizeUrl = resizeUrl
+        debug({ results })
       }
-
-      var requestFailed = false
-      // Request the URL and pipe into our temporary file
-      req
-        .on('response', function (response) {
-          if ( ! response || response.statusCode !== 200) {
-            requestFailed = true
-            fs.unlinkSync( localFile )
-          }
-        })
-        .on('error', function ( error ) {
-          fs.unlinkSync( localFile )
-          callback( downloadError )
-        })
-        .pipe( fs.createWriteStream( localFile ) )
-          .on( 'close', function () {
-            if ( requestFailed ) return callback( downloadError )
-            callback( null, { localFile: localFile, localFileOrigin: url } )
-          } )
+      catch (error) {
+        fs.unlinkSync(localFile)
+        cleanUpFiles(request)
+        reply.code(500)
+        return { error: 'Could not get resize url for file.' }
+      }
     }
 
-    // { localFile, localFileOrigin }, callback => error?, { localFile, localFileOrigin }
-    function limitFileSize ( options, callback ) {
-      var localFile = options.localFile
-      fs.stat( localFile, function ( error, stat ) {
-        if ( error ) return callback( { status: 500, message: 'File too large. 50 MB is limit.' } )
-        // Size limit of 50MB
-        if( stat.size > ( 50 * 1024 * 1024 ) ) {
-          return callback( { status: 500, message: 'File too large. 50 MB is limit.' } )
-        }
+    fs.unlinkSync(localFile)
+    cleanUpFiles(request)
 
-        callback( null, options )
-      } )
+    reply.code(200)
+    return {
+      message: 'Finished',
+      url: results.url,
+      size: +results.size,
+      mimeType: results.contentType,
+      resize_url: results.resizeUrl,
+    }
+
+    function downloadUrlToPath ({ url, localFile }) {
+      return axios({
+        method: 'get',
+        url,
+        responseType: 'stream',
+      }).then((response) => {
+          return pipeline(response.data, fs.createWriteStream(localFile))
+        })
     }
   }
 
@@ -223,150 +222,46 @@ module.exports.start = function(config, logger)
   // site and token are the site and token for the site to upload to
   // resize_url is passed if the url is of an image and needs a resize_url returned
   // Finally the payload is the file being posted to the server
-  function postUploadFileHandler (req, res) {
+  async function postUploadFileHandler (request, reply) {
+    reply.type('application/json')
 
-    var site = req.body.site;
-    var token = req.body.token;
-    var resizeUrlRequested = req.body.resize_url || false;
-    var payload = req.files.payload;
+    const siteName = request.body.site
+    const token = request.body.token
 
-    console.log( 'upload-file' )
-    console.log( site )
+    const resizeUrlRequested = request.body.resize_url
+    const payload = request.body.payload
+    const remote = timestampedUploadsPathForFileName(path.basename(payload.filename))
 
-    // 50 MB file size limit
-    if ( payload.size > ( 50 * 1024 * 1024 ) ) {
-      cleanUpFiles( req )
-      res.json( 500, { error: 'File too large. 50 MB is limit.' } )
-      return;
-    }
+    const results = await cloudStorage.objects.upload({
+      bucket: uploadBucket,
+      local: payload.localFile,
+      remote,
+      cacheControl,
+      overrideMimeType: payload.mimeType,
+    })
+    results.url = `//${results.bucket}/${results.name}`
 
-    var localFile = payload.path;
-    var localFileOrigin = payload.originalFilename;
-
-    console.log( `local-file:${ localFile }` )
-
-    var validateRequestSeries = [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-    ]
-
-    var uploadFileWaterfall = [
-      uploadLocalFileToUploadsBucket.bind( null, { localFile: localFile, localFileOrigin: localFileOrigin } )
-    ]
-
-    if ( resizeUrlRequested ) uploadFileWaterfall = uploadFileWaterfall.concat( [ getResizeUrl ] )
-
-    async.series( validateRequestSeries, function handleValidationSeries ( error ) {
-      if ( error ) {
-        cleanUpFiles( req )
-        return handleResponseForSeries( res, error )
+    if (resizeUrlRequested) {
+      try {
+        const resizeUrl = await resizeUrlForUrl(results.url)
+        results.resizeUrl = resizeUrl
       }
-
-      async.waterfall( uploadFileWaterfall, handleUploadFileWaterfall.bind( null, req, res ) )
-    } )
-  }
-
-  /**
-   * uploadLocalFileToUploadsBucket
-   * 1/3 helper tasks to get files uploaded into the `webhook-uploads`
-   *     directory of webhook with a timestamp of when they were uploaded.
-   * 
-   * Used to upload a `localFile` to the timestamped destination based on
-   * the `localFileOrigin` name.
-   *
-   * This function supports both CMS upload processes
-   * ( file based & url based ).
-   *
-   * Signature:
-   * { ..., localFile, localFileOrigin }, callback => error?, { localFile, localFileOrigin, fileSize, bucket, remoteFile, gscUrl, mimeType }
-   */
-  function uploadLocalFileToUploadsBucket ( options, callback ) {
-    var localFileOrigin = options.localFileOrigin
-
-    var baseRemoteFileName = path.basename( localFileOrigin )
-    var uploadOptions = Object.assign( {}, options, {
-      remoteFile: baseRemoteFileName,
-      cacheControl: 'public,max-age=86400',
-    } )
-
-    cloudStorageObjectUploadToUploadsBucketTimestamped( uploadOptions, handleUploadToUploadsBucketTimestamped )
-
-    function handleUploadToUploadsBucketTimestamped ( error, results ) {
-      if ( error ) return callback( error )
-      return callback( null, Object.assign( {}, uploadOptions, {
-        bucket: results.bucket,
-        remoteFile: results.name,
-        gscUrl: `//${ results.bucket }/${ results.name }`,
-        fileSize: results.size,
-        mimeType: results.contentType,
-      } ) )
+      catch (error) {
+        cleanUpFiles(request)
+        reply.code(500)
+        return { error: 'Could not get resize url for file.' }
+      }
     }
-  }
 
-  /**
-   * getResizeUrl
-   * 2/3 helper tasks to get files uploaded into the `webhook-uploads`
-   *     directory of webhook with a timestamp of when they were uploaded.
-   *
-   * Used to get a `resizeUrl` from a `gscUrl`.
-   * 
-   * Signature:
-   * { ..., gscUrl }, callback => error?, { ..., gscUrl, resizeUrl }
-   */
-  function getResizeUrl ( options, callback ) {
-    resizeUrlForUrl( options.gscUrl, handleResize )
-
-    function handleResize ( error, resizeUrl ) {
-      if ( error ) return callback( error )
-      callback( null, Object.assign( {}, options, { resizeUrl: resizeUrl } ) )
-    }
-  }
-
-  /**
-   * handleUploadFileWaterfall
-   * 3/3 helper handler to respond to file uploads to `webhook-uploads`
-   *     directory of webhook with a timestamp of when they were uploaded.
-   *
-   * Used to handle the response to the file upload request.
-   * 
-   * Signature:
-   * req, res, error?, { gscUrl, fileSize, mimeType, resizeUrl? }
-   */
-  function handleUploadFileWaterfall ( req, res, error, uploadResults ) {
-    if ( error ) return handleResponseForSeries( res, error )
-
-    if ( uploadResults.localFile ) fs.unlinkSync( uploadResults.localFile )
-
-    cleanUpFiles( req )
-
-    var successResponse = {
+    cleanUpFiles(request)
+    reply.code(200)
+    return {
       message: 'Finished',
-      url: uploadResults.gscUrl,
-      size: uploadResults.fileSize,
-      mimeType: uploadResults.mimeType,
+      url: results.url,
+      size: +results.size,
+      mimeType: results.contentType,
+      resize_url: results.resizeUrl,
     }
-    if ( uploadResults.resizeUrl ) successResponse.resize_url = uploadResults.resizeUrl
-
-    res.json( 200, successResponse )
-  }
-
-  // We do this to allow for CORS requests to the server (for search)
-  function allowCrossDomain (req, res, next) {
-      res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
-      res.header('Access-Control-Allow-Headers', 'Content-Type');
-
-      if ('OPTIONS' == req.method) {
-        res.send(200);
-      } else {
-        next();
-      }
-  }
-
-  // Files are uploaded to the same `uploadsBucket`, at the URL returned
-  // for the given `fileName`
-  function fileUrlForFileName ( fileName ) {
-    return [ '//', config.get( 'uploadsBucket' ), '/webhook-uploads/', encodeURIComponent( fileName ) ].join( '' )
   }
 
   // Handles search requests
@@ -374,157 +269,114 @@ module.exports.start = function(config, logger)
   // Site and Token are the sitename and token for the site search is being performed on
   // query is the query being performed, page is the page of search being returned
   // typeName is the type to restrict to, null for all types
-  function postSearchHandler (req, res) {
-    var site = req.body.site;
-    var token = req.body.token;
-    var query = req.body.query;
-    var page = req.body.page || 1;
-    var typeName = req.body.typeName || null;
+  async function postSearchHandler (request, reply) {
+    reply.type('application/json')
+    const siteName = request.body.site
 
-    async.series( [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticSearchQuery.bind( null, { siteName: site, typeName: typeName, query: query, page: page } )
-    ], handleResponseForQuery )
+    const query = request.body.query
+    const page = request.body.page || 1
+    const contentType = request.body.typeName || null
 
-    function handleResponseForQuery ( error, seriesResults ) {
-      if ( error ) return handleResponseForSeries( res, error )
-      var responseData = seriesResults.pop()
-      res.json( 200, responseData )
+    cleanUpFiles(request)
+
+    try { 
+      const hits = await elastic.queryIndex({ siteName, query, page, contentType })
+      reply.code(200)
+      return { hits } 
     }
-
-    function elasticSearchQuery ( options, callback ) {
-      elastic.search( options )
-          .then( handleSearch )
-          .catch( handleSearchError )
-
-      function handleSearch ( results ) {
-        console.log( 'handle-search' )
-        console.log( results )
-        if ( results.error ) {
-          console.log( results.error )
-        }
-        callback( null, { hits: results }  )
-      }
-
-      function handleSearchError ( error ) {
-        console.log( error )
-        callback( { statusCode: 500, message: 'Could not search elastic.' } )
-      }
+    catch (error) {
+      reply.code(500)
+      return { error: 'Could not search elastic.' }
     }
   }
 
   // Handles search indexing
-  // Post data includes site, token, data, id, oneOff, and typeName
-  // Site and Token are the sitename and token for the site search is being performed on
-  // data is the data being indexed, id is the id of the object, oneOff is true/false depending 
-  // on if the object is a oneOff, typeName is the type of the object
-  function postSearchIndexHandler (req, res) {
+  async function postSearchIndexHandler (request, reply) {
+    reply.type('application/json')
+    const siteName = request.body.site
+    const doc = request.body.data
+    const id = request.body.id
+    const contentType = request.body.typeName
+    const oneOff = request.body.oneOff || false
 
-    var site = req.body.site;
-    var token = req.body.token;
-    var data = req.body.data;
-    var id   = req.body.id;
-    var typeName = req.body.typeName;
-    var oneOff = req.body.oneOff || false;
+    cleanUpFiles(request)
 
-    async.series( [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticSearchIndexItem.bind( null, { siteName: site, typeName: typeName, id: id, doc: data, oneOff: oneOff } )
-    ], handleResponseForSeries.bind( null, res ) )
-
-    function elasticSearchIndexItem ( options, callback ) {
-      elastic.index( options )
-        .then( callback )
-        .catch( handleSearchIndexError )
-
-      function handleSearchIndexError () {
-        callback( { statusCode: 500, message: 'Could not index item for site.' } )
-      }
+    try {
+      await elastic.indexDocument({
+        siteName,
+        contentType,
+        doc,
+        id,
+        oneOff,
+      })
+      reply.code(200)
+      return { message: 'Finished' }
+    }
+    catch (error) {
+      reply.code(500)
+      return { error: 'Could not index item for site.' }
     }
   }
 
   // Handles deleteting a search object
-  // Post data includes site, token, id,  and typeName
-  // Site and Token are the sitename and token for the site search is being performed on
-  // id is the id of the object, typeName is the type of the object
-  function postSearchDeleteHandler (req, res) {
+  async function postSearchDeleteHandler (request, reply) {
+    reply.type('application/json')
+    const siteName = request.body.site
+    const id = request.body.id
 
-    // Todo: validate this shit
-    var site = req.body.site;
-    var token = req.body.token;
-    var id   = req.body.id;
-    var typeName = req.body.typeName;
-
-    async.series( [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticDeleteSearchItem.bind( null, { siteName: site, typeName: typeName, id: id } )
-    ], handleResponseForSeries.bind( null, res ) )
-
-    function elasticDeleteSearchItem ( options, callback ) {
-      elastic.deleteDocument( options )
-        .then( callback )
-        .catch( handleDeleteDocumentError )
-
-      function handleDeleteDocumentError () {
-        callback( { statusCode: 500, message: 'Could not delete content-type item for site.' } )
-      }
+    try {
+      await elastic.deleteDocument({
+        siteName,
+        id,
+      })
+      reply.code(200)
+      return { message: 'Finished' }
+    }
+    catch (error) {
+      reply.code(500)
+      return { error: 'Could not delete document at id for site.' }
     }
   }  
 
   // Handles deleteting all objects of a type from search
-  // Post data includes site, token, and typeName
-  // Site and Token are the sitename and token for the site search is being performed on
-  // typeName is the type of the object
-  function postSearchDeleteTypeHandler (req, res) {
+  async function postSearchDeleteTypeHandler (request, reply) {
+    reply.type('application/json')
+    const siteName = request.body.site
+    const contentType = request.body.typeName
 
-    // Todo: validate this shit
-    var site = req.body.site;
-    var token = req.body.token;
-    var typeName = req.body.typeName;
+    cleanUpFiles(request)
 
-    async.series( [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticContentTypeDeleteIndex.bind( null, { siteName: site, typeName: typeName } )
-    ], handleResponseForSeries.bind( null, res ) )
-
-    function elasticContentTypeDeleteIndex ( options, callback ) {
-      elastic.deleteType( options )
-        .then( callback )
-        .catch( handleContentTypeDeleteIndexError )
-
-      function handleContentTypeDeleteIndexError ( error ) {
-        console.log( error )
-        callback( { statusCode: 500, message: 'Could not delete content-type index for site.' } )
-      }
+    try {
+      await elastic.deleteContentType({
+        siteName,
+        contentType,
+      })
+      reply.code(200)
+      return { message: 'Finished' }
+    }
+    catch (error) {
+      reply.code(500)
+      return { error: 'Could not delete content-type for site.' }
     }
   }
 
   // Deletes an entire index (site) from search
   // Post data includes site and token
   // Site and Token are the sitename and token for the site search is being performed on
-  function postSearchDeleteIndexHandler (req, res) {
+  async function postSearchDeleteIndexHandler (request, reply) {
+    reply.type('application/json')
+    const siteName = request.body.site
 
-    var site = req.body.site;
-    var token = req.body.token;
+    cleanUpFiles(request)
 
-    async.series( [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      elasticDeleteIndex.bind( null, { siteName: site } ),
-    ], handleResponseForSeries.bind( null, res ) )
-
-    function elasticDeleteIndex ( options, callback ) {
-      elastic.deleteSite( options )
-        .then( callback )
-        .catch( handleDeleteIndexError )
-
-      function handleDeleteIndexError ( error ) {
-        callback( { statusCode: 500, message: 'Could not delete site index.' } )
-      }
+    try {
+      await elastic.deleteIndex({ siteName })
+      reply.code(200)
+      return { message: 'Finished' }
+    }
+    catch (error) {
+      reply.code(500)
+      return { error: 'Could not delete index for site.' }
     }
   }
 
@@ -532,217 +384,75 @@ module.exports.start = function(config, logger)
   // Post data includes site, token, and the file called payload
   // Site and Token are the name of the site and the token for the site to upload to
   // The Payload file is the zip file containing the site generated by wh deploy
-  function postUploadHandler (req, res) {
+  async function postUploadHandler (request, reply) {
+    debug('postUploadHandler')
+    reply.type('application/json')
+    const siteName = request.body.site
 
-    console.log( 'upload' )
+    const branch = request.body.branch;
+    const payload = request.body.payload;
 
-    var site = req.body.site;
-    var token = req.body.token;
-    var branch = req.body.branch;
-    var payload = req.files.payload;
-
-    console.log( 'with arguments' )
-    console.log( site )
-    console.log( branch )
-
-    if( ! payload || ! payload.path || ! branch ) {
-      cleanUpFiles(req);
-      res.status(500);
-      return res.end();
+    if(!payload || !payload.localFile || !branch) {
+      cleanUpFiles(request)
+      reply.code(500)
+      return { error: 'Must upload a file and define which git branch it is associated with.' }
     }
-    
-    console.log( 'firebase-active?' )
+    try { 
+      await cloudStorage.objects.upload({
+        bucket: siteBucket,
+        local: payload.localFile,
+        remote: Deploys.utilities.fileForSiteBranch(siteName, branch),
+        overrideMimeType: payload.mimeType,
+      })
+      cleanUpFiles(request)
 
-    async.series( [
-      siteBillingActive.bind( null, site ),
-      siteKeyEqualsToken.bind( null, { siteName: site, token: token } ),
-      sendFiles.bind( null, site, branch, payload.path )
-    ], function handlePostUploadHandlerSeries ( error ) {
-      cleanUpFiles( req )
-      handleResponseForSeries( res, error )
-    } )
-
-    function sendFiles(site, branch, path, callback) {
-      // When done zipping up, upload to our archive in cloud storage
-      console.log( 'send-files' )
-      cloudStorage.objects.upload(config.get('sitesBucket'), path, Deploys.utilities.fileForSiteBranch( site, branch ), function(err, data) {
-        console.log( 'send-files:done' )
-        fs.unlinkSync( path )
-
-        if ( err ) {
-          console.log( 'send-files:done:err' )
-          console.log( err )
-          return callback( { statusCode: 500, message: 'Could not upload to sites bucket.' } )
-        }
-
-        async.series( [
-          setSiteVersion.bind( null, { siteName: site, timestamp: Date.now() } ),
-          signalBuild.bind( null, { siteName: site, branch: branch } )
-        ], callback )
-      });
+      await firebase.siteVersion({ siteName }, Date.now())
+      await firebase.signalBuild({ siteName }, {
+        siteName,
+        branch,
+        userId: 'admin',
+        id: uniqueId()
+      })
+      reply.code(200)
+      return { message: 'Finished' }
+    }
+    catch (error) {
+      debug('error')
+      debug(error)
+      reply.code(500)
+      cleanUpFiles(request)
+      return { error: error.message }
     }
   }
 
-  function siteBillingActive ( site, callback ) {
-    database.ref( '/billing/sites/' + site + '/active' )
-      .once( 'value', onActiveSnapshotSuccess, onActiveSnapshotError )
-
-    function onActiveSnapshotSuccess ( activeSnapshot ) {
-      var isActive = activeSnapshot.val()
-      // if this function is pulled out into a common firebase interface,
-      // just return the active value
-      if ( ! isActive ) return callback( siteBillingActiveError() )
-      callback( null )
-    }
-
-    function onActiveSnapshotError ( error ) {
-      callback( siteBillingActiveError() )
-    }
-
-    // server specific error based on being able to send a response with
-    // the object `res.send( error.statusCode, error )
-    function siteBillingActiveError () {
-      return {
-        statusCode: 500,
-        message: 'Site not active, please check billing status.',
-      }
-    }
-  }
-
-  function siteKeyEqualsToken( options, callback ) {
-    var siteName = options.siteName
-    var token = options.token
-    database.ref( '/management/sites/' + siteName + '/key' )
-      .once( 'value', onSiteKeySnapshotSuccess, valueDoesNotExistErrorHandler( callback ) )
-
-    function onSiteKeySnapshotSuccess ( siteKeySnapshot ) {
-      var siteKey = siteKeySnapshot.val()
-      if ( ! siteKey ) return callback( valueDoesNotExistErrorObject() )
-      if ( siteKey !== token ) return callback( tokenNotValidError() )
-      callback()
-    }
-
-    function tokenNotValidError () {
-      return {
-        statusCode: 403,
-        message: 'Token is not valid.',
-      }
-    }
-  }
-
-  function setSiteVersion ( options, callback ) {
-    var siteName = options.siteName
-    var timestamp = options.timestamp
-    database.ref( '/management/sites/' + siteName + '/version' )
-      .set( timestamp, valueDoesNotExistErrorHandler( callback ) )
-  }
-
-  function signalBuild ( options, callback ) {
-    var siteName = options.siteName
-    var branch = options.branch
-
-    var buildSignalOptions = {
-      sitename: siteName,
-      branch: branch,
-      userid: 'admin',
-      id: uniqueId(),
-    }
-    database.ref( '/management/commands/build/' + siteName )
-      .set( buildSignalOptions, valueDoesNotExistErrorHandler( callback ) )
-  }
-
-  function cloudStorageObjectUpload ( options, callback ) {
-    var bucket = options.bucket
-    var localFile = options.localFile
-    var remoteFile = options.remoteFile
-    var cacheControl = options.cacheControl
-    var mimeType = options.mimeType
-
-    cloudStorage.objects.upload( bucket, localFile, remoteFile, cacheControl, mimeType, handleObjectUpload )
-
-    function handleObjectUpload ( error, results ) {
-      if ( error ) return callback( { statusCode: 500, message: 'Could not upload file.' } )
-      return callback( null, results )
-    }
-  }
-
-  function cloudStorageObjectUploadToUploadsBucket ( options, callback ) {
-    cloudStorageObjectUpload( Object.assign( {}, options, { bucket: config.get( 'uploadsBucket' ) } ), callback )
-  }
-
-  function cloudStorageObjectUploadToUploadsBucketTimestamped ( options, callback ) {
-    cloudStorageObjectUploadToUploadsBucket( Object.assign(
-      {},
-      options,
-      { remoteFile: timestampedUploadsPathForFileName( options.remoteFile ) }
-    ), callback )
-  }
-
-  // url, callback => error?, resizeUrl?
-  function resizeUrlForUrl ( url, callback ) {
+  function resizeUrlForUrl (url) {
     var encodedUrl = encodeURIComponentsForURL( removeProtocolFromURL( url ) )
-    console.log( 'encodedUrl' )
-    console.log( encodedUrl )
-    request( `https://${ config.get('googleProjectId') }.appspot.com/${ encodedUrl  }`, handleResize )
-
-    function handleResize ( error, response, responseBody ) {
-      console.log( error )
-      console.log( responseBody )
-      if ( error ) return callback( { statusCode: 500, message: 'Could not get resize url for file.' } )
-      var resizeUrl = ''
-      if ( response && response.statusCode === 200 ) resizeUrl = responseBody
-      if ( resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0 ) {
+    return axios.get(`https://${ googleProjectId }.appspot.com/${ encodedUrl  }`).then((response) => {
+      let resizeUrl = response.data
+      if (resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0) {
         resizeUrl = `https${ resizeUrl.slice( 4 )}`
       }
-      callback( null, resizeUrl )
-    }
+      return resizeUrl
+    })
   }
 
   function timestampedUploadsPathForFileName ( fileName ) {
     return `webhook-uploads/${ new Date().getTime() }_${ fileName.replace( / /g, '-' ) }`
   }
-
-  function valueDoesNotExistErrorHandler ( callbackFn ) {
-    return function firebaseErrorHandler ( error ) {
-      if ( error ) return callbackFn( valueDoesNotExistErrorObject() )
-      return callbackFn()
-    }
-  }
-
-  /**
-   * valueDoesNotExistErrorObject
-   *
-   * An error object to respond to requests for sites
-   * that do not exist within the webhook system.
-   *
-   * All errors objects should have a `statusCode` & `message` key.
-   * 
-   * @return {object} error
-   * @return {number} error.statusCode
-   * @return {string} error.message
-   */
-  function valueDoesNotExistErrorObject () {
-    return {
-      statusCode: 500,
-      message: 'Site does not exist.'
-    }
-  }
-
-  // Used as the handler for async.series calls within req, res handlers
-  function handleResponseForSeries ( res, error ) {
-    if ( error ) {
-      res.json( error.statusCode, { error: error.message } )
-    }
-    else {
-      res.json( 200, { message: 'Finished' } )
-    }
-  }
-};
+}
 
 
 
 /* helpers */
 
+function createTmpFile () {
+  return new Promise((resolve, reject) => {
+    temp.open({ prefix: 'uploads', dir: '/tmp' }, function (err, info) {
+      if (err) return reject(err)
+      resolve(info.path)
+    })
+  })
+}
 function uniqueId() {
   return Date.now() + 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random()*16|0, v = c === 'x' ? r : (r&0x3|0x8);
@@ -753,21 +463,17 @@ function uniqueId() {
 
 // Cleans up any files that may have been posted to
 // the server in req, used to clean up uploads
-function cleanUpFiles (req) {
-  var curFile = null;
-  for(var key in req.files) {
-    if(req.files[key].path) {
+function cleanUpFiles (request) {
+  for (bodyKey in request.body) {
+    if (request.body[bodyKey].localFile) {
       try {
-        fs.unlinkSync(req.files[key].path);
-      } catch (e) {
-        // Ignore, just last minute trying to unlink
+        fs.unlinkSync(request.body[bodyKey].localFile)
+      }
+      catch (error) {
+        // ignore, nothing to clean up
       }
     }
   }
-}
-
-function unescapeSite (site) {
-  return site.replace(/,1/g, '.');
 }
 
 function encodeURIComponentsForURL ( url ) {

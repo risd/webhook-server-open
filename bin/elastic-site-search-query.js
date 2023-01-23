@@ -9,33 +9,34 @@ page=1
 typeName=galleries
 
 */
-var grunt = require( 'grunt' )
-var webhookTasks = require( '../Gruntfile.js' )
-var WHElasticSearch = require( '../libs/elastic-search/index.js' )
+const argv = require('minimist')(process.argv.slice(2), {
+  alias: {
+    n: 'siteName',
+    q: 'query',
+    c: 'contentType',
+    i: 'id',
+    o: 'oneOff',
+  },
+  default: {
+    page: 1,
+    pageSize: 10,
+  },
+})
+const grunt = require( 'grunt' )
+const webhookTasks = require( '../Gruntfile.js' )
+const Elastic = require( 'webhook-elastic-search' )
 
-webhookTasks( grunt )
+webhookTasks(grunt)
 
-var elastic = WHElasticSearch( grunt.config().elastic )
+const elastic = Elastic(grunt.config.get('elastic'))
 
-const options = {
-  siteName: 'start-here,1risd,1systems',
-  query: 'gallery',
-  page: 1,
-  typeName: 'galleries',
-}
-
-elastic.search( options )
-  .then( handleSearch )
-  .catch( handleSearchError )
-
-function handleSearch ( results ) {
-  console.log( 'handle-search' )
-  console.log( results )
-  if ( results.error ) {
-    console.log( results.error )
-  }
-}
-
-function handleSearchError ( error ) {
-  console.log( error )
-}
+;(async () => {
+  const results = await elastic.queryIndex({
+    siteName: argv.siteName,
+    contentType: argv.contentType,
+    query: argv.query,
+    page: argv.page,
+    pageSize: arge.pageSize,
+  })
+  console.log(results)
+})()

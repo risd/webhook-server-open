@@ -1,31 +1,30 @@
 #!/usr/bin/env node
 
-var async = require( 'async' )
-var grunt = require( 'grunt' )
-var webhookTasks = require( '../Gruntfile.js' )
-var Firebase = require( '../libs/firebase/index.js' )
-var resetSiteKeys = require( '../libs/firebase/reset-site-keys.js' )
-var resetUserPasswords = require( '../libs/firebase/reset-user-passwords.js' )
+const async = require( 'async' )
+const grunt = require( 'grunt' )
+const webhookTasks = require( '../Gruntfile.js' )
+const Firebase = require( '../libs/firebase/index.js' )
+const resetSiteKeys = require( '../libs/firebase/reset-site-keys.js' )
+const resetUserPasswords = require( '../libs/firebase/reset-user-passwords.js' )
 
 webhookTasks( grunt )
 
-var firebase = Firebase( grunt.config().firebase )
+const firebase = Firebase(grunt.config.get('firebase'))
+const mailgunConf = grunt.config.get('mailgun')
+const mailgun = new Mailgun(mailgunConf)
+const {fromEmail} = mailgunConf;
 
-var mailgun = new Mailgun( { apiKey: grunt.config().mailgunKey, domain: grunt.config().mailgunDomain } )
-var fromEmail = grunt.config().fromEmail;
+function resetSiteKeysTask (complete) {
+  resetSiteKeys({ firebase }, complete)
+}
 
-var resetKeysSeries = [
-  resetSiteKeys.bind( null, { firebase: firebase } ),
-  resetUserPasswords.bind( null, { firebase: firebase, mailgun: mailgun, fromEmail, fromEmail } ),
-]
+function resetUserPasswordsTask (complete) {
+  resetUserPasswords({ firebase, mailgun, fromEmail }, complete)
+}
 
-async.series( resetKeysSeries.map( bindFirebase ), hanldeSeries )
+async.series([resetSiteKeysTask, resetUserPasswordsTask], hanldeSeries)
 
 function hanldeSeries ( error ) {
   if ( error ) console.log( error )
   process.exit( error ? 1 : 0 )
-}
-
-function bindFirebase ( fn ) {
-  return fn
 }

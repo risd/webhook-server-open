@@ -4,4 +4,4 @@ Website:
 <%= siteUrl %>
 
 Click here to verify your email and login.
-<%= url %>
+<%= cmsUrl %>

@@ -66,7 +66,7 @@ function addMaskDomain ( config ) {
  * Pushes  { siteBucket, maskDomain?, purgeProxy, ... }
  */
 function addPurgeProxy ( config ) {
-  var cdn = require( './fastly/index.js' )( config )
+  var cdn = require( './fastly/index.js' )( config )
   return miss.through.obj( function ( args, enc, next ) {
     args.purgeProxy = args.maskDomain
       ? cdn.addressForDomain( args.maskDomain )
@@ -182,7 +182,10 @@ function uploadIfDifferent ( options ) {
     return miss.through.obj( function ( args, enc, next ) {
 
       try {
-        cloudStorage.objects.getMeta( args.bucket.contentDomain, args.builtFile, function ( error, remoteFileMeta ) {
+        cloudStorage.objects.getMeta({
+          bucket: args.bucket.contentDomain,
+          file: args.builtFile,
+        }, function ( error, remoteFileMeta ) {
           if ( error ) args.remoteFileMd5 = false;
           else args.remoteFileMd5 = remoteFileMeta.md5Hash;
           next( null, args )

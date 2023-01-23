@@ -6,7 +6,6 @@
 * The job queue is run by each worker internally on their own tubes.
 */
 
-var colors = require('colors');
 var beanstalkd = require('./node-beanstalkd.js');
 var Memcached = require('memcached');
 var async = require('async');
@@ -18,6 +17,12 @@ var jobLifetime = 60 * 60 * 2;
 var jobRecheckDelay = 60;
 
 module.exports.jobLifetime = jobLifetime;
+const MESSAGES = {
+  WAITING: 'job-queue:waiting-for-commands',
+  JOB_DONE: 'job-queue:job-done',
+  DELEGATOR_READY: 'job-queue:waiting-for-commands:delegator-ready',
+}
+module.exports.MESSAGES = MESSAGES
 
 module.exports.init = function (config) {
 
@@ -52,9 +57,9 @@ module.exports.init = function (config) {
   * 
   * @param tube      The tube to listen for jobs on
   * @param lockRoot  A unique identifer to lock jobs on
-  * @param cb        Callback to call with reserved job data
+  * @param job        Callback to call with reserved job data
   */
-  self.reserveJob = function(tube, lockRoot, cb) {
+  self.reserveJob = function(tube, lockRoot, job) {
     var client = new beanstalkd.Client();
 
     client.on( 'error', function ( error ) {
@@ -88,6 +93,7 @@ module.exports.init = function (config) {
           // with a reserve call in the middle. The call blocks until the callback
           // is done processing.
           async.whilst(function() {return true; }, function(done) {
+            console.log(MESSAGES.WAITING)
             conn.reserve(function(err, id, payload) {
               processing = true;
               console.log('Reserved job ' + id);
@@ -114,8 +120,9 @@ module.exports.init = function (config) {
                   });
 
                   domainInstance.run(function() {
-                    cb(payload, identifier, data, conn, function(err) { 
-                      console.log('Done job');
+
+                    job(payload.payload, function(err) { 
+                      console.log(MESSAGES.JOB_DONE);
                       console.log('job-queue:err')
                       console.log(err)
                       callback(function() { 
@@ -237,6 +244,7 @@ module.exports.init = function (config) {
   */
   self.lockJob = function(client, lock, identifier, payload, callback, complete) {
     console.log( `lock-job:${ lock }_${ identifier }_processing` )
+    console.log({ identifier, payload })
     var lockId = lock + '_' + identifier + '_processing';
     memcached.add(lockId, 1, jobLifetime, function(err) {
       if(err) {

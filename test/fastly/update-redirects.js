@@ -1,4 +1,4 @@
-var testOptions = require( '../env-options.js' )()
+const config = require('../config.js')
 
 var test = require( 'tape' )
 var grunt = require( 'grunt' )
@@ -7,13 +7,11 @@ var fastlyWebhook = require( '../../libs/fastly/index.js' )
 
 webhookTasks( grunt )
 
-test( 'update-redirects', function ( t ) {
-  t.plan( 2 )
-
+test( 'update-redirects', async function ( t ) {
   var cdn = fastlyWebhook( grunt.config().fastly )
 
   var options = {
-    host: testOptions.fastlyAddDomain,
+    host: config.fastly.addDomain,
     redirects: [
       { pattern: '/short/', destination: '/much/longer/' },
       { pattern: '/sm/', destination: '/x/l' },
@@ -21,9 +19,14 @@ test( 'update-redirects', function ( t ) {
     ]
   }
 
-  cdn.redirects( options, function ( error, result ) {
-    t.ok( error === null, 'The error should be undefined.' )
-    t.ok( typeof result === 'object', 'The result should be represented by an object.' )
-  } )
-
+  try {
+    await cdn.redirects(options)
+    t.ok(true, 'Succesfully set fastly redirects')
+  }
+  catch (error) {
+    t.fail(error, 'Error in setting fastly redirects')
+  }
+  finally {
+    t.end()
+  }
 } )

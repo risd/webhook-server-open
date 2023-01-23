@@ -20,3 +20,7 @@ service-accounts
 !.env.example
 !.env.test.example
 beanstalk
+
+test/config.js
+test/createSiteDir/*
+.wh-generate

@@ -1,12 +1,18 @@
+const debug = require('debug')('WHFirebase')
 var path = require( 'path' )
-var request = require( 'request-promise-native' )
+var axios = require( 'axios' )
 var admin = require( 'firebase-admin' )
+var {
+  initializeApp,
+  cert,
+} = require( 'firebase-admin/app' )
+const {
+  getDatabase,
+} = require('firebase-admin/database')
 var getAccessToken = require( './access-token.js' )
 
 var unescape = require( '../utils/firebase-unescape.js' )
 var escape = require( '../utils/firebase-escape.js' )
-
-var continuationUrlFn = require( '../../src/firebase-auth-continuation-url.js' )
 
 module.exports = WHFirebase;
 
@@ -23,10 +29,10 @@ function WHFirebase ( config ) {
   if ( ! ( this instanceof WHFirebase ) ) return new WHFirebase( config )
   var firebaseName = config.name;
   this._firebaseName = firebaseName;
-  var firebaseServiceAccountKey = require( `${ process.cwd() }/${ config.serviceAccountKey }` );
+  var firebaseServiceAccountKey = require(path.join(process.cwd(), config.serviceAccountKey));
 
   var options = {
-    credential: admin.credential.cert( firebaseServiceAccountKey ),
+    credential: cert( firebaseServiceAccountKey ),
     databaseURL: 'https://' + firebaseName + '.firebaseio.com',
   }
 
@@ -34,27 +40,40 @@ function WHFirebase ( config ) {
 
   this._app = appForName( this._initializationName )
   if ( ! this._app ) {
-    this._app = admin.initializeApp( options, this._initializationName )
+    this._app = initializeApp( options, this._initializationName )
   }
 
   this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccountKey )
 }
 
 WHFirebase.prototype.database = function () {
-  return this._app.database()
+  return getDatabase(this._app)
 }
 
 WHFirebase.prototype.siteKey = WebhookSiteKey;
+WHFirebase.prototype.siteVersion = WebhookSiteVersion;
 WHFirebase.prototype.siteDevData = WebhookSiteDevData;
-// requires admin sdk + service account
+WHFirebase.prototype.siteOwners = WebhookSiteOwners;
+WHFirebase.prototype.siteManagement = WebhookSiteManagement;
+WHFirebase.prototype.siteManagementError = WebhookSiteManagementError;
+WHFirebase.prototype.userManagementSetSiteOwner = WebhookUserManagementSetSiteOwner;
+WHFirebase.prototype.siteBillingCreate = WebhookSiteBillingCreate;
+WHFirebase.prototype.siteBillingActive = WebhookSiteBillingActive;
+WHFirebase.prototype.siteMessageAdd = WebhookSiteMessagesAdd;
 WHFirebase.prototype.allSites = WebhookSites;
 WHFirebase.prototype.removeSiteKeyData = WebhookSiteKeyDataRemove;
 WHFirebase.prototype.allUsers = WebhookUsers;
-WHFirebase.prototype.resetUserPasswordLink = WebhookUserPasswordResetLink;
 WHFirebase.prototype.deleteSite = WebhookSiteDelete;
 WHFirebase.prototype.backupUrl = WebhookSiteBackupURL;
 WHFirebase.prototype.backups = WebhookBackups;
 WHFirebase.prototype.siteRedirects = WebhookSiteRedirects;
+WHFirebase.prototype.userExists = WebhookUserExists;
+WHFirebase.prototype.signalBuild = WebhookSignalBuild;
+WHFirebase.prototype.signalInvite = WebhookSignalInvite;
+WHFirebase.prototype.signalDomainMapper = WebhookSignalDomainMap;
+WHFirebase.prototype.signalRedirects = WebhookSignalRedirects;
+WHFirebase.prototype.signalPreviewBuild = WebhookSignalPreviewBuild;
+WHFirebase.prototype.signalSearchIndex = WebhookSignalSiteSearchIndex;
 
 // helper - for initialization
 
@@ -79,6 +98,16 @@ function WebhookSiteKey ( options, siteKey ) {
   else {
     // get
     return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+  }
+}
+
+function WebhookSiteVersion ({ siteName }, version) {
+  const keyPath = `${ siteManagementPath({ siteName }) }/version`
+  if (version) {
+    return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, version)
+  }
+  else {
+    return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
   }
 }
 
@@ -122,7 +151,22 @@ function WebhookSiteDevData ( options, siteData ) {
   }
 
   function sizeOf ( data ) {
-    return Buffer( JSON.stringify( data ) ).length
+    return Buffer.from( JSON.stringify( data ) ).length
+  }
+}
+
+function WebhookSiteManagement ({ siteName }) {
+  const keyPath = siteManagementPath({ siteName })
+  return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+}
+
+function WebhookSiteManagementError ({ siteName }, value) {
+  const keyPath = `${siteManagementPath({ siteName })}/error`
+  if (typeof value !== 'undefined') {
+    return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, value)
+  }
+  else {
+    return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
   }
 }
 
@@ -136,12 +180,22 @@ function WebhookUsers () {
   return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
 }
 
-function WebhookUserPasswordResetLink ( options ) {
-  var userEmail = unescape( options.userEmail )
+function WebhookUserExists ({ userEmail }) {
+  const keyPath = usersManagementPath({ userEmail })
+  return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+    .then((userSnapshot) => {
+      const user = userSnapshot.val()
+      if (user && user.exists) return true
+      return false
+    })
+    .catch((error) => {
+      return false
+    })
+}
 
-  // options : { siteName : string, userEmail : string } => continuationUrl : string
-  var continuationUrl = continuationUrlFn( options )
-  return this._app.auth().generatePasswordResetLink( userEmail, { url: continuationUrl } )
+function WebhookUserManagementSetSiteOwner ({ siteName, userEmail }) {
+  const keyPath = usersManagementPath({ siteName, userEmail, owner: true })
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, true)
 }
 
 function WebhookSiteKeyDataRemove ( options ) {
@@ -223,9 +277,9 @@ function WebhookBackups ( options, value, pushCallback ) {
     // set, remove backup key
     return firebaseDatabaseSetValueForKeyPath( this._app, keyPath, value )
   }
-  else if ( options && options.push && value && pushCallback ) {
+  else if ( options && options.push && value ) {
     // set, push key
-    return firebaseDatabasePushValueForKeyPath( this._app, keyPath, value, pushCallback )
+    return firebaseDatabasePushValueForKeyPath( this._app, keyPath, value)
   }
   else if ( options && options.key && typeof value === 'undefined' ) {
     // get, backup timestamp
@@ -240,30 +294,116 @@ function WebhookBackups ( options, value, pushCallback ) {
   }
 }
 
-function WebhookSiteBackupURL () {
-  var uri = `https://${ this._firebaseName }.firebaseio.com/.json?format=export`
-  return this._getAccessToken().then( urlForToken )
-
-  function urlForToken ( token ) {
-    uri += `&access_token=${ token }`
-    return Promise.resolve( uri )
-  }
+async function WebhookSiteBackupURL () {
+  let uri = `https://${ this._firebaseName }.firebaseio.com/.json?format=export`
+  const token = await this._getAccessToken()
+  uri += `&access_token=${ token }`
+  return uri
 }
 
 function WebhookSiteRedirects ( options, value ) {
   var keyPath = siteRedirectPath( options )
   if ( typeof value !== 'undefined' ) {
-    firebaseDatabaseSetValueForKeyPath( this._app, keyPath, value )
+    return firebaseDatabaseSetValueForKeyPath( this._app, keyPath, value )
   }
   else {
-    firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
+    return firebaseDatabaseOnceValueForKeyPath( this._app, keyPath )
   }
+}
+
+function WebhookSiteOwners (options, ownerData) {
+  var keyPath = `${siteManagementPath(options)}/owners`
+  if (ownerData) {
+    // set
+    return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, ownerData)
+  } else {
+    // get
+    return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+  }
+}
+
+function WebhookSiteBillingCreate ({ siteName, userEmail }) {
+  const keyPath = siteBilling({ siteName })
+  const billingData = {
+    'plan-id': 'mainplan',
+    'email': userEmail,
+    'status': 'paid',
+    'active': true,
+    'endTrial' : Date.now()
+  }
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, billingData)
+}
+
+function WebhookSiteBillingActive ({ siteName }) {
+  const keyPath = `${siteBilling({ siteName })}/active`
+  return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+    .then((activeSnapshot) => {
+      const active = activeSnapshot.val()
+      return active
+    })
+}
+
+
+function WebhookSiteMessages ({ siteName }, value) {
+  
+  if (value) {
+    
+  }
+  else {
+    return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+  }
+}
+
+// value : { message, timestamp, status, code }
+function WebhookSiteMessagesAdd ({ siteName }, value) {
+  const keyPath = siteMessagesKeyPath({ siteName })
+  return firebaseDatabasePushValueForKeyPath(this._app, keyPath, value)
+    .then(() => {
+      return firebaseDatabaseOnceValueForKeyPath(this._app, keyPath)
+    })
+    .then((messagesSnapshot) => {
+      const messages = messagesSnapshot.val()
+      if (Object.keys(messages).length <= 50) return
+      const oldestKey = Object.keys(messages).sort()[0]
+      return firebaseDatabaseSetValueForKeyPath(this._app, `${keyPath}/${oldestKey}`, null)
+    })
+}
+
+function WebhookSignalBuild ({ siteName }, payload) {
+  const keyPath = `management/commands/build/${ escape(siteName) }`
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
+}
+
+function WebhookSignalInvite ({ siteName }, payload) {
+  const keyPath = `management/commands/invite/${ escape(siteName) }`
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
+}
+
+function WebhookSignalDomainMap ({ siteName }, payload) {
+  const keyPath = `management/commands/domainMap/${ escape(siteName) }`
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
+}
+
+function WebhookSignalRedirects ({ siteName }, payload) {
+  const keyPath = `management/commands/redirects/${ escape(siteName) }`
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
+}
+
+function WebhookSignalPreviewBuild ({ siteName }, payload) {
+  const keyPath = `management/commands/previewBuild/${ escape(siteName) }`
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
+}
+
+function WebhookSignalSiteSearchIndex ({ siteName }, payload) {
+  const keyPath = `management/commands/siteSearchReindex/${ escape(siteName) }`
+  return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 // helpers - interfaces into data
 
-function firebaseDatabaseSetValueForKeyPath ( firebase, keyPath, value ) {
-  return firebase.database().ref( keyPath ).set( value )
+function firebaseDatabaseSetValueForKeyPath ( app, keyPath, value ) {
+  // return set(child(ref(getDatabase(app)), keyPath), value)
+  return getDatabase(app).ref().child(keyPath).set(value)
 }
 
 function firebaseDatabaseSetLargeValueForKeyPath ( keyPath, value ) {
@@ -273,20 +413,22 @@ function firebaseDatabaseSetLargeValueForKeyPath ( keyPath, value ) {
         uri += `?access_token=${ token }`
         var putOptions = {
           method: 'PUT',
-          uri: uri,
-          body: value,
+          url: uri,
+          data: value,
           json: true,
         }
-        return request.put( putOptions )
+        return axios.put( putOptions )
     } )
 }
 
-function firebaseDatabaseOnceValueForKeyPath ( firebase, keyPath ) {
-  return firebase.database().ref( keyPath ).once( 'value' )
+function firebaseDatabaseOnceValueForKeyPath ( app, keyPath ) {
+  debug(`get:${keyPath}`)
+  return getDatabase(app).ref().child(keyPath).get()
 }
 
-function firebaseDatabasePushValueForKeyPath ( firebase, keyPath, value, callback ) {
-  return firebase.database().ref( keyPath ).push( value, callback )
+function firebaseDatabasePushValueForKeyPath (app, keyPath, value) {
+  debug(`push:${keyPath}`)
+  return getDatabase(app).ref().child(keyPath).push(value)
 }
 
 // helpers - construct paths
@@ -311,13 +453,19 @@ function siteManagementPath ( options ) {
   }
 }
 
+// {
+//   siteName : string?,
+//   userEmail : string?,
+//   owner : boolean?,
+//   user: boolean?
+// }
 function usersManagementPath ( options ) {
   var base = `management/users`
   if ( options && options.userEmail && options.owner && options.siteName ) {
     return `${ base }/${ escape( options.userEmail ) }/sites/owners/${ escape( options.siteName ) }`
   }
   if ( options && options.userEmail && options.user && options.siteName ) {
-    return `${ base }/${ escape( options.userEmail ) }/sites/users/${ escape( options.siteName ) }`
+    return `${ base }/${ escape( options.userEmail || options.user ) }/sites/users/${ escape( options.siteName ) }`
   }
   if ( options && options.userEmail ) {
     return `${ base }/${ escape( options.userEmail ) }`
@@ -345,4 +493,8 @@ function siteRedirectPath ( options ) {
 
 function siteBilling ( options ) {
   return `billing/sites/${ escape( options.siteName ) }`
+}
+
+function siteMessagesKeyPath ({ siteName }) {
+  return `${siteManagementPath({ siteName })}/messages`
 }
