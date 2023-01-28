@@ -116,11 +116,10 @@ module.exports.start = async function(config) {
   app.post('/search/delete/index/', protectedRouteOptions, postSearchDeleteIndexHandler)
   app.post('/upload/', protectedRouteOptions, postUploadHandler)
 
-  const port = serverConfig.port
-  await app.listen(port)
-  console.log(`listening on ${ port }...`);
+  await app.listen(serverConfig)
+  console.log(`listening on ${ serverConfig.host }:${ serverConfig.port }...`);
 
-  return { app, port }
+  return { app }
 
   function getRootHandler (request, reply) {
     reply.send('Working...')
