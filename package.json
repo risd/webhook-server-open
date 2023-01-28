@@ -1,7 +1,7 @@
 {
   "name": "@risd/webhook-server-open",
   "description": "Web server for @risd/webhook",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "scripts": {
     "start": "grunt startServer",
     "test": "tape test/**/*.js",
