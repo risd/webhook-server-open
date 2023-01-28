@@ -84,7 +84,7 @@ module.exports = function(grunt) {
     },
     developmentDomain: process.env.DEVELOPMENT_DOMAIN.split( ',' ),
     server: {
-      port: 3000,
+      port: process.env.WEBHOOK_SERVER_PORT || 3000,
     },
   });
 
