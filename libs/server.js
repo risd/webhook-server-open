@@ -116,8 +116,9 @@ module.exports.start = async function(config) {
   app.post('/search/delete/index/', protectedRouteOptions, postSearchDeleteIndexHandler)
   app.post('/upload/', protectedRouteOptions, postUploadHandler)
 
-  await app.listen(serverConfig)
-  console.log(`listening on ${ serverConfig.host }:${ serverConfig.port }...`);
+  const { listen } = serverConfig
+  await app.listen(listen)
+  console.log(`listening on ${ listen.host }:${ listen.port }...`);
 
   return { app }
 
