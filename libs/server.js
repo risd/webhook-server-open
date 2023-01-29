@@ -64,9 +64,12 @@ module.exports.start = async function(config) {
     }
   }
 
+  const maxFileSize = 100 * 1024 * 1024
+
   await app.register(multipart, {
     limits: {
-      fileSize: 10 * 1024 * 1024,
+      fileSize: maxFileSize,
+      maxBodyLength: maxFileSize,
     },
     attachFieldsToBody: 'keyValues',
     onFile,
@@ -164,11 +167,11 @@ module.exports.start = async function(config) {
     const localFile = await createTmpFile()
     await downloadUrlToPath({ url, localFile })
     const stat = await fsp.stat(localFile)
-    if (stat.size > 50 * 1024 * 1024) {
+    if (stat.size > maxFileSize) {
       fs.unlinkSync(localFile)
       cleanUpFiles(request)
       reply.code(500)
-      return { error: 'File too large. 50 MB is limit.' }
+      return { error: 'File too large. 100 MB is limit.' }
     }
     const remote = timestampedUploadsPathForFileName(path.basename(url))
     
