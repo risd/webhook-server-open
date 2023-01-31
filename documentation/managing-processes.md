@@ -80,46 +80,6 @@ If WebHook gets itself into a bind, it can be helpful to restart the processes. 
 ```sudo supervisorctl stop all```
 
 
-###### Ensure the `webhook_server` & `beanstalkd` are no longer bound to their ports (3000 & 11300)
-
-To ensure that the `webhook_server` is still not bound to its port (3000), use the `netstat` command, and filter the output to only show processes bound to port 3000; `sudo netstat -nlp | grep 3000`. This will return no output if there is no `webhook_server` still on port 3000.
-
-```
-risdweb@webhook-1:~$ sudo netstat -nlp | grep 3000
-risdweb@webhook-1:~$
-```
-
-If there is output, it will look like the following line, but with a different process ID.
-
-```
-risdweb@webhook-1:~$ sudo netstat -nlp | grep 3000
-tcp6       0      0 :::3000                 :::*                    LISTEN      5148/grunt
-```
-
-The third column of output includes the port that the `grep` command has matched and filtered for. The last column shows the process ID and the command used to start the process seperated by a `/`. The process ID can be used to manually kill the process. Run the `kill` command and pass in the process ID. `sudo kill 5148`. Subsequently running `sudo netstat -nlp | grep 3000` should return no output.
-
-```
-risdweb@webhook-1:~$ sudo kill 5148
-risdweb@webhook-1:~$ sudo netstat -nlp | grep 3000
-risdweb@webhook-1:~$
-```
-
-The same can be done for `beanstalkd`, but instead looking for the process ID on port `11300`. Running `sudo netstat -nlp | grep 11300` will either give no output, or a line that looks like the following, but with a different process ID.
-
-```
-risdweb@webhook-1:~$ sudo netstat -nlp | grep 11300
-tcp        0      0 0.0.0.0:11300           0.0.0.0:*               LISTEN      5840/beanstalkd
-```
-
-To kill the running `beanstalkd` process, `sudo kill 5840`.
-
-```
-risdweb@webhook-1:~$ sudo kill 5840
-risdweb@webhook-1:~$ sudo netstat -nlp | grep 11300
-risdweb@webhook-1:~$
-```
-
-
 ###### Start all processes
 
 With all processes stopped unbound from their ports, it is safe to start all processes.
