@@ -1,7 +1,7 @@
 {
   "name": "@risd/webhook-server-open",
   "description": "Web server for @risd/webhook",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "scripts": {
     "start": "grunt startServer",
     "test": "tape test/**/*.js",
@@ -55,7 +55,7 @@
     "through2-concurrent": "^1.1.1",
     "touch": "0.0.3",
     "webhook-deploy-configuration": "^3.0.5",
-    "webhook-elastic-search": "^3.0.2"
+    "webhook-elastic-search": "^3.0.3"
   },
   "devDependencies": {
     "@risd/wh": "^3.0.10",
