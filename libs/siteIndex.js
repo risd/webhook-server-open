@@ -35,10 +35,17 @@ function configure (config) {
       const siteData = siteDataSnapshot.val()
       if (!siteData || !siteData.data || !siteData.contentType) throw new Error('Failed to re-index CMS search index, no CMS data found to index.')
       const results = await search.updateIndex({ siteName, siteData, siteIndex })
+      let message = 'Re-index of CMS search index complete.'
+      if (results.errors === true) {
+        // if we start seeing this message, dig into the errors.
+        // should not be happening as of `webhook-elastic-search@3.0.3`
+        message = 'Re-index of CMS search index only partially complete'
+      }
       await firebase.siteMessageAdd({ siteName }, {
         code,
         status: 0,
-        message: 'Re-index of CMS search index complete.'
+        message,
+        timestamp: Date.now(),
       })
     }
     catch (error) {
