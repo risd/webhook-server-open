@@ -39,13 +39,11 @@ function projectIdFromKeyFile( keyFile ) {
 module.exports.configure = configure
 
 function configure (options={}) {
-  console.log('cloud-storage:configure:', keyFilename)
   const config = {
     serviceAccountEmail: googleServiceAccount,
     projectId: projectName,
     keyFilename,
   }
-  console.log(config)
   if (options.defaultCors) defaultCors = options.defaultCors
   try {
     storage = new Storage(config)
