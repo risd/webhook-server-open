@@ -15,22 +15,9 @@ webhookTasks(grunt)
 
 const elastic = Elastic(grunt.config.get('elastic'))
 
-const siteName = argv._[0]
-
 ;(async () => {
-  if (siteName) { 
-    const siteEntries = await elastic.siteIndex(siteName)
-    console.log(JSON.stringify(siteEntries, null, 2)) 
-  }
-  else {
-    const all = {}
-    const siteNames = (await elastic.listIndicies({ verbose: false }))
+  const siteNames = (await elastic.listIndicies({ verbose: false }))
       .split(' ')
       .filter(s => s.includes(argv.m || grunt.config.get('developmentDomain')))
-    for (const siteName of siteNames) {
-      const siteEntries = await elastic.siteIndex(siteName)
-      all[siteName] = siteEntries
-    }
-    console.log(JSON.stringify(all, null, 2))
-  }
+  console.log(siteNames.sort())
 })()

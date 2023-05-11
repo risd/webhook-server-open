@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+
+const grunt = require('grunt')
+const webhookTasks = require('../Gruntfile.js')
+const siteIndexFactory = require('../libs/siteIndex')
+
+webhookTasks(grunt)
+
+const siteIndex = siteIndexFactory(grunt.config)
+
+var siteName = process.argv.slice( 2 )[ 0 ]
+
+siteIndex({ siteName })
+  .then(function () {
+    process.exit(0)
+  })
+  .catch(function (error) {
+    console.log(`Site index error`)
+    console.log(error)
+    process.exit(1)
+  })
