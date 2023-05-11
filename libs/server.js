@@ -317,6 +317,8 @@ module.exports.start = async function(config) {
     }
     catch (error) {
       reply.code(500)
+      console.log('server:index:error')
+      console.log(error)
       return { error: 'Could not index item for site.' }
     }
   }
