@@ -1,9 +1,7 @@
 var fs = require('fs');
-var _ = require('lodash');
 var Firebase = require('./firebase/index.js');
 var JobQueue = require('./jobQueue.js');
 var WebHookElasticSearch = require( 'webhook-elastic-search' )
-var firebaseEscape = require( './utils/firebase-escape.js' )
 var firebaseUnescape = require( './utils/firebase-unescape.js' )
 
 module.exports = configure
@@ -19,6 +17,16 @@ function configure (config) {
   return async function siteIndexer ({ siteName }) {
     siteName = firebaseUnescape(siteName)
     try {
+      try {
+        // ensure we have an elastic index to work with
+        await search.createIndex({ siteName })
+      }
+      catch (error) {
+        // we swallow the error if the index exists
+        if (error.message.indexOf('exists') === -1) {
+          throw error
+        }
+      }
       const siteIndex = await search.siteIndex(siteName)
       if (!siteIndex) throw new Error('Failed to re-index CMS search index, no index found in elastic search.')
       const siteKeySnapshot = await firebase.siteKey({ siteName })
@@ -27,7 +35,6 @@ function configure (config) {
       const siteData = siteDataSnapshot.val()
       if (!siteData || !siteData.data || !siteData.contentType) throw new Error('Failed to re-index CMS search index, no CMS data found to index.')
       const results = await search.updateIndex({ siteName, siteData, siteIndex })
-      console.log(results.items?.length)
       await firebase.siteMessageAdd({ siteName }, {
         code,
         status: 0,
