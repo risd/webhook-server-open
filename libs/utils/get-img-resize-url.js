@@ -16,6 +16,7 @@ function getImgResizeUrl () {
       if (resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0) {
         resizeUrl = `https${ resizeUrl.slice( 4 )}`
       }
+      debug('resizeUrl', resizeUrl)
       return resizeUrl
     })
   }
