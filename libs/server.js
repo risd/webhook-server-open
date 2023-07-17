@@ -29,7 +29,7 @@ var _ = require('lodash');
 var Deploys = require( 'webhook-deploy-configuration' );
 const {pipeline} = require('node:stream/promises')
 const {fileNameForTimestamp} = require( './backup.js' )
-const GetImgResizeUrl = require('./utils/get-img-resize-url')
+const GetImageResizeUrl = require('./utils/get-image-resize-url')
 
 module.exports.start = async function(config) {
 
@@ -51,8 +51,7 @@ module.exports.start = async function(config) {
   const googleProjectId = config.get('googleProjectId')
   const cacheControl = 'public,max-age=86400'
   
-  const getImgResizeUrl = GetImgResizeUrl()
-  getImgResizeUrl.serviceUrlFromGoogleProjectId(googleProjectId)
+  const getImageResizeUrl = GetImageResizeUrl(config.get('getImageResizeUrl'))
 
   const app = Fastify()
   await app.register(cors)
@@ -189,7 +188,7 @@ module.exports.start = async function(config) {
 
     if (resizeUrlRequested) {
       try {
-        const resizeUrl = await getImgResizeUrl(results.url)
+        const resizeUrl = await getImageResizeUrl(results.url)
         results.resizeUrl = resizeUrl
         debug({ results })
       }
@@ -250,7 +249,7 @@ module.exports.start = async function(config) {
 
     if (resizeUrlRequested) {
       try {
-        const resizeUrl = await getImgResizeUrl(results.url)
+        const resizeUrl = await getImageResizeUrl(results.url)
         results.resizeUrl = resizeUrl
         debug({ results })
       }
