@@ -52,9 +52,7 @@ module.exports.start = async function(config) {
   const cacheControl = 'public,max-age=86400'
   
   const getImgResizeUrl = GetImgResizeUrl()
-  // getImgResizeUrl.serviceUrlFromGoogleProjectId(googleProjectId)
-  const resizeServiceUrl = `https://20230717t144724-dot-mgcp-1039568-risd-web-prod.appspot.com`
-  getImgResizeUrl.serviceUrl(resizeServiceUrl)
+  getImgResizeUrl.serviceUrlFromGoogleProjectId(googleProjectId)
 
   const app = Fastify()
   await app.register(cors)
