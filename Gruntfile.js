@@ -89,6 +89,11 @@ module.exports = function(grunt) {
         host: process.env.WEBHOOK_SERVER_HOST || '127.0.0.1',
       },
     },
+    getImageResizeUrl: {
+      appEngine: {
+        projectId: process.env.GOOGLE_PROJECT_ID,
+      },
+    },
   });
 
   grunt.registerTask('commandDelegator', 'Worker that handles creating new sites', function() {
