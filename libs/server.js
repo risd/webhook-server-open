@@ -29,6 +29,7 @@ var _ = require('lodash');
 var Deploys = require( 'webhook-deploy-configuration' );
 const {pipeline} = require('node:stream/promises')
 const {fileNameForTimestamp} = require( './backup.js' )
+const GetImgResizeUrl = require('./utils/get-img-resize-url')
 
 module.exports.start = async function(config) {
 
@@ -49,6 +50,11 @@ module.exports.start = async function(config) {
   const siteBucket = config.get('sitesBucket')
   const googleProjectId = config.get('googleProjectId')
   const cacheControl = 'public,max-age=86400'
+  
+  const getImgResizeUrl = GetImgResizeUrl()
+  // getImgResizeUrl.serviceUrlFromGoogleProjectId(googleProjectId)
+  const resizeServiceUrl = `https://20230717t144724-dot-mgcp-1039568-risd-web-prod.appspot.com`
+  getImgResizeUrl.serviceUrl(resizeServiceUrl)
 
   const app = Fastify()
   await app.register(cors)
@@ -185,7 +191,7 @@ module.exports.start = async function(config) {
 
     if (resizeUrlRequested) {
       try {
-        const resizeUrl = await resizeUrlForUrl(results.url)
+        const resizeUrl = await getImgResizeUrl(results.url)
         results.resizeUrl = resizeUrl
         debug({ results })
       }
@@ -246,8 +252,9 @@ module.exports.start = async function(config) {
 
     if (resizeUrlRequested) {
       try {
-        const resizeUrl = await resizeUrlForUrl(results.url)
+        const resizeUrl = await getImgResizeUrl(results.url)
         results.resizeUrl = resizeUrl
+        debug({ results })
       }
       catch (error) {
         cleanUpFiles(request)
@@ -430,17 +437,6 @@ module.exports.start = async function(config) {
     }
   }
 
-  function resizeUrlForUrl (url) {
-    var encodedUrl = encodeURIComponentsForURL( removeProtocolFromURL( url ) )
-    return axios.get(`https://${ googleProjectId }.appspot.com/${ encodedUrl  }`).then((response) => {
-      let resizeUrl = response.data
-      if (resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0) {
-        resizeUrl = `https${ resizeUrl.slice( 4 )}`
-      }
-      return resizeUrl
-    })
-  }
-
   function timestampedUploadsPathForFileName ( fileName ) {
     return `webhook-uploads/${ new Date().getTime() }_${ fileName.replace( / /g, '-' ) }`
   }
@@ -479,35 +475,4 @@ function cleanUpFiles (request) {
       }
     }
   }
-}
-
-function encodeURIComponentsForURL ( url ) {
-  var protocolIndex = url.indexOf( '//' )
-  var includesProtocol = protocolIndex === -1
-    ? false
-    : true
-
-  if ( includesProtocol ) {
-    var protocolString = url.split( '//' )[ 0 ]
-    url = url.slice( protocolIndex + 2 )
-  }
-
-  var encodedUrl = url.split( '/' ).map( encodeURIComponent ).join( '/' )
-
-  if ( includesProtocol ) {
-    encodedUrl = [ protocolString, encodedUrl ].join( '//' )
-  }
-
-  return encodedUrl
-}
-
-function removeProtocolFromURL ( url ) {
-  var protocolIndex = url.indexOf( '//' )
-  var includesProtocol = protocolIndex === -1
-    ? false
-    : true
-
-  if ( includesProtocol ) return url.slice( protocolIndex + 2 )
-
-  return url;
 }
