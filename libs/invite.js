@@ -6,6 +6,7 @@
 * for the site, if not it sends a link to the registration page for the site.
 */
 
+const debug = require('debug')('builder')
 var fs = require('fs');
 var Firebase = require('./firebase/index.js');
 var _ = require('lodash');
@@ -16,25 +17,29 @@ var Mailgun = require('mailgun-js');
 
 var unescapeFirebase = require( './utils/firebase-unescape.js' )
 
-module.exports = configure
+module.exports.configure = configure
+
 function configure (config) {
   const mailgunConfig = config.get('mailgun')
-  const {fromEmail, domain} = mailgunConfig
+  const {fromEmail, domain, replyEmail} = mailgunConfig
   const mailgun = new Mailgun(mailgunConfig)
   const firebase = Firebase({
     initializationName: 'invite-worker',
     ...config.get('firebase'),
   })
 
-  return async function inviter ({ userId, from_userid, siteref }) {
+  return async function inviter ({ userId, fromUser, siteName }) {
+    debug('invite')
     const userEmail = unescapeFirebase(userId)
+    debug('userEmail', userEmail)
     const userExists = await firebase.userExists({ userEmail })
-    const fromUser = unescapeFirebase(from_userid)
-    const siteName = unescapeFirebase(siteref)
+    fromUser = unescapeFirebase(fromUser)
+    siteName = unescapeFirebase(siteName)
     const siteUrl = `http://${siteName}`
     const cmsUrl = `${siteUrl}/cms/`
     const subject = `[${domain}] You\'ve been invited to edit ${siteName}`
     if (userExists) {
+      debug('msg:login')
       const contentTemplate = fs.readFileSync('libs/emails/invite-login.email');
       const content = _.template(contentTemplate);
       const message = {
@@ -43,9 +48,11 @@ function configure (config) {
         subject,
         text: content({ fromUser, siteUrl, cmsUrl, domain }),
       }
+      if (replyEmail) message['h:Reply-To'] = replyEmail
       await sendMessage(message)
     }
     else {
+      debug('msg:signup')
       const createUrl = `${cmsUrl}#/create-user?username=${userEmail}`
       const contentTemplate = fs.readFileSync('libs/emails/invite-signup.email')
       const content = _.template(contentTemplate)
@@ -55,8 +62,10 @@ function configure (config) {
         subject,
         text: content({ fromUser, siteUrl, createUrl, domain }),
       }
+      if (replyEmail) message['h:Reply-To'] = replyEmail
       await sendMessage(message)
     }
+    debug('msg:sent')
   }
 
   function sendMessage (message) {
