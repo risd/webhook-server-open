@@ -19,7 +19,7 @@ var invite = inviter.configure(grunt.config)
 ;(async () => {
   await invite({
     userId: argv.inviteUser,
-    from_userid: argv.fromUser,
-    siteref: argv.siteName,
+    fromUser: argv.fromUser,
+    siteName: argv.siteName,
   })
-})
+})()

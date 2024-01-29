@@ -42,6 +42,7 @@ module.exports = function(grunt) {
       apiKey: process.env.MAILGUN_SECRET_KEY,
       domain: process.env.MAILGUN_DOMAIN,
       fromEmail: process.env.FROM_EMAIL,
+      replyEmail: process.env.REPLY_EMAIL,
     },
     elastic: {
       host: process.env.ELASTIC_SEARCH_SERVER,
