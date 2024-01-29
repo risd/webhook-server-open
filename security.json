@@ -113,16 +113,16 @@
             },
             "invite" : {
               "$command" : {
-                ".write": "!data.exists() && newData.child('from_userid').val() == auth.email &&
-                            root.child('management/sites/' + newData.child('siteref').val() + '/owners').hasChild(auth.email.replace('.', ',1'))",
-                ".validate": "newData.hasChildren(['userid', 'from_userid', 'siteref'])",
-                "userid": {
+                ".write": "!data.exists() && newData.child('fromUser').val() == auth.email &&
+                            root.child('management/sites/' + newData.child('siteName').val() + '/owners').hasChild(auth.email.replace('.', ',1'))",
+                ".validate": "newData.hasChildren(['userId', 'fromUser', 'siteName'])",
+                "userId": {
                   ".validate": "newData.isString()"
                 },
-                "from_userid": {
+                "fromUser": {
                   ".validate": "newData.isString()"
                 },
-                "siteref": {
+                "siteName": {
                   ".validate": true
                 },
                 "id": {
