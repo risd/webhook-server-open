@@ -242,7 +242,7 @@ function configure (config) {
         buildEventSource,
         runBuildEmitter({ builtFolder, bucketSpec }),  // pushes { builtFile, builtFilePath, bucket }
         buildSitemap({ builtFolder, bucketSpecs }), // pushes { builtFile, builtFilePath, bucket }
-        buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
+        // buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
         uploadIfDifferent({ maxParallel: 10, purgeProxy }),  // pushes { builtFile, builtFilePath, bucket }
         sink(),
         (error) => {
@@ -358,6 +358,8 @@ function configure (config) {
     return [ protocol, host ].join( '://' )
   }
 
+  // With builds limited to a single bucket, we do not have to be concerned with
+  // building multiple robots.txt files in a single build
   function buildRobotsTxt ( options ) {
     var buckets = options.bucketSepcs || [];
     var buildFolder = options.buildFolder;
@@ -378,7 +380,9 @@ function configure (config) {
 
     function writeRobotsTxt () {
       var stream = this;
+      debug('write-robots-txt:check')
       if ( shouldBuild === false ) return stream.push( null )
+      debug('write-robots-txt:execute')
       miss.pipe(
         feedBuckets(),
         buildAndRead(),
@@ -386,6 +390,7 @@ function configure (config) {
           stream.push( args )
         } ),
         function onComplete ( error ) {
+          debug('write-robots-txt:error', error)
           if ( error ) return stream.emit( 'error', error )
           stream.push( null )
         } )
@@ -395,7 +400,6 @@ function configure (config) {
       return miss.from.obj( buckets.map( function ( bucket ) { return { bucket: bucket } } ).concat( [ null ] ) )
     }
 
-    // TODO: ensure this builds the right robots file
     function buildAndRead () {
       return miss.through.obj(async function ( args, enc, next ) {
         var robotsDataContent = buildDataForBucket( args.bucket )
@@ -419,9 +423,12 @@ function configure (config) {
             bucket: args.bucket,
             overrideMimeType: 'text/plain',
           }
+          console.log('robots.txt:upload-args')
+          console.log(uploadArgs)
           next(null, uploadArgs)
         }
         catch (error) {
+          console.log('robots.txt:error')
           console.log(error)
           next(error)
         }

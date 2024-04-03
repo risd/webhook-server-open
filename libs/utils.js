@@ -1,3 +1,4 @@
+const debug = require('debug')('utils')
 var miss = require( 'mississippi' )
 var throughConcurrent = require( 'through2-concurrent' )
 var path = require( 'path' )
@@ -112,6 +113,9 @@ function uploadIfDifferent ( options ) {
       builtFile: args.builtFile,
       builtFilePath: args.builtFilePath,
     }
+    
+    debug('uploading:builtFile:', uploadArgs.builtFile)
+    debug('uploading:builtFilePath:', uploadArgs.builtFilePath)
 
     if ( args.purgeProxy ) purgeProxy = args.purgeProxy;
     if ( args.bucket ) uploadArgs.bucket = args.bucket;
