@@ -21,7 +21,7 @@ module.exports = {
     buildOptions: {
       siteName: 'start-here,1domain,1com',
       branch: 'feature/node-16',
-      bucket: 'node-16-start-here.domain.com',
+      siteBucket: 'node-16-start-here.domain.com',
       userId: 'admin@domain.com',
     },
   },
