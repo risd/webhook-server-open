@@ -223,11 +223,11 @@ function WebhookSiteDelete ( options ) {
     .then( returnDeletePromises )
 
   function returnDeletePromises ( usersSites ) {
-    var deletePromises = usersSites
+    const keyPaths = usersSites
       .filter( includesSiteToDelete )
       .map( usersManagementPath )
         .concat( deleteKeyPaths )
-          .map( setKeyPathToNull )
+    var deletePromises = keyPaths.map( setKeyPathToNull )
 
     return admin.Promise.all( deletePromises )
   }
