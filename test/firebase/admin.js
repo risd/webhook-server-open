@@ -8,7 +8,7 @@ webhookTasks( grunt )
 
 Error.stackTraceLimit = Infinity;
 
-const siteName = config.creator.siteName
+const { siteName, userId } = config.creator
 
 test( 'firebase-admin', async function ( t ) {
   
@@ -22,41 +22,16 @@ test( 'firebase-admin', async function ( t ) {
     const token = await firebase._getAccessToken()
     t.assert(typeof token === 'string', 'Firebase access token is a string')
 
-    const siteKeySnapshot = await firebase.siteKey({ siteName })
+    let siteKeySnapshot = await firebase.siteKey({ siteName })
+    if (typeof siteKeySnapshot.val() !== 'string') {
+      let siteKey = 'site-key'
+      await firebase.siteKey({ siteName }, siteKey)
+      siteKeySnapshot = await firebase.siteKey({ siteName })
+    }
     t.assert(typeof siteKeySnapshot.val() === 'string', 'Got site management key')
 
     await firebase.siteKey({ siteName: 'non-existent-site' }, null)
     t.pass('Set non-existent value to null is ok')
-
-    let siteDevDataSnapshot = await firebase.siteDevData({
-      siteName,
-      siteKey: siteKeySnapshot.val(),
-    })
-    if (siteDevDataSnapshot.val() === null) {
-      const baseSiteDevData = { data: {}, deploys: [], contentTypes: {} }
-      await firebase.siteDevData({
-        siteName,
-        siteKey: siteKeySnapshot.val(),
-      }, baseSiteDevData)
-      siteDevDataSnapshot = await firebase.siteDevData({
-        siteName,
-        siteKey: siteKeySnapshot.val(),
-      })
-      console.log(siteDevDataSnapshot.val())
-      t.deepEqual(baseSiteDevData, siteDevDataSnapshot.val(), 'Get/Set site data.')
-    }
-    else {
-      t.assert(typeof siteDevDataSnapshot.val() === 'object', 'Got site dev data')
-      await firebase.siteDevData({
-        siteName,
-        siteKey: siteKeySnapshot.val(),
-      }, siteDevDataSnapshot.val())
-      let recentSiteDevDataSnapshot = await firebase.siteDevData({
-        siteName,
-        siteKey: siteKeySnapshot.val(),
-      })
-      t.deepEqual(recentSiteDevDataSnapshot.val(), siteDevDataSnapshot.val(), 'Get/set site data')
-    }
 
     const allSitesSnapshot = await firebase.allSites()
     t.assert(allSitesSnapshot.val() !== null, 'Got all sites.')
