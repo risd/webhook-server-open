@@ -10,7 +10,7 @@ test( 'remove-domain', async function ( t ) {
   var cdn = fastlyWebhook( grunt.config().fastly )
 
   try {
-    const service = cdn.removeDomain(config.fastly.addDomain)
+    const service = await cdn.removeDomain(config.fastly.addDomain)
     t.ok( typeof service === 'object' && service.hasOwnProperty( 'service_id' ), 'The service should be represented by an object.' )
   }
   catch (error) {
@@ -18,7 +18,7 @@ test( 'remove-domain', async function ( t ) {
   }
 
   try {
-    const service = await.cdn.removeDomain(config.fastly.doNotAddDomain)
+    const service = await cdn.removeDomain(config.fastly.doNotAddDomain)
      t.ok( typeof service === 'object' && service.hasOwnProperty( 'noDomainsRemoved' ) && service.noDomainsRemoved === true, 'Response should include a flag that no domains were removed.' ) 
   }
   catch (error) {
