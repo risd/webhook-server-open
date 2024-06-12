@@ -1,18 +1,19 @@
 const debug = require('debug')('WHFirebase')
-var path = require( 'path' )
-var axios = require( 'axios' )
-var admin = require( 'firebase-admin' )
-var {
+const path = require( 'path' )
+const axios = require( 'axios' )
+const admin = require( 'firebase-admin' )
+const {
   initializeApp,
   cert,
 } = require( 'firebase-admin/app' )
 const {
   getDatabase,
 } = require('firebase-admin/database')
-var getAccessToken = require( './access-token.js' )
+const getAccessToken = require( './access-token.js' )
+const uuid = require('node-uuid')
 
-var unescape = require( '../utils/firebase-unescape.js' )
-var escape = require( '../utils/firebase-escape.js' )
+const unescape = require( '../utils/firebase-unescape.js' )
+const escape = require( '../utils/firebase-escape.js' )
 
 module.exports = WHFirebase;
 
@@ -227,6 +228,7 @@ function WebhookSiteDelete ( options ) {
       .filter( includesSiteToDelete )
       .map( usersManagementPath )
         .concat( deleteKeyPaths )
+    debug({keyPaths})
     var deletePromises = keyPaths.map( setKeyPathToNull )
 
     return admin.Promise.all( deletePromises )
@@ -371,31 +373,37 @@ function WebhookSiteMessagesAdd ({ siteName }, value) {
 
 function WebhookSignalBuild ({ siteName }, payload) {
   const keyPath = `management/commands/build/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalInvite ({ siteName }, payload) {
   const keyPath = `management/commands/invite/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalDomainMap ({ siteName }, payload) {
   const keyPath = `management/commands/domainMap/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalRedirects ({ siteName }, payload) {
   const keyPath = `management/commands/redirects/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalPreviewBuild ({ siteName }, payload) {
   const keyPath = `management/commands/previewBuild/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalSiteSearchIndex ({ siteName }, payload) {
   const keyPath = `management/commands/siteSearchReindex/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 

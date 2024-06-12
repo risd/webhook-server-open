@@ -42,7 +42,7 @@ module.exports = {
   },
   invite: {
     userId: 'new-user@domain.com',
-    from_userid: 'admin@domain.com',
+    fromUser: 'admin@domain.com',
   },
   domainMapper: {
     siteName,

@@ -10,7 +10,6 @@ const debug = require('debug')('builder')
 var fs = require('fs');
 var Firebase = require('./firebase/index.js');
 var _ = require('lodash');
-var uuid = require('node-uuid');
 var async = require('async');
 var JobQueue = require('./jobQueue.js');
 var Mailgun = require('mailgun-js');

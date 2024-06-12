@@ -14,9 +14,6 @@ var mime = require('mime');
 var fs = require('fs');
 const chainCallbackResponse = require('./utils/chain-callback-response')
 
-var projectName = process.env.GOOGLE_PROJECT_ID || '';
-var googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT || '';
-
 // Contains google service accounts SSH key
 var keyFilename = process.env.GOOGLE_KEY_JSON || 'libs/keyfile.key';
 
@@ -40,11 +37,9 @@ module.exports.configure = configure
 
 function configure (options={}) {
   const config = {
-    serviceAccountEmail: googleServiceAccount,
-    projectId: projectName,
     keyFilename,
+    ...options,
   }
-  if (options.defaultCors) defaultCors = options.defaultCors
   try {
     storage = new Storage(config)
   }
@@ -55,7 +50,7 @@ function configure (options={}) {
 }
 
 // try to configure on load based on environment variable
-if (keyFilename && projectName && googleServiceAccount) {
+if (keyFilename) {
   configure()
 }
 
@@ -215,7 +210,7 @@ var objectsAPI = {
       if (nextPageQuery) {
         listOptions.options = nextPageQuery
       }
-      const results = objectsAPI.list(listOptions)
+      const results = await objectsAPI.list(listOptions)
       const files = results[0]
       if (!Array.isArray(files)) return
       for (const file in files) {

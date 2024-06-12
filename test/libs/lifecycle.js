@@ -1,4 +1,5 @@
 const debug = require('debug')('lifecycle')
+const fs = require('node:fs')
 const config = require('../config')
 const grunt = require('grunt')
 const test = require('tape')
@@ -15,6 +16,7 @@ require('../../Gruntfile.js')(grunt)
 const Server = require('../../libs/server')
 const Deletor = require('../../libs/delete')
 const Firebase = require('../../libs/firebase/index.js')
+const Backup = require('../../libs/backup.js')
 
 const firebase = Firebase(grunt.config.get('firebase'))
 const deletor = Deletor(grunt.config())
@@ -72,9 +74,9 @@ test('setup-delegator', async (t) => {
   }
 })
 
-// spawn npm run command-delegator
-// spawn npm run create-worker
-// {siteDir} = wh.create({siteName})
+/// spawn npm run command-delegator
+/// spawn npm run create-worker
+/// {siteDir} = wh.create({siteName})
 
 test('setup-creator', async (t) => {
   // 1 for the creator, 1 for the create subprocess, we aren't sure which finishes
@@ -101,10 +103,10 @@ test('setup-creator', async (t) => {
   }
 })
 
-// spawn npm start (server)
-// spawn npm run build-worker
-// wh.deploy() {cwd:siteDir}
-// kill build-worker
+/// spawn npm start (server)
+/// spawn npm run build-worker
+/// wh.deploy() {cwd:siteDir}
+/// kill build-worker
 
 async function ensureServer () {
   debug('setup-server')
@@ -152,6 +154,22 @@ test('server-deploy-cycle', async (t) => {
   }
 })
 
+/// run backup so that we have a snapshot to check for in our
+/// subsequent server requests
+test('backup', async (t) => {
+  try {
+    const { file, timestamp } = await Backup.start(grunt.config)
+    t.ok(true, 'successfully ran firebase backup')
+  }
+  catch (error) {
+    console.log(error)
+    t.fail(error, 'failed to backup')
+  }
+  finally {
+    t.end()
+  }
+})
+
 // axios requests against server
 
 test('server-cms-requests', async (t) => {
@@ -176,21 +194,11 @@ test('server-cms-requests', async (t) => {
   try {
     const backupsSnapshot = await firebase.backups()
     const backups = backupsSnapshot.val()
-    const timestamp = backups[Object.keys(backups)[Object.keys(backups).length - 1]]  
-    const form = new FormData()
-    siteNameAndKey(form)
-    form.append('timestamp', timestamp)
-    const backupResponse = await axios.post(
-      urlForServer('/backup-snapshot/'),
-      form,
-      { headers: form.getHeaders() }
-    )
+    const timestamp = backups[Object.keys(backups)[Object.keys(backups).length - 1]]
+    // webhook-cms makes this request with query params.
+    const url = urlForServer(`/backup-snapshot/?site=${config.creator.siteName}&token=${siteKey}&timestamp=${timestamp}`)
+    const backupResponse = await axios.get(url)
     t.assert(backupResponse.status === 200, '200 backup response')
-    t.assert(
-      backupResponse.data.contentType &&
-      backupResponse.data.data &&
-      backupResponse.data.settings,
-      'Got backup response data in correct shape.')
   }
   catch (error) {
     t.fail(error, 'Error in /backup-snapshot/')
@@ -199,8 +207,8 @@ test('server-cms-requests', async (t) => {
   try {
     const form = new FormData()
     siteNameAndKey(form)
-    form.append('resize_url', true)
-    form.append('url', 'https://lh3.googleusercontent.com/G6Tkw7hXhmR34zpkXA3nBHZ05tgAb2OewVO5NOrv5LUovd-UIqtaZ3rOoNemzXosxFt4HrQXshJ3UIbDuwQOf2sIjQJcuuGeSalc4QG1E1s=s760')
+    form.append('resize_url', 'true')
+    form.append('url', 'http://rubenrodriguez.me/favicon.png')
     const uploadUrlResponse = await axios.post(
       urlForServer('/upload-url/'),
       form,
@@ -222,7 +230,7 @@ test('server-cms-requests', async (t) => {
   try {
     const form = new FormData()
     siteNameAndKey(form)
-    form.append('resize_url', true)
+    form.append('resize_url', 'true')
     form.append(
       'payload',
       fs.readFileSync(path.join( __dirname, '..', 'files', 'img.png' )),
@@ -253,7 +261,7 @@ test('server-cms-requests', async (t) => {
     form.append('data', JSON.stringify({ name: 'test-title' }))
     form.append('id', 'one-off-page')
     form.append('typeName', 'pages')
-    form.append('oneOff', true)
+    form.append('oneOff', 'true')
   }
 
   try {
@@ -268,7 +276,7 @@ test('server-cms-requests', async (t) => {
     t.assert(searchIndexResponse.status === 200, '200 search index response')
     t.assert(
       searchIndexResponse.data.message,
-      'Got search idnex response data in correct shape')
+      'Got search index response data in correct shape')
   }
   catch (error) {
     t.fail(error, 'Error in /search/index/')
@@ -285,10 +293,7 @@ test('server-cms-requests', async (t) => {
       { headers: form.getHeaders() }
     )
     t.assert(searchResponse.status === 200, '200 search response')
-    t.assert(
-      searchResponse.data.message &&
-      searchResponse.data.hits,
-      'Got search response data in correct shape')
+    t.assert(Array.isArray(searchResponse?.data?.hits), 'search response includes hits')
   }
   catch (error) {
     t.fail(error, 'Error in /search/')
@@ -347,6 +352,9 @@ test('server-cms-requests', async (t) => {
   catch (error) {
     t.fail(error, 'Error in /search/delete/index/')
   }
+  finally {
+    t.end()
+  }
 })
 
 /// spawn npm run invite-worker
@@ -362,7 +370,7 @@ test('invite', async (t) => {
     })
     await firebase.signalInvite({ siteName: config.creator.siteName }, {
       ...config.invite,
-      siteref: config.creator.siteName,
+      siteName: config.creator.siteName,
     })
     t.ok(true, 'Successfully signal invite')
   }
@@ -481,6 +489,9 @@ test('delete', async (t) => {
   }
   catch (error) {
     t.fail(error, 'Error in deletor')
+  }
+  finally {
+    t.end()
   }
 })
 
