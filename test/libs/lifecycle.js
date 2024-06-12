@@ -1,3 +1,4 @@
+const debug = require('debug')('lifecycle')
 const config = require('../config')
 const grunt = require('grunt')
 const test = require('tape')
@@ -76,7 +77,8 @@ test('setup-delegator', async (t) => {
 // {siteDir} = wh.create({siteName})
 
 test('setup-creator', async (t) => {
-  // 1 for the creator, 1 for the create subprocess
+  // 1 for the creator, 1 for the create subprocess, we aren't sure which finishes
+  // first, but its likely the create-worker.
   t.plan(2)
   try {
     subprocesses.creator = await subprocess('npm run create-worker', {
@@ -105,9 +107,17 @@ test('setup-creator', async (t) => {
 // kill build-worker
 
 async function ensureServer () {
-  if (!subprocesses.server) subprocesses.server = async () => {
-    const server = await Server.start(grunt.config)
-    return () => delete server 
+  debug('setup-server')
+  if (!subprocesses.server) {
+    debug('setup-server:start')
+    subprocesses.server = async () => {
+      const server = await Server.start(grunt.config)
+      return () => delete server 
+    }
+    return subprocesses.server()
+  }
+  else {
+    debug('setup-server:pass')
   }
 }
 
@@ -146,7 +156,7 @@ test('server-deploy-cycle', async (t) => {
 
 test('server-cms-requests', async (t) => {
   await ensureServer()
-  const urlForServer = (frag) => `http://localhost:${grunt.config.get('server').port}${frag}`
+  const urlForServer = (frag) => `http://localhost:${grunt.config.get('server').listen.port}${frag}`
   const siteKeySnapshot = await firebase.siteKey({ siteName: config.creator.siteName })
   const siteKey = siteKeySnapshot.val()
 
@@ -339,8 +349,8 @@ test('server-cms-requests', async (t) => {
   }
 })
 
-// spawn npm run invite-worker
-// fb.signal('invite-worker')
+/// spawn npm run invite-worker
+/// fb.signal('invite-worker')
 
 test('invite', async (t) => {
   try {
@@ -362,8 +372,8 @@ test('invite', async (t) => {
   }
 })
 
-// spawn npm run domain-mapper
-// fb.signal('domain-mapper')
+/// spawn npm run domain-mapper
+/// fb.signal('domain-mapper')
 
 test('domain-mapper', async (t) => {
   try {
@@ -384,8 +394,8 @@ test('domain-mapper', async (t) => {
   }
 })
 
-// spawn npm run site-index-worker
-// fb.signal('site-index-worker')
+/// spawn npm run site-index-worker
+/// fb.signal('site-index-worker')
 
 test('site-index-worker', async (t) => {
   try {
@@ -406,9 +416,9 @@ test('site-index-worker', async (t) => {
   }
 })
 
-// spawn npm run redirects-worker
-// wh.deploys:set()
-// fb.signal('redirects-worker')
+/// spawn npm run redirects-worker
+/// wh.deploys:set()
+/// fb.signal('redirects-worker')
 
 test('redirects', async (t) => {
   try {

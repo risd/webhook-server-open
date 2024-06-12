@@ -23,7 +23,7 @@ function runInDir (command, args = [], options = { cwd: process.cwd() }) {
       data += d.toString()
     })
 
-    cmd.on("exit", (code) => {
+    cmd.on("close", (code) => {
       if (code === 0) {
         resolve(data)
       } else {
