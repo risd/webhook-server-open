@@ -35,10 +35,10 @@ A `.env` file that includes the values outlined in `.env.example` is expected in
 ```
 GOOGLE_PROJECT_ID=
 GOOGLE_SERVICE_ACCOUNT=
-GOOGLE_KEY_FILE=
+GOOGLE_KEY_JSON=
 ```
 
-These entries will configure Google Cloud usage. The `GOOGLE_KEY_FILE` location can be defined by the path to the file produced by running `grunt extractKey=gcloud.json`, where `gcloud.json` is the Google Service Account JSON file associated with the project.
+The `GOOGLE_KEY_JSON` is the service account JSON that includes a private key, project id, and service account email address.
 
 ```
 DEVELOPMENT_DOMAIN
