@@ -1,6 +1,6 @@
 # @risd/wh Overview
 
-This repository is for the Webhook command line tools. There are several other repositories in Webhook's core.
+This repository is for the Webhook server. There are several other repositories in Webhook's core.
 
 * [@risd/wh](https://github.com/risd/webhook) - The Webhook command line tools.
 * [@risd/webhook-generate](https://github.com/risd/webhook-generate) - The local runserver for Webhook.
@@ -36,9 +36,10 @@ A `.env` file that includes the values outlined in `.env.example` is expected in
 GOOGLE_PROJECT_ID=
 GOOGLE_SERVICE_ACCOUNT=
 GOOGLE_KEY_JSON=
+GOOGLE_BUCKET_DEFAULT_CORS=
 ```
 
-The `GOOGLE_KEY_JSON` is the service account JSON that includes a private key, project id, and service account email address.
+The `GOOGLE_KEY_JSON` is the service account JSON that includes a private key, project id, and service account email address. `GOOGLE_BUCKET_DEFAULT_CORS` is a stringified JSON object that will power default CORS config for all buckets.
 
 ```
 DEVELOPMENT_DOMAIN
