@@ -9,6 +9,8 @@ There are a number of processes that are defined within the WebHook Server Appli
 - [Restarting WebHook Processes](#restarting-webhook-processes)
 
 
+TODO document supervisor logging when the cmd is running in the foreground for in a docker container
+
 ### Using service
 
 `service` is used to manage `supervisor` & `memcache`. `beanstalkd` is also listed, but we turn it off in the `service` interface (`service beanstalkd stop`) and let [Supervisor][supervisor] handle it. You can use `service` to check the status of a service with `service supervisor status`. This will tell you if it is running. You can also replace `status` with `stop` & `start` to issue those respective commands to any service by its name.
