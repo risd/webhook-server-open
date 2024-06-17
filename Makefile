@@ -1,11 +1,11 @@
 build:
-	docker build -t risd-webhook-master --build-arg BRANCH=master .
+	docker build --tag risd-webhook-master --build-arg BRANCH=master .
 
 build-develop:
-	docker build -t risd-webhook-develop --build-arg BRANCH=develop .
+	docker build --tag risd-webhook-develop --build-arg BRANCH=develop .
 
 build-dockerify:
-	docker build -t risd-webhook-dockerify --build-arg BRANCH=feature/dockerify .
+	docker build --tag risd-webhook-dockerify --build-arg BRANCH=feature/dockerify .
 
 run:
 	docker container run \
@@ -40,4 +40,4 @@ prune:
 	docker container prune
 
 ip-addy:
-	docker inspect -f "{{ .NetworkSettings.IPAddress }}" risd-webhook-stage
+	docker inspect -f "{{ .NetworkSettings.IPAddress }}" risd-webhook-stage-dockerify
