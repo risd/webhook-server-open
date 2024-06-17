@@ -35,11 +35,11 @@ A `.env` file that includes the values outlined in `.env.example` is expected in
 ```
 GOOGLE_PROJECT_ID=
 GOOGLE_SERVICE_ACCOUNT=
-GOOGLE_KEY_JSON=
+GOOGLE_KEY_JSON_STRING=
 GOOGLE_BUCKET_DEFAULT_CORS=
 ```
 
-The `GOOGLE_KEY_JSON` is the service account JSON that includes a private key, project id, and service account email address. `GOOGLE_BUCKET_DEFAULT_CORS` is a stringified JSON object that will power default CORS config for all buckets.
+The `GOOGLE_KEY_JSON_STRING` is the service account JSON that includes a private key, project id, and service account email address, saved as a stringified JSON object. `GOOGLE_BUCKET_DEFAULT_CORS` is a stringified JSON object that will power default CORS config for all buckets.
 
 ```
 DEVELOPMENT_DOMAIN

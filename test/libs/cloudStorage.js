@@ -39,10 +39,10 @@ test( 'upload-object', function ( t ) {
   cloudStorage.objects.upload(uploadOptions)
     .then((results) => {
       t.ok(true, 'succesfully upload file')
-      t.asset(typeof results.bucket === 'string', 'results.bucket exists')
-      t.asset(typeof results.name === 'string', 'results.name exists')
-      t.asset(typeof results.fileSize === 'number', 'results.fileSize exists')
-      t.asset(typeof results.contentType === 'string', 'results.contentType exists')
+      t.assert(typeof results.bucket === 'string', 'results.bucket exists')
+      t.assert(typeof results.name === 'string', 'results.name exists')
+      t.assert(typeof results.size === 'string', 'results.size exists')
+      t.assert(typeof results.contentType === 'string', 'results.contentType exists')
       t.end()
     })
     .catch((error) => {
@@ -98,9 +98,8 @@ test('buckets', async (t) => {
 
 test('bucket-list-objects', async (t) => {
   t.plan(1)
-  cloudStroage.objects.list({ bucket: uploadOptions.bucket }, function (error, listResult) {
+  cloudStorage.objects.list({ bucket: uploadOptions.bucket }, function (error, listResult) {
     t.assert(error === null, 'got list objects without error')
-    console.log(listResult)
   })
 })
 
