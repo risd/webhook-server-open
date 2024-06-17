@@ -22,7 +22,7 @@ module.exports = WHFirebase;
  * 
  * @param  {object}  config
  * @param  {string}  config.name                 The name of the firebase to initialize
- * @param  {string}  config.serviceAccountKey    The service account key for the firebase to initialize
+ * @param  {string}  config.serviceAccountKeyFile    The service account key for the firebase to initialize
  * @param  {string?} config.initializationName   The name to use when initializing the firebase instance
  * @return {object}  firebase                          The firebase instance that has been initialized.
  */
@@ -30,10 +30,12 @@ function WHFirebase ( config ) {
   if ( ! ( this instanceof WHFirebase ) ) return new WHFirebase( config )
   var firebaseName = config.name;
   this._firebaseName = firebaseName;
-  var firebaseServiceAccountKey = require(path.join(process.cwd(), config.serviceAccountKey));
+  var firebaseServiceAccount
+  if (config.serviceAccountCredentials) firebaseServiceAccount = config.serviceAccountCredentials
+  else if (config.serviceAccountKeyFile) firebaseServiceAccount = require(path.join(process.cwd(), config.serviceAccountKeyFile));
 
   var options = {
-    credential: cert( firebaseServiceAccountKey ),
+    credential: cert( firebaseServiceAccount ),
     databaseURL: 'https://' + firebaseName + '.firebaseio.com',
   }
 
@@ -44,7 +46,7 @@ function WHFirebase ( config ) {
     this._app = initializeApp( options, this._initializationName )
   }
 
-  this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccountKey )
+  this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccount )
 }
 
 WHFirebase.prototype.database = function () {

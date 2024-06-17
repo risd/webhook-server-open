@@ -72,12 +72,12 @@ USER webhook
 WORKDIR /home/webhook/
 
 ## working from git
-RUN git clone https://github.com/risd/webhook-server-open.git webhook-server-open
-WORKDIR /home/webhook/webhook-server-open/
-COPY .env.risd.stage .env
-COPY service-accounts/ service-accounts/
+ARG BRANCH=master
+RUN git clone https://github.com/risd/webhook-server-open.git --branch $BRANCH webhook-server-open
 ## working locally
 # COPY . /home/webhook/webhook-server-open/
+
+WORKDIR /home/webhook/webhook-server-open/
 
 RUN npm install \
   && crontab cron.example
@@ -96,4 +96,8 @@ RUN cp webhook.conf /etc/supervisor/conf.d/ \
 
 EXPOSE 3000
 
-CMD ["/usr/bin/supervisord", "-n"]
+## run individual commands
+USER webhook
+CMD ["npm", "start"]
+## run a single command for everything
+# CMD ["/usr/bin/supervisord", "-n"]

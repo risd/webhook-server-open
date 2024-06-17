@@ -1,14 +1,40 @@
 build:
-	docker build -t risd-webhook .
+	docker build -t risd-webhook-master --build-arg BRANCH=master .
 
-# run as long running process
-# can access shell within Docker app
+build-develop:
+	docker build -t risd-webhook-develop --build-arg BRANCH=develop .
+
+build-dockerify:
+	docker build -t risd-webhook-dockerify --build-arg BRANCH=feature/dockerify .
+
 run:
-	docker container run --name risd-webhook-stage -p 3000:3000 risd-webhook
+	docker container run \
+		--name risd-webhook-prod \
+		-p 3000:3000 \
+		--env-file .env.prod.local-v2 \
+		risd-webhook-master
 
-# interactive
-run-it:
-	docker container run --name risd-webhook-stage -it risd-webhook /bin/bash
+run-develop:
+	docker container run \
+		--name risd-webhook-stage \
+		-p 3000:3000 \
+		--env-file .env.risd.stage \
+		risd-webhook-develop
+
+run-dockerify:
+	docker container run \
+		--name risd-webhook-stage-dockerify \
+		-p 3000:3000 \
+		--env-file .env.risd.stage \
+		risd-webhook-dockerify
+
+run-dockerify-it:
+	docker container run \
+		--name risd-webhook-stage-dockerify \
+		-p 3000:3000 \
+		--env-file .env.risd.stage \
+		-it \
+		risd-webhook-dockerify
 
 prune:
 	docker container prune

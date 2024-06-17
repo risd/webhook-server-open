@@ -36,7 +36,8 @@ module.exports = function(grunt) {
   grunt.initConfig({
     firebase: {
       name: process.env.FIREBASE,                                           // The name of your firebase
-      serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,          // Your firebase's service account key
+      serviceAccountKeyFile: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,          // Your firebase's service account key
+      serviceAccountCredentials: parseJson(process.env.FIREBASE_SERVICE_ACCOUNT_KEY_STRING),          // Your firebase's service account key
     },
     mailgun: {
       apiKey: process.env.MAILGUN_SECRET_KEY,
