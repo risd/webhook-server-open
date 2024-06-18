@@ -58,6 +58,7 @@ RUN apt-get -y update && apt-get install -y \
   beanstalkd \
   build-essential \
   cron \
+  iptables \
   git \
   memcached \
   supervisor \
@@ -91,10 +92,15 @@ RUN cp webhook.conf /etc/supervisor/conf.d/ \
   && mkdir -p /var/beanstalk \
   && mkdir -p /var/log/supervisor
 
-EXPOSE 3000
+# ssh
+EXPOSE 22
+# http
+EXPOSE 80
+# https
+EXPOSE 443
 
 ## run individual commands
-USER webhook
-CMD ["npm", "start"]
+# USER webhook
+# CMD ["npm", "start"]
 ## run a single command for everything
-# CMD ["/usr/bin/supervisord", "-n"]
+CMD ["/usr/bin/supervisord", "-n"]
