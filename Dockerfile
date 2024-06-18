@@ -75,11 +75,11 @@ WORKDIR /home/webhook/
 ## working from git
 ARG BRANCH=master
 RUN git clone https://github.com/risd/webhook-server-open.git --branch $BRANCH webhook-server-open
-
 WORKDIR /home/webhook/webhook-server-open/
-
 RUN npm install \
   && crontab cron.example
+## working from local dir
+# COPY . /home/webhook/webhook-server-open
 
 FROM webhook AS finalize
 
@@ -87,10 +87,13 @@ USER root
 WORKDIR /home/webhook/webhook-server-open/
 
 # stop services that will run via supervisor
-RUN service beanstalkd stop && service supervisor stop
+RUN service beanstalkd stop \
+  && service supervisor stop \
+  && service memcached stop
 RUN cp webhook.conf /etc/supervisor/conf.d/ \
   && mkdir -p /var/beanstalk \
-  && mkdir -p /var/log/supervisor
+  && mkdir -p /var/log/supervisor \
+  && mkdir -p /var/log/memcached
 
 # ssh
 EXPOSE 22
