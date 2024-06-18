@@ -24,7 +24,7 @@ run-develop:
 run-dockerify:
 	docker container run \
 		--name risd-webhook-stage-dockerify \
-		--publish 80 \
+		--publish 80:80 \
 		--env-file .env.risd.stage \
 		risd-webhook-dockerify
 

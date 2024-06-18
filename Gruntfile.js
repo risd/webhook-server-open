@@ -63,10 +63,10 @@ module.exports = function(grunt) {
       defaultCors: parseJson(process.env.GOOGLE_BUCKET_DEFAULT_CORS),
     },
     googleCloudServiceAccountKeyJson: process.env.GOOGLE_KEY_JSON,
-    memcachedServers: [
+    memcachedServers: parseJson(process.env.MEMCACHED_SERVERS, [
       'localhost:11211'
-    ],
-    beanstalkServer: 'localhost:11300',
+    ]),
+    beanstalkServer: process.env.BEANSTALK_SERVER || 'localhost:11300',
     cloudflare: {
       client: {
         email: process.env.CLOUDFLARE_EMAIL,
@@ -88,7 +88,7 @@ module.exports = function(grunt) {
     server: {
       listen: {
         port: process.env.WEBHOOK_SERVER_PORT || 3000,
-        host: process.env.WEBHOOK_SERVER_HOST || '127.0.0.1',
+        host: process.env.WEBHOOK_SERVER_HOST || '0.0.0.0',
       },
     },
     getImageResizeUrl: {
