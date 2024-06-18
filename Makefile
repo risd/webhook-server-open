@@ -31,7 +31,7 @@ run-dockerify:
 run-dockerify-it:
 	docker container run \
 		--name risd-webhook-stage-dockerify \
-		--publish 3000:3000 \
+		--publish 80 \
 		--env-file .env.risd.stage \
 		-it \
 		risd-webhook-dockerify
