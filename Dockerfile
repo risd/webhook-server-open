@@ -77,9 +77,11 @@ ARG BRANCH=master
 RUN git clone https://github.com/risd/webhook-server-open.git --branch $BRANCH webhook-server-open
 WORKDIR /home/webhook/webhook-server-open/
 RUN npm install \
-  && crontab cron.example
+  && crontab cron.example \
+  && mkdir -p /home/webhook/build-folders
 ## working from local dir
 # COPY . /home/webhook/webhook-server-open
+# RUN mkdir -p /home/webhook/build-folders
 
 FROM webhook AS finalize
 
