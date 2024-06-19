@@ -37,4 +37,4 @@ run-dockerify-it:
 		risd-webhook-dockerify
 
 prune:
-	docker container prune
+	docker container prune --force
