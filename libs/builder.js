@@ -44,6 +44,7 @@ function configure (config) {
   const buildFolderRoot = config.get('builder').buildFolderRoot
 
   return async function buildSite ({ siteName, userId, siteBucket, branch }) {
+    console.log('build', siteName, siteBucket, branch, userId)
     const siteManagementSnapshot = await firebase.siteManagement({ siteName })
     const siteManagement = siteManagementSnapshot.val()
     if (!siteManagement) return
@@ -96,7 +97,7 @@ function configure (config) {
 
       try {
         console.log('npm-install')
-        await runInDir('npm', ['install'], { cwd: buildFolder })  
+        await runInDir('npm', ['install', '--cache=nope'], { cwd: buildFolder })  
       }
       catch (error) {
         console.log(error)
