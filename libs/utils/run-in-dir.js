@@ -15,22 +15,27 @@ function runInDir (command, args = [], options = { cwd: process.cwd() }) {
     debug("options:", options)
     const cmd = spawn(command, args, options)
 
-    let data = ""
+    let stdout = ""
+    let stderr = ""
 
     // stderror
     cmd.stdout.setEncoding("utf8")
     cmd.stdout.on("data", (d) => {
-      data += d.toString()
+      stdout += d.toString()
+    })
+    cmd.stderr.setEncoding("utf8")
+    cmd.stderr.on("data", (d) => {
+      stderr += d.toString()
     })
 
     cmd.on("close", (code) => {
       if (code === 0) {
-        resolve(data)
+        resolve(stdout)
       } else {
         const e = new Error(
           `Error running\ncommand: ${command}\nargs=${args}\noptions=${JSON.stringify(options)}`
         )
-        e.stack = `${data}\n${e.stack}`
+        e.stack = `stdout=${stdout}\nstderr=${stderr}\n${e.stack}`
         reject(e)
       }
     })
