@@ -108,7 +108,9 @@ module.exports.init = function (config) {
 
               // First we destroy the job in Beanstalk, then acquire the lock for it
               // Finally we run the callback (inside a domain to handle errors), and unlock the job after
+              console.log('jobQueue:conn.destroy')
               conn.destroy(id, function() {
+                console.log('jobQueue:self.lock')
                 self.lockJob(conn, lockRoot, identifier, payload, function(payload, callback) {
                   var domainInstance = domain.create();
 
@@ -120,7 +122,7 @@ module.exports.init = function (config) {
                   });
 
                   domainInstance.run(function() {
-
+                    console.log('jobQueue:domainInstance.run')
                     job(payload.payload, function(err) { 
                       console.log(MESSAGES.JOB_DONE);
                       console.log('job-queue:err')
