@@ -19,14 +19,14 @@
     "dev": "nf start --procfile=Procfile.dev"
   },
   "engines": {
-    "node": "^16.18.0",
-    "npm": "^8.19.2"
+    "node": ">=16.18.0",
+    "npm": ">=8.19.2"
   },
   "dependencies": {
     "@fastify/cors": "^8.2.0",
     "@fastify/formbody": "^7.4.0",
     "@fastify/multipart": "^7.3.0",
-    "@google-cloud/storage": "^6.8.0",
+    "@google-cloud/storage": "^7.11.2",
     "async": "~0.2.9",
     "axios": "^0.18.0",
     "cloudflare": "^1.1.1",

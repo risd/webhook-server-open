@@ -65,12 +65,12 @@ docker-push-image:
 # the gcp project includes http-server & https-server tags which will apply
 # firewall rules to allow for traffic on these ports. if these are not created, use
 # the `gcp-create-firewall-rules` command below
-gcp-deploy-stage:
+gcp-deploy-stage: build-dockerify docker-gcp-login gcp-tag-stage docker-push-image
 	gcloud compute instances create-with-container risd-webhook-instance-dockerify \
 		--zone us-central1-a \
 		--container-image=us-central1-docker.pkg.dev/risd-media-webhook/risd-webhook-server/risd-webhook-dockerify:v3.0.0 \
 		--container-env-file .env.risd.stage \
-		--tags http-server-3000
+		--tags http-server,https-server,http-server-3000
 
 gcp-update-stage:
 	gcloud compute instances update-container risd-webhook-instance-dockerify \
