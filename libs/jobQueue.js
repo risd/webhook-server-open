@@ -115,7 +115,8 @@ module.exports.init = function (config) {
                   var domainInstance = domain.create();
 
                   domainInstance.on('error', function(err) {
-                    console.log('Caught exception: ' + err);
+                    console.log('Caught exception:')
+                    console.log(err)
                     callback(function() {
                       process.exit(1);
                     });

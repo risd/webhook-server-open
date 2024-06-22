@@ -50,11 +50,13 @@ function configure (config) {
     if (!siteManagement) return
 
     try {
+      console.log('build-access:guard')
       if(!(
         _(siteManagement.owners).has(firebaseEscape(userId)) ||
         _(siteManagement.users).has(firebaseEscape(userId)) ||
         userId === 'admin'
       )) return
+      console.log('build-access:success')
 
       await firebase.siteMessageAdd({ siteName }, {
         message: `Build started for ${siteBucket}`,
@@ -63,12 +65,16 @@ function configure (config) {
         code: 'BUILDING',
       })
 
+      console.log('mkdir:build-dir')
       // Create build-folders if it isnt there
       mkdirp.sync(buildFolderRoot)
 
+      console.log('buildFolderName:set')
       const buildFolderName = Deploys.utilities.nameForSiteBranch(siteName, siteBucket)
+      console.log('buildFolder:set')
       const buildFolder = path.join(buildFolderRoot, buildFolderName)
       // site version is updated on server site deploy upload
+      console.log('buildFolderVersion:set')
       const buildFolderVersion = path.join(buildFolder, `.fb_version${siteManagement.version}`)
 
       if (fs.existsSync(buildFolder) && !fs.existsSync(buildFolderVersion)) {
