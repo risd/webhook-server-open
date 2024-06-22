@@ -58,7 +58,6 @@ RUN apt-get -y update && apt-get install -y \
   beanstalkd \
   build-essential \
   cron \
-  iptables \
   git \
   memcached \
   supervisor \
