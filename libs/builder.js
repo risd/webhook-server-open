@@ -77,27 +77,38 @@ function configure (config) {
       console.log('buildFolderVersion:set')
       const buildFolderVersion = path.join(buildFolder, `.fb_version${siteManagement.version}`)
 
+      console.log('guard-rm-rf')
       if (fs.existsSync(buildFolder) && !fs.existsSync(buildFolderVersion)) {
+        console.log('exec-rm-rf')
         await runInDir('rm', ['-rf', buildFolderName], { cwd: buildFolderRoot })
       }
+      console.log('guard-existing-version')
       if(!fs.existsSync(buildFolderVersion)) {
+        console.log('version-does-not-exit')
         // download-site-zip:start
         const branchFileName = Deploys.utilities.fileForSiteBranch(firebaseEscape(siteName), branch)
-        const buildSiteZip = path.join(buildFolderRoot, branchFileName)
-        if (fs.existsSync(buildSiteZip)) {
-          fs.unlinkSync(buildSiteZip)
+        console.log('buildSiteArchive:set')
+        const buildSiteArchive = path.join(buildFolderRoot, branchFileName)
+        console.log('buildSiteArchive:exists:guard')
+        if (fs.existsSync(buildSiteArchive)) {
+          console.log('buildSiteArchive:unlink')
+          fs.unlinkSync(buildSiteArchive)
         }
+        console.log('fetch-site-template')
         await cloudStorage.objects.get({
           bucket: config.get('sitesBucket'),
           remote: branchFileName,
-          local: buildSiteZip,
+          local: buildSiteArchive,
         })
         // download-site-zip:end
         
+        console.log('mkdir:site-build-folder')
         mkdirp.sync(buildFolder)
 
-        await tar.x({ file: buildSiteZip, cwd: buildFolder })
-        fs.unlinkSync(buildSiteZip)
+        console.log('tar:extract')
+        await tar.x({ file: buildSiteArchive, cwd: buildFolder })
+        console.log('rm:tar')
+        fs.unlinkSync(buildSiteArchive)
         touch.sync(buildFolderVersion)
       }
 
