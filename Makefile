@@ -70,7 +70,7 @@ gcp-deploy-stage:
 		--zone us-central1-a \
 		--container-image=us-central1-docker.pkg.dev/risd-media-webhook/risd-webhook-server/risd-webhook-dockerify:v3.0.0 \
 		--container-env-file .env.risd.stage \
-		--tags http-server,https-server,http-server-3000
+		--tags http-server-3000
 
 gcp-update-stage:
 	gcloud compute instances update-container risd-webhook-instance-dockerify \
