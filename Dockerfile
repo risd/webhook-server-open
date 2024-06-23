@@ -64,6 +64,17 @@ RUN apt-get -y update && apt-get install -y \
   unzip \
   && npm install -g grunt-cli reap
 
+# setup reverse proxy with caddy
+RUN apt install -y \
+  debian-keyring \
+  debian-archive-keyring \
+  apt-transport-https \
+  curl
+RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+RUN apt update
+RUN apt install caddy
+
 RUN groupadd --gid 1001 webhook \
  && useradd --uid 1001 --gid webhook --shell /bin/bash --create-home webhook
 

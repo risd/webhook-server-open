@@ -9,22 +9,22 @@ build-dockerify:
 
 run:
 	docker container run \
-		--name risd-webhook-prod \
-		--publish 3000:3000 \
+		--name risd-webhook-master-vm \
+		--publish 80:80 \
 		--env-file .env.prod.local-v2 \
 		risd-webhook-master
 
 run-develop:
 	docker container run \
-		--name risd-webhook-stage \
-		--publish 3000:3000 \
+		--name risd-webhook-develop-vm \
+		--publish 80:80 \
 		--env-file .env.risd.stage \
 		risd-webhook-develop
 
 run-dockerify:
 	docker container run \
-		--name risd-webhook-stage-dockerify \
-		--publish 3000:3000 \
+		--name risd-webhook-dockerify-vm \
+		--publish 80:80 \
 		--env-file .env.risd.stage \
 		risd-webhook-dockerify
 
@@ -70,7 +70,7 @@ gcp-deploy-stage: build-dockerify docker-gcp-login gcp-tag-stage docker-push-ima
 		--zone us-central1-a \
 		--container-image=us-central1-docker.pkg.dev/risd-media-webhook/risd-webhook-server/risd-webhook-dockerify:v3.0.0 \
 		--container-env-file .env.risd.stage \
-		--tags http-server,https-server,http-server-3000
+		--tags http-server,https-server
 
 gcp-update-stage:
 	gcloud compute instances update-container risd-webhook-instance-dockerify \
@@ -86,7 +86,6 @@ gcp-ssh-stage:
 		--zone us-central1-a
 
 gcp-create-firewall-rules:
-	gcloud compute firewall-rules create allow-http-3000 --allow tcp:3000 --target-tags http-server-3000
 	gcloud compute firewall-rules create allow-http --allow tcp:80 --target-tags http-server
 	gcloud compute firewall-rules create allow-https --allow tcp:443 --target-tags https-server
 
