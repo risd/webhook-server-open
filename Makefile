@@ -70,7 +70,9 @@ gcp-deploy-stage: build-dockerify docker-gcp-login gcp-tag-stage docker-push-ima
 		--zone us-central1-a \
 		--container-image=us-central1-docker.pkg.dev/risd-media-webhook/risd-webhook-server/risd-webhook-dockerify:v3.0.0 \
 		--container-env-file .env.risd.stage \
-		--tags http-server,https-server
+		--tags http-server,https-server \
+		--machine-type e2-medium \
+		--boot-disk-size 40GB
 
 gcp-update-stage:
 	gcloud compute instances update-container risd-webhook-instance-dockerify \
