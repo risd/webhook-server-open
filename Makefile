@@ -1,8 +1,8 @@
 build:
-	docker build --tag risd-webhook-master --build-arg BRANCH=master .
+	docker buildx build --tag risd-webhook-master --build-arg BRANCH=master --platform linux/amd64,linux/arm64 .
 
 build-develop:
-	docker build --tag risd-webhook-develop --build-arg BRANCH=develop .
+	docker buildx build --tag risd-webhook-develop --build-arg BRANCH=develop --platform linux/amd64,linux/arm64 .
 
 build-dockerify:
 	docker buildx build --tag risd-webhook-dockerify --build-arg BRANCH=feature/dockerify --platform linux/amd64,linux/arm64 .
