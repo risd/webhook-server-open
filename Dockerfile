@@ -5,7 +5,7 @@ FROM os AS node
 RUN groupadd --gid 1000 node \
   && useradd --uid 1000 --gid node --shell /bin/bash --create-home node
 
-ENV NODE_VERSION 20.14.0
+ENV NODE_VERSION 20.15.0
 
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   && case "${dpkgArch##*-}" in \
@@ -108,8 +108,6 @@ RUN cp webhook.conf /etc/supervisor/conf.d/ \
   && mkdir -p /var/log/supervisor \
   && mkdir -p /var/log/memcached
 
-# ssh
-EXPOSE 22
 # http
 EXPOSE 80
 # https
