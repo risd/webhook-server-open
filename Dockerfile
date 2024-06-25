@@ -101,7 +101,8 @@ WORKDIR /home/webhook/webhook-server-open/
 # stop services that will run via supervisor
 RUN service beanstalkd stop \
   && service supervisor stop \
-  && service memcached stop
+  && service memcached stop \
+  && service cron start
 RUN cp webhook.conf /etc/supervisor/conf.d/ \
   && mkdir -p /var/beanstalk \
   && mkdir -p /var/log/supervisor \
