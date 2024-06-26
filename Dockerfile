@@ -87,10 +87,10 @@ ARG BRANCH=master
 RUN git clone https://github.com/risd/webhook-server-open.git --branch $BRANCH webhook-server-open
 WORKDIR /home/webhook/webhook-server-open/
 RUN npm install \
-  && crontab cron.example \
   && mkdir -p /home/webhook/build-folders
 ## working from local dir
 # COPY . /home/webhook/webhook-server-open
+# WORKDIR /home/webhook/webhook-server-open/
 # RUN mkdir -p /home/webhook/build-folders
 
 FROM webhook AS finalize
@@ -102,8 +102,8 @@ WORKDIR /home/webhook/webhook-server-open/
 RUN service beanstalkd stop \
   && service supervisor stop \
   && service memcached stop \
-  && service cron start
-RUN cp webhook.conf /etc/supervisor/conf.d/ \
+  && crontab cron.example \
+  && cp webhook.conf /etc/supervisor/conf.d/ \
   && mkdir -p /var/beanstalk \
   && mkdir -p /var/log/supervisor \
   && mkdir -p /var/log/memcached
