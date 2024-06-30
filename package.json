@@ -13,7 +13,7 @@
     "site-index-worker": "grunt siteIndexWorker",
     "redirects-worker": "grunt redirectsWorker",
     "preview-build-worker": "grunt previewBuildWorker",
-    "backup-cron": "grunt backupCron",
+    "backup-cron": "node cron.js",
     "extract-key": "grunt extractKey",
     "flush-build-queue": "grunt flushBuildQueue",
     "dev": "nf start --procfile=Procfile.dev"
@@ -30,6 +30,7 @@
     "async": "~0.2.9",
     "axios": "^0.18.0",
     "cloudflare": "^1.1.1",
+    "cron": "^3.1.7",
     "debug": "^4.3.4",
     "dotenv": "^2.0.0",
     "dotenv-safe": "^4.0.4",
