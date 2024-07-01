@@ -6,7 +6,7 @@ const backup = require('./libs/backup.js')
 webhookTasks(grunt)
 
 const job = new CronJob(
-  '0 0 * * * *', // cronTime
+  '0 0 0 * * *', // cronTime
   function () {
     backup.start(grunt.config)
       .then(({ file, timestamp }) => {
