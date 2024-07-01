@@ -12,6 +12,7 @@ run:
 		--name risd-webhook-master-vm \
 		--publish 80:80 \
 		--env-file .env.prod.local-v2 \
+		--label risd-webhook=prod \
 		risd-webhook-master
 
 run-develop:
@@ -19,6 +20,7 @@ run-develop:
 		--name risd-webhook-develop-vm \
 		--publish 80:80 \
 		--env-file .env.risd.stage \
+		--label risd-webhook=stage \
 		risd-webhook-develop
 
 run-dockerify:
@@ -26,6 +28,7 @@ run-dockerify:
 		--name risd-webhook-dockerify-vm \
 		--publish 80:80 \
 		--env-file .env.risd.stage \
+		--label risd-webhook=stage \
 		risd-webhook-dockerify
 
 run-dockerify-http-server:
@@ -44,8 +47,13 @@ run-dockerify-it:
 		-it \
 		risd-webhook-dockerify
 
-prune:
-	docker container prune --force
+prune-prod:
+	docker container prune --force --filter "label=risd-webhook=prod"
+
+prune-stage:
+	docker container prune --force --filter "label=risd-webhook=stage"
+
+prune: prune-stage prune-prod
 
 # deploy steps 1: login to the gcp artifact registry
 docker-gcp-login:
@@ -73,6 +81,7 @@ gcp-deploy-stage: build-dockerify docker-gcp-login gcp-tag-stage docker-push-ima
 		--tags http-server,https-server \
 		--machine-type e2-medium \
 		--boot-disk-size 40GB
+	echo "Update cloudflare with this IP address"
 
 gcp-update-stage:
 	gcloud compute instances update-container risd-webhook-instance-dockerify \
