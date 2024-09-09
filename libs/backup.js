@@ -34,14 +34,11 @@ module.exports.start = async function (config) {
   const timestamp = Date.now()
   const file = fileNameForTimestamp(timestamp)
 
-  const serviceAccountKeys = require(
-    path.join(
-      process.cwd(),
-      config.get('googleCloudServiceAccountKeyJson')))
+  const serviceAccount = config.get('cloudStorage').credentials
 
   const gcloudClient = new JWT({
-    email: serviceAccountKeys.client_email,
-    key: serviceAccountKeys.private_key,
+    email: serviceAccount.client_email,
+    key: serviceAccount.private_key,
     scopes: [
       'https://www.googleapis.com/auth/devstorage.full_control',
       'https://www.googleapis.com/auth/siteverification'
