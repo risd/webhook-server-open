@@ -46,11 +46,9 @@ module.exports = function(grunt) {
       replyEmail: process.env.REPLY_EMAIL,
     },
     elastic: {
-      host: process.env.ELASTIC_SEARCH_SERVER,
-      port: 9200,
+      node: process.env.ELASTIC_SEARCH_SERVER,
       auth: {
-        username: process.env.ELASTIC_SEARCH_USER,
-        password: process.env.ELASTIC_SEARCH_PASSWORD,
+        apiKey: process.env.ELASTIC_SEARCH_API_KEY,
       },
     },
     googleProjectId: process.env.GOOGLE_PROJECT_ID,                         // Your google project ID. Usually something like whatever-123
