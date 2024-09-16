@@ -19,8 +19,8 @@
     "dev": "nf start --procfile=Procfile.dev"
   },
   "engines": {
-    "node": ">=16.18.0",
-    "npm": ">=8.19.2"
+    "node": ">=20.14.0",
+    "npm": ">=10.7.0"
   },
   "dependencies": {
     "@fastify/cors": "^8.2.0",
