@@ -16,7 +16,7 @@ run-develop:
 	docker container run \
 		--name risd-webhook-develop-vm \
 		--publish 80:80 \
-		--env-file .env.risd.stage \
+		--env-file .env.risd.stage-v3 \
 		--label risd-webhook=stage \
 		risd-webhook-develop
 
@@ -24,7 +24,7 @@ run-develop-http-server:
 	docker container run \
 		--name risd-webhook-stage-develop \
 		--publish 80:80 \
-		--env-file .env.risd.stage \
+		--env-file .env.risd.stage-v3 \
 		--label risd-webhook=stage \
 		risd-webhook-develop \
 		/bin/sh -c "npm start"
@@ -59,7 +59,7 @@ gcp-deploy-stage: build-dockerify docker-gcp-login gcp-tag-stage docker-push-ima
 	gcloud compute instances create-with-container risd-webhook-instance-dockerify \
 		--zone us-central1-a \
 		--container-image=us-central1-docker.pkg.dev/risd-media-webhook/risd-webhook-server/risd-webhook-dockerify:v3.0.0 \
-		--container-env-file .env.risd.stage \
+		--container-env-file .env.risd.stage-v3 \
 		--tags http-server,https-server \
 		--machine-type e2-medium \
 		--boot-disk-size 40GB
@@ -68,7 +68,7 @@ gcp-deploy-stage: build-dockerify docker-gcp-login gcp-tag-stage docker-push-ima
 gcp-update-stage:
 	gcloud compute instances update-container risd-webhook-instance-dockerify \
 		--zone us-central1-a \
-		--container-env-file .env.risd.stage
+		--container-env-file .env.risd.stage-v3
 
 gcp-delete-stage:
 	gcloud compute instances delete risd-webhook-instance-dockerify \
