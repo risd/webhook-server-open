@@ -4,14 +4,11 @@ build:
 build-develop:
 	docker buildx build --tag risd-webhook-develop --build-arg BRANCH=develop --platform linux/amd64,linux/arm64 .
 
-build-dockerify:
-	docker buildx build --tag risd-webhook-dockerify --build-arg BRANCH=feature/dockerify --platform linux/amd64,linux/arm64 .
-
 run:
 	docker container run \
 		--name risd-webhook-master-vm \
 		--publish 80:80 \
-		--env-file .env.prod.local-v2 \
+		--env-file .env.prod.local-v3 \
 		--label risd-webhook=prod \
 		risd-webhook-master
 
@@ -23,29 +20,14 @@ run-develop:
 		--label risd-webhook=stage \
 		risd-webhook-develop
 
-run-dockerify:
+run-develop-http-server:
 	docker container run \
-		--name risd-webhook-dockerify-vm \
+		--name risd-webhook-stage-develop \
 		--publish 80:80 \
 		--env-file .env.risd.stage \
 		--label risd-webhook=stage \
-		risd-webhook-dockerify
-
-run-dockerify-http-server:
-	docker container run \
-		--name risd-webhook-stage-dockerify \
-		--publish 80:80 \
-		--env-file .env.risd.stage \
-		risd-webhook-dockerify \
+		risd-webhook-develop \
 		/bin/sh -c "npm start"
-
-run-dockerify-it:
-	docker container run \
-		--name risd-webhook-stage-dockerify \
-		--publish 80:80 \
-		--env-file .env.risd.stage \
-		-it \
-		risd-webhook-dockerify
 
 prune-prod:
 	docker container prune --force --filter "label=risd-webhook=prod"

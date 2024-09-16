@@ -27,14 +27,14 @@ function configure (config) {
           throw error
         }
       }
-      const siteIndex = await search.siteIndex(siteName)
-      if (!siteIndex) throw new Error('Failed to re-index CMS search index, no index found in elastic search.')
+      const elasticData = await search.siteIndex(siteName)
+      if (!elasticData) throw new Error('Failed to re-index CMS search index, no index found in elastic search.')
       const siteKeySnapshot = await firebase.siteKey({ siteName })
       const siteKey = siteKeySnapshot.val()
       const siteDataSnapshot = await firebase.siteDevData({ siteName, siteKey })
-      const siteData = siteDataSnapshot.val()
-      if (!siteData || !siteData.data || !siteData.contentType) throw new Error('Failed to re-index CMS search index, no CMS data found to index.')
-      const results = await search.updateIndex({ siteName, siteData, siteIndex })
+      const cmsData = siteDataSnapshot.val()
+      if (!cmsData || !cmsData.data || !cmsData.contentType) throw new Error('Failed to re-index CMS search index, no CMS data found to index.')
+      const results = await search.updateIndex({ siteName, cmsData, elasticData })
       let message = 'Re-index of CMS search index complete.'
       if (results.errors === true) {
         // if we start seeing this message, dig into the errors.
