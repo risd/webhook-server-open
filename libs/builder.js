@@ -44,16 +44,19 @@ function configure (config) {
   const buildFolderRoot = config.get('builder').buildFolderRoot
 
   return async function buildSite ({ siteName, userId, siteBucket, branch }) {
+    console.log('build', siteName, siteBucket, branch, userId)
     const siteManagementSnapshot = await firebase.siteManagement({ siteName })
     const siteManagement = siteManagementSnapshot.val()
     if (!siteManagement) return
 
     try {
+      console.log('build-access:guard')
       if(!(
         _(siteManagement.owners).has(firebaseEscape(userId)) ||
         _(siteManagement.users).has(firebaseEscape(userId)) ||
         userId === 'admin'
       )) return
+      console.log('build-access:success')
 
       await firebase.siteMessageAdd({ siteName }, {
         message: `Build started for ${siteBucket}`,
@@ -62,41 +65,56 @@ function configure (config) {
         code: 'BUILDING',
       })
 
+      console.log('mkdir:build-dir')
       // Create build-folders if it isnt there
       mkdirp.sync(buildFolderRoot)
 
+      console.log('buildFolderName:set')
       const buildFolderName = Deploys.utilities.nameForSiteBranch(siteName, siteBucket)
+      console.log('buildFolder:set')
       const buildFolder = path.join(buildFolderRoot, buildFolderName)
       // site version is updated on server site deploy upload
+      console.log('buildFolderVersion:set')
       const buildFolderVersion = path.join(buildFolder, `.fb_version${siteManagement.version}`)
 
+      console.log('guard-rm-rf')
       if (fs.existsSync(buildFolder) && !fs.existsSync(buildFolderVersion)) {
+        console.log('exec-rm-rf')
         await runInDir('rm', ['-rf', buildFolderName], { cwd: buildFolderRoot })
       }
+      console.log('guard-existing-version')
       if(!fs.existsSync(buildFolderVersion)) {
+        console.log('version-does-not-exit')
         // download-site-zip:start
         const branchFileName = Deploys.utilities.fileForSiteBranch(firebaseEscape(siteName), branch)
-        const buildSiteZip = path.join(buildFolderRoot, branchFileName)
-        if (fs.existsSync(buildSiteZip)) {
-          fs.unlinkSync(buildSiteZip)
+        console.log('buildSiteArchive:set')
+        const buildSiteArchive = path.join(buildFolderRoot, branchFileName)
+        console.log('buildSiteArchive:exists:guard')
+        if (fs.existsSync(buildSiteArchive)) {
+          console.log('buildSiteArchive:unlink')
+          fs.unlinkSync(buildSiteArchive)
         }
+        console.log('fetch-site-template')
         await cloudStorage.objects.get({
           bucket: config.get('sitesBucket'),
           remote: branchFileName,
-          local: buildSiteZip,
+          local: buildSiteArchive,
         })
         // download-site-zip:end
         
+        console.log('mkdir:site-build-folder')
         mkdirp.sync(buildFolder)
 
-        await tar.x({ file: buildSiteZip, cwd: buildFolder })
-        fs.unlinkSync(buildSiteZip)
+        console.log('tar:extract')
+        await tar.x({ file: buildSiteArchive, cwd: buildFolder })
+        console.log('rm:tar')
+        fs.unlinkSync(buildSiteArchive)
         touch.sync(buildFolderVersion)
       }
 
       try {
         console.log('npm-install')
-        await runInDir('npm', ['install'], { cwd: buildFolder })  
+        await runInDir('npm', ['install', '--cache=nope'], { cwd: buildFolder })  
       }
       catch (error) {
         console.log(error)
@@ -242,7 +260,7 @@ function configure (config) {
         buildEventSource,
         runBuildEmitter({ builtFolder, bucketSpec }),  // pushes { builtFile, builtFilePath, bucket }
         buildSitemap({ builtFolder, bucketSpecs }), // pushes { builtFile, builtFilePath, bucket }
-        buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
+        // buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
         uploadIfDifferent({ maxParallel: 10, purgeProxy }),  // pushes { builtFile, builtFilePath, bucket }
         sink(),
         (error) => {
@@ -358,6 +376,8 @@ function configure (config) {
     return [ protocol, host ].join( '://' )
   }
 
+  // With builds limited to a single bucket, we do not have to be concerned with
+  // building multiple robots.txt files in a single build
   function buildRobotsTxt ( options ) {
     var buckets = options.bucketSepcs || [];
     var buildFolder = options.buildFolder;
@@ -378,7 +398,9 @@ function configure (config) {
 
     function writeRobotsTxt () {
       var stream = this;
+      debug('write-robots-txt:check')
       if ( shouldBuild === false ) return stream.push( null )
+      debug('write-robots-txt:execute')
       miss.pipe(
         feedBuckets(),
         buildAndRead(),
@@ -386,6 +408,7 @@ function configure (config) {
           stream.push( args )
         } ),
         function onComplete ( error ) {
+          debug('write-robots-txt:error', error)
           if ( error ) return stream.emit( 'error', error )
           stream.push( null )
         } )
@@ -395,7 +418,6 @@ function configure (config) {
       return miss.from.obj( buckets.map( function ( bucket ) { return { bucket: bucket } } ).concat( [ null ] ) )
     }
 
-    // TODO: ensure this builds the right robots file
     function buildAndRead () {
       return miss.through.obj(async function ( args, enc, next ) {
         var robotsDataContent = buildDataForBucket( args.bucket )
@@ -419,9 +441,12 @@ function configure (config) {
             bucket: args.bucket,
             overrideMimeType: 'text/plain',
           }
+          console.log('robots.txt:upload-args')
+          console.log(uploadArgs)
           next(null, uploadArgs)
         }
         catch (error) {
+          console.log('robots.txt:error')
           console.log(error)
           next(error)
         }

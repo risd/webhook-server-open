@@ -36,7 +36,8 @@ module.exports = function(grunt) {
   grunt.initConfig({
     firebase: {
       name: process.env.FIREBASE,                                           // The name of your firebase
-      serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,          // Your firebase's service account key
+      serviceAccountKeyFile: process.env.FIREBASE_SERVICE_ACCOUNT_KEY,          // Your firebase's service account key
+      serviceAccountCredentials: parseJson(process.env.FIREBASE_SERVICE_ACCOUNT_KEY_STRING),          // Your firebase's service account key
     },
     mailgun: {
       apiKey: process.env.MAILGUN_SECRET_KEY,
@@ -45,11 +46,9 @@ module.exports = function(grunt) {
       replyEmail: process.env.REPLY_EMAIL,
     },
     elastic: {
-      host: process.env.ELASTIC_SEARCH_SERVER,
-      port: 9200,
+      node: process.env.ELASTIC_SEARCH_SERVER,
       auth: {
-        username: process.env.ELASTIC_SEARCH_USER,
-        password: process.env.ELASTIC_SEARCH_PASSWORD,
+        apiKey: process.env.ELASTIC_SEARCH_API_KEY,
       },
     },
     googleProjectId: process.env.GOOGLE_PROJECT_ID,                         // Your google project ID. Usually something like whatever-123
@@ -58,14 +57,14 @@ module.exports = function(grunt) {
     uploadsBucket: process.env.UPLOADS_BUCKET,                              // The name of the bucket to push all file uploads to
     googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT,               // The email of your projects Service Acccount
     cloudStorage: {
-      keyFilename: process.env.GOOGLE_KEY_JSON,
+      credentials:  parseJson(process.env.GOOGLE_KEY_JSON_STRING),
       defaultCors: parseJson(process.env.GOOGLE_BUCKET_DEFAULT_CORS),
     },
     googleCloudServiceAccountKeyJson: process.env.GOOGLE_KEY_JSON,
-    memcachedServers: [
+    memcachedServers: parseJson(process.env.MEMCACHED_SERVERS, [
       'localhost:11211'
-    ],
-    beanstalkServer: 'localhost:11300',
+    ]),
+    beanstalkServer: process.env.BEANSTALK_SERVER || 'localhost:11300',
     cloudflare: {
       client: {
         email: process.env.CLOUDFLARE_EMAIL,
@@ -87,7 +86,7 @@ module.exports = function(grunt) {
     server: {
       listen: {
         port: process.env.WEBHOOK_SERVER_PORT || 3000,
-        host: process.env.WEBHOOK_SERVER_HOST || '127.0.0.1',
+        host: process.env.WEBHOOK_SERVER_HOST || '0.0.0.0',
       },
     },
     getImageResizeUrl: {

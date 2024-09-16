@@ -44,11 +44,29 @@ function WebhookSiteDelete ( siteName ) {
     var deletors = []
       .concat( buckets.map( deleteCnameForSiteNameTask ) )
       .concat( buckets.map( deleteCDNDomain ) )
-      .concat( self._firebase.deleteSite( { siteName } ) )
-      .concat( self._elastic.deleteIndex( { siteName } ) )
+      .concat( deleteFirebaseReferences(siteName) )
+      .concat( deleteElasticIndex(siteName) )
       .concat( buckets.map( deleteStorageBucketTask ) )
 
     return Promise.all( deletors )
+  }
+
+  function deleteElasticIndex (siteName) {
+    return self._elastic.deleteIndex({ siteName })
+      .catch((error) => {
+        console.log('Could not delete elastic site index for siteName=', siteName)
+        debug(error)
+        return Promise.resolve()
+      })
+  }
+
+  function deleteFirebaseReferences (siteName) {
+    return self._firebase.deleteSite( { siteName } )
+      .catch((error) => {
+        console.log('Could not delete firebase references for siteName=', siteName)
+        debug(error)
+        return Promise.resolve()
+      })
   }
 
   function deleteCnameForSiteNameTask ( bucket ) {

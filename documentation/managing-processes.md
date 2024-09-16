@@ -2,10 +2,18 @@
 
 The backbone of `risd.systems` is the WebHook Server. This server is a Google Cloud Compute Instance, and is responsible for running the [WebHook Server Application][webhook-server].
 
-There are a number of processes that are defined within the WebHook Server Application that enable the WebHook system to function. These processes are managed by [Supervisor][supervisor], an application created to easily start, stop, and view the status of a process. The [Supervisor configuration][webhook-conf] file is used to define these processes.
+There are a number of processes that are defined within the WebHook Server Application that enable the WebHook system to function. These processes are managed by [Supervisor][supervisor], an application created to easily start, stop, and view the status of a process. The [Supervisor configuration][webhook-conf] file is used to define these processes. [Supervisor][supervisor] is managed by the `service` interface in Debian.
 
+- [Using service](#using-service)
 - [Using Supervisor](#using-supervisor)
 - [Restarting WebHook Processes](#restarting-webhook-processes)
+
+
+TODO document supervisor logging when the cmd is running in the foreground for in a docker container
+
+### Using service
+
+`service` is used to manage `supervisor` & `memcache`. `beanstalkd` is also listed, but we turn it off in the `service` interface (`service beanstalkd stop`) and let [Supervisor][supervisor] handle it. You can use `service` to check the status of a service with `service supervisor status`. This will tell you if it is running. You can also replace `status` with `stop` & `start` to issue those respective commands to any service by its name.
 
 
 ### Using Supervisor

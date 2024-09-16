@@ -14,37 +14,22 @@ var mime = require('mime');
 var fs = require('fs');
 const chainCallbackResponse = require('./utils/chain-callback-response')
 
-var projectName = process.env.GOOGLE_PROJECT_ID || '';
-var googleServiceAccount = process.env.GOOGLE_SERVICE_ACCOUNT || '';
-
 // Contains google service accounts SSH key
-var keyFilename = process.env.GOOGLE_KEY_JSON || 'libs/keyfile.key';
+var credentials = process.env.GOOGLE_KEY_JSON_STRING && JSON.parse(process.env.GOOGLE_KEY_JSON_STRING)
+var googleServiceAccount = credentials?.client_email
+let defaultCors = process.env.GOOGLE_BUCKET_DEFAULT_CORS && JSON.parse(process.env.GOOGLE_BUCKET_DEFAULT_CORS)
 
 // storage interface used throughout this file
 let storage
-let defaultCors
-
-function projectIdFromKeyFile( keyFile ) {
-  console.log('project-id-from-key-file:keyFile:', keyFile)
-  console.log(fs.readFileSync(keyFile).toString())
-  try {
-    return JSON.parse( fs.readFileSync( keyFile ).toString() ).project_id;
-  } catch ( error ) {
-    console.log('project-id-from-key-file:error')
-    console.log(error)
-    throw error
-  }
-}
 
 module.exports.configure = configure
 
 function configure (options={}) {
   const config = {
-    serviceAccountEmail: googleServiceAccount,
-    projectId: projectName,
-    keyFilename,
+    defaultCors,
   }
-  if (options.defaultCors) defaultCors = options.defaultCors
+  if (options.credentials) config.credentials = options.credentials
+  if (!googleServiceAccount) googleServiceAccount = options.credentials?.client_email
   try {
     storage = new Storage(config)
   }
@@ -55,8 +40,11 @@ function configure (options={}) {
 }
 
 // try to configure on load based on environment variable
-if (keyFilename && projectName && googleServiceAccount) {
-  configure()
+if (credentials) {
+  configure({ credentials })
+}
+else {
+  throw new Error('Could not configure @google-cloud/storage')
 }
 
 
@@ -146,6 +134,10 @@ var objectsAPI = {
 
   // Get an object from a bucket
   get: function({ bucket, remote, local }) {
+    console.log('cloudStorage:objects:get')
+    console.log({ bucket })
+    console.log({ remote })
+    console.log({ local })
     return storage.bucket(bucket).file(remote).download({ destination: local })
   },
 
@@ -215,15 +207,15 @@ var objectsAPI = {
       if (nextPageQuery) {
         listOptions.options = nextPageQuery
       }
-      const results = objectsAPI.list(listOptions)
+      const results = await objectsAPI.list(listOptions)
       const files = results[0]
       if (!Array.isArray(files)) return
-      for (const file in files) {
+      for (const file of files) {
         await objectsAPI.del({ bucket, file: file.name })
       }
       const nextPageQueryOptions = results[1]
       if (nextPageQueryOptions) return await listAndDeleteAll(nextPageQueryOptions)
-      return
+      else return
     }
 
     const chain = new Promise(async (resolve, reject) => {

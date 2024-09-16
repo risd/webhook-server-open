@@ -1,18 +1,19 @@
 const debug = require('debug')('WHFirebase')
-var path = require( 'path' )
-var axios = require( 'axios' )
-var admin = require( 'firebase-admin' )
-var {
+const path = require( 'path' )
+const axios = require( 'axios' )
+const admin = require( 'firebase-admin' )
+const {
   initializeApp,
   cert,
 } = require( 'firebase-admin/app' )
 const {
   getDatabase,
 } = require('firebase-admin/database')
-var getAccessToken = require( './access-token.js' )
+const getAccessToken = require( './access-token.js' )
+const uuid = require('node-uuid')
 
-var unescape = require( '../utils/firebase-unescape.js' )
-var escape = require( '../utils/firebase-escape.js' )
+const unescape = require( '../utils/firebase-unescape.js' )
+const escape = require( '../utils/firebase-escape.js' )
 
 module.exports = WHFirebase;
 
@@ -21,7 +22,7 @@ module.exports = WHFirebase;
  * 
  * @param  {object}  config
  * @param  {string}  config.name                 The name of the firebase to initialize
- * @param  {string}  config.serviceAccountKey    The service account key for the firebase to initialize
+ * @param  {string}  config.serviceAccountKeyFile    The service account key for the firebase to initialize
  * @param  {string?} config.initializationName   The name to use when initializing the firebase instance
  * @return {object}  firebase                          The firebase instance that has been initialized.
  */
@@ -29,10 +30,12 @@ function WHFirebase ( config ) {
   if ( ! ( this instanceof WHFirebase ) ) return new WHFirebase( config )
   var firebaseName = config.name;
   this._firebaseName = firebaseName;
-  var firebaseServiceAccountKey = require(path.join(process.cwd(), config.serviceAccountKey));
+  var firebaseServiceAccount
+  if (config.serviceAccountCredentials) firebaseServiceAccount = config.serviceAccountCredentials
+  else if (config.serviceAccountKeyFile) firebaseServiceAccount = require(path.join(process.cwd(), config.serviceAccountKeyFile));
 
   var options = {
-    credential: cert( firebaseServiceAccountKey ),
+    credential: cert( firebaseServiceAccount ),
     databaseURL: 'https://' + firebaseName + '.firebaseio.com',
   }
 
@@ -43,7 +46,7 @@ function WHFirebase ( config ) {
     this._app = initializeApp( options, this._initializationName )
   }
 
-  this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccountKey )
+  this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccount )
 }
 
 WHFirebase.prototype.database = function () {
@@ -223,11 +226,12 @@ function WebhookSiteDelete ( options ) {
     .then( returnDeletePromises )
 
   function returnDeletePromises ( usersSites ) {
-    var deletePromises = usersSites
+    const keyPaths = usersSites
       .filter( includesSiteToDelete )
       .map( usersManagementPath )
         .concat( deleteKeyPaths )
-          .map( setKeyPathToNull )
+    debug({keyPaths})
+    var deletePromises = keyPaths.map( setKeyPathToNull )
 
     return admin.Promise.all( deletePromises )
   }
@@ -371,31 +375,37 @@ function WebhookSiteMessagesAdd ({ siteName }, value) {
 
 function WebhookSignalBuild ({ siteName }, payload) {
   const keyPath = `management/commands/build/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalInvite ({ siteName }, payload) {
   const keyPath = `management/commands/invite/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalDomainMap ({ siteName }, payload) {
   const keyPath = `management/commands/domainMap/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalRedirects ({ siteName }, payload) {
   const keyPath = `management/commands/redirects/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalPreviewBuild ({ siteName }, payload) {
   const keyPath = `management/commands/previewBuild/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalSiteSearchIndex ({ siteName }, payload) {
   const keyPath = `management/commands/siteSearchReindex/${ escape(siteName) }`
+  if (!payload.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 

@@ -1,6 +1,6 @@
 # @risd/wh Overview
 
-This repository is for the Webhook command line tools. There are several other repositories in Webhook's core.
+This repository is for the Webhook server. There are several other repositories in Webhook's core.
 
 * [@risd/wh](https://github.com/risd/webhook) - The Webhook command line tools.
 * [@risd/webhook-generate](https://github.com/risd/webhook-generate) - The local runserver for Webhook.
@@ -35,10 +35,11 @@ A `.env` file that includes the values outlined in `.env.example` is expected in
 ```
 GOOGLE_PROJECT_ID=
 GOOGLE_SERVICE_ACCOUNT=
-GOOGLE_KEY_FILE=
+GOOGLE_KEY_JSON_STRING=
+GOOGLE_BUCKET_DEFAULT_CORS=
 ```
 
-These entries will configure Google Cloud usage. The `GOOGLE_KEY_FILE` location can be defined by the path to the file produced by running `grunt extractKey=gcloud.json`, where `gcloud.json` is the Google Service Account JSON file associated with the project.
+The `GOOGLE_KEY_JSON_STRING` is the service account JSON that includes a private key, project id, and service account email address, saved as a stringified JSON object. `GOOGLE_BUCKET_DEFAULT_CORS` is a stringified JSON object that will power default CORS config for all buckets.
 
 ```
 DEVELOPMENT_DOMAIN

@@ -38,8 +38,6 @@ test( 'create-cname-record', async function ( t ) {
 })
 
 test( 'error-cname-for-domain', async function ( t ) {
-  t.plan( 2 )
-
   var doNotSetCnameOptions = Object.assign( createCnameRecordOptions, {
     siteBucket: 'not-the-owner-of-this-domain.google.com',
   } )
@@ -50,6 +48,9 @@ test( 'error-cname-for-domain', async function ( t ) {
   }
   catch (error) {
     t.ok( error.message === Cloudflare.ZoneRequiredError().message, `Correct error occurs. ` )
+  }
+  finally {
+    t.end()
   }
 })
 

@@ -153,13 +153,17 @@ module.exports.start = async function(config) {
   // resize_url is passed if the url is of an image and needs a resize_url returned
   // Finally url is the url of the object to upload
   async function postUploadUrlHandler (request, reply) {
+    debug('upload-url')
     reply.type('application/json')
 
     const siteName = request.body.site
     const token = request.body.token
 
-    const resizeUrlRequested = request.body.resize_url
+    const resizeUrlRequested = Boolean(request.body.resize_url)
     const url = request.body.url
+
+    debug('upload-url:args')
+    debug({ siteName, token, resizeUrlRequested, url })
 
     if (!url) {
       cleanUpFiles(request)
@@ -167,6 +171,7 @@ module.exports.start = async function(config) {
       return { error: 'Body requires a `url` attribute to upload.' }
     }
 
+    debug('upload-url:download-file')
     const localFile = await createTmpFile()
     await downloadUrlToPath({ url, localFile })
     const stat = await fsp.stat(localFile)
@@ -178,6 +183,7 @@ module.exports.start = async function(config) {
     }
     const remote = timestampedUploadsPathForFileName(path.basename(url))
     
+    debug('upload-url:upload')
     const results = await cloudStorage.objects.upload({
       bucket: uploadBucket,
       local: localFile,
@@ -187,6 +193,7 @@ module.exports.start = async function(config) {
     results.url = `//${results.bucket}/${results.name}`
 
     if (resizeUrlRequested) {
+      debug('upload-url:get-resize-url')
       try {
         const resizeUrl = await getImageResizeUrl(results.url)
         results.resizeUrl = resizeUrl
@@ -200,6 +207,7 @@ module.exports.start = async function(config) {
       }
     }
 
+    debug('upload-url:cleanup')
     fs.unlinkSync(localFile)
     cleanUpFiles(request)
 
@@ -234,7 +242,7 @@ module.exports.start = async function(config) {
     const siteName = request.body.site
     const token = request.body.token
 
-    const resizeUrlRequested = request.body.resize_url
+    const resizeUrlRequested = request.body.resize_url ? Boolean(request.body.resize_url) : false
     const payload = request.body.payload
     const remote = timestampedUploadsPathForFileName(path.basename(payload.filename))
 
@@ -304,7 +312,7 @@ module.exports.start = async function(config) {
     const doc = request.body.data
     const id = request.body.id
     const contentType = request.body.typeName
-    const oneOff = request.body.oneOff || false
+    const oneOff = request.body.oneOff ? Boolean(request.body.oneOff) : false
 
     cleanUpFiles(request)
 
