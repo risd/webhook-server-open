@@ -260,7 +260,7 @@ function configure (config) {
         buildEventSource,
         runBuildEmitter({ builtFolder, bucketSpec }),  // pushes { builtFile, builtFilePath, bucket }
         buildSitemap({ builtFolder, bucketSpecs }), // pushes { builtFile, builtFilePath, bucket }
-        // buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
+        buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
         uploadIfDifferent({ maxParallel: 10, purgeProxy }),  // pushes { builtFile, builtFilePath, bucket }
         sink(),
         (error) => {
@@ -319,8 +319,6 @@ function configure (config) {
       var siteMapTasks = buckets.map( createSiteMapTask )
       async.parallel( siteMapTasks, function ( error, siteMaps ) {
         if ( error ) return stream.emit( 'error', error );
-        console.log( 'site-maps' )
-        console.log( siteMaps )
         siteMaps.forEach( function ( siteMap ) { stream.push( siteMap ) } )
         stream.push( null )
       } )
@@ -329,13 +327,11 @@ function configure (config) {
     function createSiteMapTask ( bucket ) {
       return function siteMapTask ( taskComplete ) {
         var siteMapDomain = bucket.maskDomain ? bucket.maskDomain : bucket.contentDomain;
-
         var siteMapFile = siteMapName( siteMapDomain );
         var siteMapPath = path.join( builtFolder, siteMapFile )
         var siteMapContent = siteMapFor( siteMapDomain, urls )
         fs.writeFile( siteMapPath, siteMapContent, function ( error ) {
           if ( error ) {
-            console.log( 'site-map:error' )
             console.log( error )
             return taskComplete()
           }
@@ -379,7 +375,9 @@ function configure (config) {
   // With builds limited to a single bucket, we do not have to be concerned with
   // building multiple robots.txt files in a single build
   function buildRobotsTxt ( options ) {
-    var buckets = options.bucketSepcs || [];
+    console.log('buildRobotsTxt.options')
+    console.log(options)
+    var buckets = options.bucketSpecs || [];
     var buildFolder = options.buildFolder;
     var builtFolder = options.builtFolder;
     const cmdParams = options.cmdParams
@@ -420,6 +418,8 @@ function configure (config) {
 
     function buildAndRead () {
       return miss.through.obj(async function ( args, enc, next ) {
+        console.log('robots:buildAndRead')
+        console.log(args)
         var robotsDataContent = buildDataForBucket( args.bucket )
         var robotsDataPath = path.join( builtFolder, 'robots-data.json' )
 
