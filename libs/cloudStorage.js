@@ -132,6 +132,10 @@ var objectsAPI = {
     else return chain
   },
 
+  listStream: function ({ bucket, options={} }) {
+    return storage.bucket(bucket).getFilesStream(options)
+  },
+
   // Get an object from a bucket
   get: function({ bucket, remote, local }) {
     console.log('cloudStorage:objects:get')

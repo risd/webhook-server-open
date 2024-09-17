@@ -114,7 +114,7 @@ function configure (config) {
 
       try {
         console.log('npm-install')
-        await runInDir('npm', ['install', '--cache=nope'], { cwd: buildFolder })  
+        await runInDir('npm', ['install'], { cwd: buildFolder })  
       }
       catch (error) {
         console.log(error)
@@ -260,7 +260,7 @@ function configure (config) {
         buildEventSource,
         runBuildEmitter({ builtFolder, bucketSpec }),  // pushes { builtFile, builtFilePath, bucket }
         buildSitemap({ builtFolder, bucketSpecs }), // pushes { builtFile, builtFilePath, bucket }
-        // buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
+        buildRobotsTxt({ buildFolder, builtFolder, bucketSpecs, cmdParams }), // pushes { builtFile, builtFilePath, bucket }
         uploadIfDifferent({ maxParallel: 10, purgeProxy }),  // pushes { builtFile, builtFilePath, bucket }
         sink(),
         (error) => {
@@ -319,8 +319,6 @@ function configure (config) {
       var siteMapTasks = buckets.map( createSiteMapTask )
       async.parallel( siteMapTasks, function ( error, siteMaps ) {
         if ( error ) return stream.emit( 'error', error );
-        console.log( 'site-maps' )
-        console.log( siteMaps )
         siteMaps.forEach( function ( siteMap ) { stream.push( siteMap ) } )
         stream.push( null )
       } )
@@ -329,13 +327,11 @@ function configure (config) {
     function createSiteMapTask ( bucket ) {
       return function siteMapTask ( taskComplete ) {
         var siteMapDomain = bucket.maskDomain ? bucket.maskDomain : bucket.contentDomain;
-
         var siteMapFile = siteMapName( siteMapDomain );
         var siteMapPath = path.join( builtFolder, siteMapFile )
         var siteMapContent = siteMapFor( siteMapDomain, urls )
         fs.writeFile( siteMapPath, siteMapContent, function ( error ) {
           if ( error ) {
-            console.log( 'site-map:error' )
             console.log( error )
             return taskComplete()
           }
@@ -379,7 +375,9 @@ function configure (config) {
   // With builds limited to a single bucket, we do not have to be concerned with
   // building multiple robots.txt files in a single build
   function buildRobotsTxt ( options ) {
-    var buckets = options.bucketSepcs || [];
+    console.log('buildRobotsTxt.options')
+    console.log(options)
+    var buckets = options.bucketSpecs || [];
     var buildFolder = options.buildFolder;
     var builtFolder = options.builtFolder;
     const cmdParams = options.cmdParams
@@ -420,6 +418,8 @@ function configure (config) {
 
     function buildAndRead () {
       return miss.through.obj(async function ( args, enc, next ) {
+        console.log('robots:buildAndRead')
+        console.log(args)
         var robotsDataContent = buildDataForBucket( args.bucket )
         var robotsDataPath = path.join( builtFolder, 'robots-data.json' )
 
@@ -513,48 +513,45 @@ function configure (config) {
     function feedCloudFiles ({ bucketSpecs }) {
       return miss.through.obj( function ( args, enc, next ) {
         var stream = this;
-
-        var listTasks = bucketSpecs.map( pushListTask )
-
-        async.parallel( listTasks, function onDone () { next() } )
-
-        function pushListTask ( bucketSpec ) {
-          return function ( taskComplete ) {
-
-            pushList()
-
-            function pushList (nextPageQuery) {
-              const listOptions = {
-                bucket: bucketSpec.contentDomain,
-              }
-              if (nextPageQuery) {
-                listOptions.options = nextPageQuery
-              }
-              cloudStorage.objects.list(listOptions)
-                .then((results) => {
-                  const files = results[0]
-                  const nextPageQueryOptions = results[1]
-                  if (!Array.isArray(files)) {
-                    debug('no-files-found')
-                    return taskComplete()
-                  }
-                  files.filter(nonStatic).forEach((remoteFile) => {
-                    debug('feed-cloud-file:', remoteFile.name)
-                    stream.push({
-                      ...args,
-                      builtFile: remoteFile.name,
-                      bucket: bucketSpec,
-                    })
-                  })
-                  if (nextPageQueryOptions) return pushList(nextPageQueryOptions)
-                  else taskComplete()
-                })
-                .catch((error) => {
-                  taskComplete(error)
-                })
-            }
-          }
+        debug('feed-cloud-files:start')
+        const fileCounter = {
+          all: 0,
+          nonStatic: 0,
         }
+        miss.pipe(
+          miss.from.obj(bucketSpecs.concat([null])),
+          miss.through.obj((bucketSpec, _, nextBucket) => {
+            const bucket = bucketSpec.contentDomain
+            debug('feed-cloud-files:bucket:start', bucket)
+            miss.pipe(
+              cloudStorage.objects.listStream({ bucket }),
+              miss.through.obj((remoteFile, _, nextFile) => {
+                fileCounter.all += 1
+                if (nonStatic(remoteFile)) {
+                  fileCounter.nonStatic += 1
+                  debug('feed-cloud-file:remoteFile:', remoteFile.name)
+                  stream.push({
+                    ...args,
+                    builtFile: remoteFile.name,
+                    bucket: bucketSpec,
+                  }) 
+                }
+                nextFile()
+              }),
+              function onFinishListStream (error) {
+                if (error) console.log(error)
+                nextBucket()
+              }
+            )
+          }),
+          function onFinishBucket (error) {
+            debug('feed-cloud-files:file-counter:all', fileCounter.all)
+            debug('feed-cloud-files:file-counter:nonStatic', fileCounter.nonStatic)
+            debug('feed-cloud-files:end')
+            if (error) console.log(error)
+            next()
+          }
+        )
       } )
 
       function nonStatic ( remoteFile ) {
