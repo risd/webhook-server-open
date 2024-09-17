@@ -1,7 +1,7 @@
 {
   "name": "@risd/webhook-server-open",
   "description": "Web server for @risd/webhook",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "scripts": {
     "start": "grunt startServer",
     "test": "tape test/**/*.js",
@@ -26,7 +26,7 @@
     "@fastify/cors": "^8.2.0",
     "@fastify/formbody": "^7.4.0",
     "@fastify/multipart": "^7.3.0",
-    "@google-cloud/storage": "^7.11.2",
+    "@google-cloud/storage": "^7.12.1",
     "async": "~0.2.9",
     "axios": "^0.18.0",
     "cloudflare": "^1.1.1",
