@@ -138,10 +138,6 @@ var objectsAPI = {
 
   // Get an object from a bucket
   get: function({ bucket, remote, local }) {
-    console.log('cloudStorage:objects:get')
-    console.log({ bucket })
-    console.log({ remote })
-    console.log({ local })
     return storage.bucket(bucket).file(remote).download({ destination: local })
   },
 
