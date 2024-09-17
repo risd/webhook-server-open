@@ -114,7 +114,7 @@ function configure (config) {
 
       try {
         console.log('npm-install')
-        await runInDir('npm', ['install', '--cache=nope'], { cwd: buildFolder })  
+        await runInDir('npm', ['install'], { cwd: buildFolder })  
       }
       catch (error) {
         console.log(error)
@@ -513,48 +513,45 @@ function configure (config) {
     function feedCloudFiles ({ bucketSpecs }) {
       return miss.through.obj( function ( args, enc, next ) {
         var stream = this;
-
-        var listTasks = bucketSpecs.map( pushListTask )
-
-        async.parallel( listTasks, function onDone () { next() } )
-
-        function pushListTask ( bucketSpec ) {
-          return function ( taskComplete ) {
-
-            pushList()
-
-            function pushList (nextPageQuery) {
-              const listOptions = {
-                bucket: bucketSpec.contentDomain,
-              }
-              if (nextPageQuery) {
-                listOptions.options = nextPageQuery
-              }
-              cloudStorage.objects.list(listOptions)
-                .then((results) => {
-                  const files = results[0]
-                  const nextPageQueryOptions = results[1]
-                  if (!Array.isArray(files)) {
-                    debug('no-files-found')
-                    return taskComplete()
-                  }
-                  files.filter(nonStatic).forEach((remoteFile) => {
-                    debug('feed-cloud-file:', remoteFile.name)
-                    stream.push({
-                      ...args,
-                      builtFile: remoteFile.name,
-                      bucket: bucketSpec,
-                    })
-                  })
-                  if (nextPageQueryOptions) return pushList(nextPageQueryOptions)
-                  else taskComplete()
-                })
-                .catch((error) => {
-                  taskComplete(error)
-                })
-            }
-          }
+        debug('feed-cloud-files:start')
+        const fileCounter = {
+          all: 0,
+          nonStatic: 0,
         }
+        miss.pipe(
+          miss.from.obj(bucketSpecs.concat([null])),
+          miss.through.obj((bucketSpec, _, nextBucket) => {
+            const bucket = bucketSpec.contentDomain
+            debug('feed-cloud-files:bucket:start', bucket)
+            miss.pipe(
+              cloudStorage.objects.listStream({ bucket }),
+              miss.through.obj((remoteFile, _, nextFile) => {
+                fileCounter.all += 1
+                if (nonStatic(remoteFile)) {
+                  fileCounter.nonStatic += 1
+                  debug('feed-cloud-file:remoteFile:', remoteFile.name)
+                  stream.push({
+                    ...args,
+                    builtFile: remoteFile.name,
+                    bucket: bucketSpec,
+                  }) 
+                }
+                nextFile()
+              }),
+              function onFinishListStream (error) {
+                if (error) console.log(error)
+                nextBucket()
+              }
+            )
+          }),
+          function onFinishBucket (error) {
+            debug('feed-cloud-files:file-counter:all', fileCounter.all)
+            debug('feed-cloud-files:file-counter:nonStatic', fileCounter.nonStatic)
+            debug('feed-cloud-files:end')
+            if (error) console.log(error)
+            next()
+          }
+        )
       } )
 
       function nonStatic ( remoteFile ) {
