@@ -92,6 +92,9 @@ RUN npm install \
 # COPY . /home/webhook/webhook-server-open
 # WORKDIR /home/webhook/webhook-server-open/
 # RUN mkdir -p /home/webhook/build-folders
+## working from mounted local dir
+## --mount src="$(shell pwd)",target=/home/webhook/webhook-server-open,type=bind
+# RUN mkdir -p /home/webhook/build-folders
 
 FROM webhook AS finalize
 
