@@ -34,3 +34,19 @@ run-prod-mounted:
 ```
 
 use `make build` to build a conatiner you can use. then `make run-prod-mounted`, this will mount the current repo as the directory that is used to run webhook stuff. then use `docker container ls` to get the container name, and run commands within it. you could start by turning off processes with `docker exec risd-webhook-prod-vm supervisorctl stop all`. and then run individual individual commands that you can run to test various functionality. either running tests `npx tape test/*` or using the `./bin` interfaces to run a build `./bin/build-command {args}`.
+
+
+# Disk usage
+
+When in an ssh session you can check disk usage with:
+
+```bash
+$ df -BM
+```
+
+This will show all partitions and their usage. Using docker on gcp, it looks like the volume we are using is `/mnt/stateful_partition`, that is the one to keep an eye on if worried about how many sites a single disk can hold on to.
+
+
+# Interactive shell
+
+`docker exec -it <container> bash` can be used to get a shell into the container.
