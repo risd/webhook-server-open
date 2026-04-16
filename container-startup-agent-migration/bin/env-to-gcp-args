@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+
+const { readFile } = require('node:fs/promises')
+const { join } = require('node:path')
+
+const envFile = process.argv.slice(2)?.[0]
+
+if (!envFile) {
+  return console.log('$ ./env-to-docker-args {env-file}')
+}
+
+;(async () => {
+  const env = (await readFile(join(process.cwd(), envFile))).toString()
+  const vars = env.trim()
+    .split('\n')
+    .join(',')
+  console.log(vars)
+})()
