@@ -1717,7 +1717,7 @@ function snippetArguments ( name, options ) {
         dynamic: 1,
         type: 'recv',
         priority: 104,
-        content: `if ( req.http.host ~ "risd.edu$" && ! req.http.Fastly-SSL ) {
+        content: `if ( req.http.host ~ "risd\.edu$" && ! req.http.Fastly-SSL ) {
           set req.http.x-redirect-location = "https://" req.http.host req.url;
           error 301;
         }`
