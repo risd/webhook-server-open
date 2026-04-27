@@ -1,0 +1,141 @@
+#!/usr/bin/env node
+
+const { mkdir, writeFile } = require('node:fs/promises')
+const { join } = require('node:path')
+const async = require( 'async' )
+const grunt = require( 'grunt' )
+const webhookTasks = require( '../Gruntfile.js' )
+const Firebase = require( '../libs/firebase/index.js' )
+
+webhookTasks( grunt )
+
+const uploadsBucket = grunt.config.get('uploadsBucket')
+
+const bucketUrlRegex = new RegExp(`(\/\/${uploadsBucket})([-a-zA-Z0-9@:%_\+.~#?&//=]*)`, 'g')
+
+const args = process.argv.slice(2)
+
+const outdir = args[0]
+
+if (!outdir) throw new Error('Must include directory to write results')
+
+const firebase = Firebase(grunt.config.get('firebase'))
+
+;(async () => {
+  const indicies = Indicies()
+  const sites = (await firebase.allSites()).val()
+  for (const siteName in sites) {
+    const siteKey = sites[siteName]?.key
+    const siteData = (await firebase.siteDevData({ siteName, siteKey })).val()
+    if (!siteData) continue
+    console.log('walk', siteName)
+    walkObject(siteData, ({ value }) => {
+      if (typeof value === 'string' && value.includes(uploadsBucket)) {
+        if (value.startsWith('//')) {
+          indicies.addLink({ siteName, link: value })  
+        }
+        else {
+          const matches = value.match(bucketUrlRegex)
+          for (const link of matches) {
+            indicies.addLink({ siteName, link })
+          }
+        }
+      }
+    })
+  }
+  await indicies.writeResults(outdir)
+  process.exit(0)
+})()
+
+function isObject (item) {
+  return (typeof item === 'object' && !Array.isArray(item) && item !== null)
+}
+
+function walkObject(root, fn) {
+  function walk(obj, location = []) {
+    Object.keys(obj).forEach((key) => {
+
+      // Value is an array, call walk on each item in the array
+      if (Array.isArray(obj[key])) {
+        obj[key].forEach((el, j) => {
+          fn({
+            value: el,
+            key: `${key}:${j}`,
+            location: [...location, ...[key], ...[j]],
+            isLeaf: false
+          })
+
+          walk(el, [...location, ...[key], ...[j]])
+        })
+
+      // Value is an object, walk the keys of the object
+      } else if (isObject(obj[key])) {
+        fn({
+          value: obj[key],
+          key,
+          location: [...location, ...[key]],
+          isLeaf: false
+        })
+        walk(obj[key], [...location, ...[key]])
+
+      // We've reached a leaf node, call fn on the leaf with the location
+      } else {
+        fn({
+          value: obj[key],
+          key,
+          location: [...location, ...[key]],
+          isLeaf: true
+        })
+      }
+    })
+  }
+
+  walk(root)
+}
+
+function Indicies () {
+  // siteLinks: { siteName: link[] }
+  // linkSites : { link: siteName[] }
+  const siteLinks = {}
+  const linkSites = {}
+  return {
+    addLink ({ siteName, link }) {
+      if (!siteLinks[siteName]) {
+        siteLinks[siteName] = new Set()
+      }
+      siteLinks[siteName].add(link)
+
+      if (!linkSites[link]) {
+        linkSites[link] = new Set()
+      }
+      linkSites[link].add(siteName)
+    },
+    results () {
+      return { siteLinks, linkSites }
+    },
+    async writeResults (outdir) {
+      mkdir(outdir, { recursive: true })
+      const specs = [
+        {
+          fileName: 'site-links.json',
+          input: siteLinks,
+        },
+        {
+          fileName: 'link-sites.json',
+          input: linkSites,
+        },
+      ]
+
+      for (const { fileName, input } of specs) {
+        const output = {}
+        for (const key in input) {
+          output[key] = Array.from(input[key])
+        }
+        await writeFile(
+          join(process.cwd(), outdir, fileName),
+          JSON.stringify(output, null, 2)
+        )
+      }
+    }
+  }
+}
