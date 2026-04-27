@@ -15,7 +15,13 @@
 *    extractKey       - A utility to extract the SSH key for a google service acccount
 */
 
-require('dotenv').config({ silent: true });
+const dotenv = require('dotenv')
+dotenv.config({ silent: true });
+
+if (process.env.COS_ENV) {
+  const parsed = dotenv.parse(process.env.COS_ENV)
+  dotenv.populate(process.env, parsed)
+}
 
 var builder = require('./libs/builder.js');
 var siteIndexer = require('./libs/siteIndex.js');
