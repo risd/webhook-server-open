@@ -18,11 +18,6 @@
 const dotenv = require('dotenv')
 dotenv.config({ silent: true });
 
-if (process.env.COS_ENV) {
-  const parsed = dotenv.parse(process.env.COS_ENV)
-  dotenv.populate(process.env, parsed)
-}
-
 var builder = require('./libs/builder.js');
 var siteIndexer = require('./libs/siteIndex.js');
 var redirects = require('./libs/redirects.js');
