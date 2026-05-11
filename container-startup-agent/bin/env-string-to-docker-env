@@ -1,0 +1,16 @@
+#!/bin/bash
+
+ENV=$(cat $DOCKER_ENV)
+
+echo "hi"
+
+# VARS=(${ENV//$'\n'/ })
+# LINES=$(echo $ENV | sed 's/\n/g')
+
+readarray -d "\n" -t LINES <<< $ENV
+
+for line in "${!LINES[@]}"
+do
+  echo ${LINES[$line]}
+  echo ""
+done
