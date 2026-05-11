@@ -27,4 +27,3 @@ sudo curl -o $COS_ENV_PATH http://metadata.google.internal/computeMetadata/v1/in
 
 # env comes from ./bin/env-to-docker-args ./.env.risd.stage-v3
 docker run   --name=$CONTAINER_NAME   --privileged   --restart=always   --tty   --detach   --network="host"   --env-file=$COS_ENV_PATH   $CONTAINER_IMAGE
-

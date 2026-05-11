@@ -5,7 +5,8 @@ ZONE_GCP=us-central1-a
 REPO_NAME=risd-webhook-docker-repo
 
 DOCKER_PROJECT=risd-webook-server
-DOCKER_VERSION=v3-0-4
+# change startup-script verion when deploying
+DOCKER_VERSION=v3-0-5
 
 ENV_PROD=.env.rackspace.prod-v3
 ENV_STAGE=.env.risd.stage-v3
