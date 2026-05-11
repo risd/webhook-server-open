@@ -6,7 +6,7 @@ REPO_NAME=risd-webhook-docker-repo
 
 DOCKER_PROJECT=risd-webook-server
 # change startup-script verion when deploying
-DOCKER_VERSION=v3-0-5
+DOCKER_VERSION=v3-0-6
 
 ENV_PROD=.env.rackspace.prod-v3
 ENV_STAGE=.env.risd.stage-v3
