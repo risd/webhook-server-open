@@ -15,6 +15,7 @@ function configure (config) {
   const code = 'SITE_INDEX'
 
   return async function siteIndexer ({ siteName }) {
+    console.log(`site-index::site-name: ${siteName}`)
     siteName = firebaseUnescape(siteName)
     try {
       try {
@@ -35,6 +36,8 @@ function configure (config) {
       const cmsData = siteDataSnapshot.val()
       if (!cmsData || !cmsData.data || !cmsData.contentType) throw new Error('Failed to re-index CMS search index, no CMS data found to index.')
       const results = await search.updateIndex({ siteName, cmsData, elasticData })
+      console.log(`site-index::results::errors: ${results.errors}`)
+      console.log(`site-index::results::took: ${results.took}`)
       let message = 'Re-index of CMS search index complete.'
       if (results.errors === true) {
         // if we start seeing this message, dig into the errors.

@@ -12,10 +12,11 @@ var siteIndexor = require( '../libs/siteIndex.js' );
 
 webhookTasks(grunt)
 
-const indexSite = siteIndexor.configure(grunt.config)
+const indexSite = siteIndexor(grunt.config)
 
 ;(async () => {
   await indexSite({
     siteName: argv._[0] || argv.siteName
   })
+  process.exit()
 })()
