@@ -6,7 +6,7 @@ iptables -A INPUT -j ACCEPT
 DOCKER_ZONE=us-central1
 
 # branch-based
-CONTAINER_IMAGE=$DOCKER_ZONE"-docker.pkg.dev/risd-media-webhook/risd-webhook-docker-repo/risd-webhook-prod:v3-0-4"
+CONTAINER_IMAGE=$DOCKER_ZONE"-docker.pkg.dev/risd-media-webhook/risd-webhook-docker-repo/risd-webhook-prod:v3-0-6"
 
 # stable VARS
 ## Set home directory to save docker credentials & env
@@ -25,5 +25,4 @@ docker pull $CONTAINER_IMAGE
 # save ENV metadata
 sudo curl -o $COS_ENV_PATH http://metadata.google.internal/computeMetadata/v1/instance/attributes/COS_ENV -H "Metadata-Flavor: Google"
 
-# env comes from ./bin/env-to-docker-args ./.env.risd.stage-v3
 docker run   --name=$CONTAINER_NAME   --privileged   --restart=always   --tty   --detach   --network="host"   --env-file=$COS_ENV_PATH   $CONTAINER_IMAGE
