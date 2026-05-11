@@ -10,7 +10,7 @@ var resetSiteKeys = require( '../../libs/firebase/reset-site-keys' )
 var resetUserPasswords = require( '../../libs/firebase/reset-user-passwords' )
 
 var firebase = Firebase( Object.assign( { initializationName: 'admin-test' }, grunt.config().firebase ) )
-var mailgun = new Mailgun( { apiKey: grunt.config().mailgunKey, domain: grunt.config().mailgunDomain } )
+var mailgun = new Mailgun( { apiKey: grunt.config().mailgun.apiKey, domain: grunt.config().mailgun.domain } )
 var fromEmail = grunt.config().fromEmail;
 
 Error.stackTraceLimit = Infinity;
