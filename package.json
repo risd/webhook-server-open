@@ -32,7 +32,7 @@
     "cloudflare": "^1.1.1",
     "cron": "^3.1.7",
     "debug": "^4.3.4",
-    "dotenv": "^2.0.0",
+    "dotenv": "^17.4.2",
     "dotenv-safe": "^4.0.4",
     "fastify": "^4.10.2",
     "fastly": "^2.2.0",
@@ -57,7 +57,7 @@
     "through2-concurrent": "^1.1.1",
     "touch": "0.0.3",
     "webhook-deploy-configuration": "^3.0.5",
-    "webhook-elastic-search": "^4.0.0"
+    "webhook-elastic-search": "^4.0.5"
   },
   "devDependencies": {
     "@risd/wh": "^3.0.10",
