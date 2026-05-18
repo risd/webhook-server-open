@@ -6,7 +6,7 @@ REPO_NAME=risd-webhook-docker-repo
 
 DOCKER_PROJECT=risd-webook-server
 # change startup-script verion when deploying
-DOCKER_VERSION=v3-0-6
+DOCKER_VERSION=v3-0-8
 
 ENV_PROD=.env.rackspace.prod-v3
 ENV_STAGE=.env.risd.stage-v3
@@ -25,7 +25,7 @@ DOCKER_LABEL=risd-webhook=$(BRANCH)
 STARTUP=startup-script-$(ENV_NAME).sh
 
 build:
-	docker buildx build --tag $(DOCKER_NAME_ACTIVE) --build-arg BRANCH=$(BRANCH) --platform linux/amd64,linux/arm64 ../
+	docker buildx build --no-cache --tag $(DOCKER_NAME_ACTIVE) --build-arg BRANCH=$(BRANCH) --platform linux/amd64,linux/arm64 ../
 
 # echo-test:
 # 	echo $(shell ./bin/env-to-gcp-args $(ENV))
@@ -74,7 +74,7 @@ artifact-list-images:
 
 # ENSURE: startup script points to the correct version
 instance-create:
-	./bin/gen-startup-script $(ENV_NAME)
+	./bin/gen-startup-script $(ENV_NAME) $(DOCKER_VERSION)
 	gcloud compute instances create $(INSTANCE_NAME) \
 		--zone=$(ZONE_GCP) \
 		--image-family=cos-stable \
@@ -92,12 +92,6 @@ instance-ssh:
 instance-delete:
 	gcloud compute instances delete $(INSTANCE_NAME) \
 		--zone=$(ZONE_GCP)
-
-env-parsing:
-	DOCKER_ENV=$(ENV) ./bin/env-string-to-docker-env
-
-server-run-docker-env:
-	DOCKER_ENV='GOOGLE_PROJECT_ID="oh-hai"' npx grunt echoConfig
 
 run:
 	docker container run \
