@@ -6,10 +6,10 @@ REPO_NAME=risd-webhook-docker-repo
 
 DOCKER_PROJECT=risd-webook-server
 # change startup-script verion when deploying
-DOCKER_VERSION=v3-0-8
+DOCKER_VERSION=v3-0-10
 
-ENV_PROD=.env.rackspace.prod-v3
-ENV_STAGE=.env.risd.stage-v3
+ENV_PROD=.env.rackspace.prod-v3-0-9
+ENV_STAGE=.env.risd.stage-v3-0-9
 
 # change these per deployment
 ENV_NAME=prod
@@ -72,9 +72,10 @@ artifact-list-images:
 		--limit=5 \
 		--include-tags
 
-# ENSURE: startup script points to the correct version
-instance-create:
+gen-startup-scripts:
 	./bin/gen-startup-script $(ENV_NAME) $(DOCKER_VERSION)
+
+instance-create: gen-startup-scripts
 	gcloud compute instances create $(INSTANCE_NAME) \
 		--zone=$(ZONE_GCP) \
 		--image-family=cos-stable \
