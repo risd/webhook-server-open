@@ -4,10 +4,12 @@ const { writeFile } = require('node:fs/promises')
 const { join } = require('node:path')
 
 const env = process.argv.slice(2)?.[0]
+const dockerVersion = process.argv.slice(2)?.[1]
 
 if (!env) {
-  console.log('$ ./gen-startup-script {env}')
+  console.log('$ ./gen-startup-script {env} {docker-version}')
   console.log('env should be prod | stage')
+  console.log('docker version should be something like v3-0-4')
   return
 }
 
@@ -19,7 +21,7 @@ iptables -A INPUT -j ACCEPT
 DOCKER_ZONE=us-central1
 
 # branch-based
-CONTAINER_IMAGE=$DOCKER_ZONE"-docker.pkg.dev/risd-media-webhook/risd-webhook-docker-repo/risd-webhook-${env}:v3-0-4"
+CONTAINER_IMAGE=$DOCKER_ZONE"-docker.pkg.dev/risd-media-webhook/risd-webhook-docker-repo/risd-webhook-${env}:${dockerVersion}"
 
 # stable VARS
 ## Set home directory to save docker credentials & env
@@ -38,7 +40,6 @@ docker pull $CONTAINER_IMAGE
 # save ENV metadata
 sudo curl -o $COS_ENV_PATH http://metadata.google.internal/computeMetadata/v1/instance/attributes/COS_ENV -H "Metadata-Flavor: Google"
 
-# env comes from ./bin/env-to-docker-args ./.env.risd.stage-v3
 docker run \
   --name=$CONTAINER_NAME \
   --privileged \
