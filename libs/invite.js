@@ -29,6 +29,7 @@ function configure (config) {
 
   return async function inviter ({ userId, fromUser, siteName }) {
     debug('invite')
+    debug('invite:siteName', siteName)
     const userEmail = unescapeFirebase(userId)
     debug('userEmail', userEmail)
     const userExists = await firebase.userExists({ userEmail })

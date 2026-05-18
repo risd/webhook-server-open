@@ -6,8 +6,8 @@ const webhookTasks = require( '../../Gruntfile.js' )
 webhookTasks( grunt )
 
 var Cloudflare = require( '../../libs/cloudflare/index.js' )
-var cloudflare = Cloudflare( grunt.config().cloudflare.client )
-
+const options = grunt.config().cloudflare.client
+var cloudflare = Cloudflare( options )
 var siteName = config.creator.siteName;
 
 Error.stackTraceLimit = Infinity;
