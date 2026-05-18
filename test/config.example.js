@@ -43,6 +43,7 @@ module.exports = {
   invite: {
     userId: 'new-user@domain.com',
     fromUser: 'admin@domain.com',
+    siteName,
   },
   domainMapper: {
     siteName,
