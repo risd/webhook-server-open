@@ -6,7 +6,7 @@ iptables -A INPUT -j ACCEPT
 DOCKER_ZONE=us-central1
 
 # branch-based
-CONTAINER_IMAGE=$DOCKER_ZONE"-docker.pkg.dev/risd-media-webhook/risd-webhook-docker-repo/risd-webhook-prod:v3-0-6"
+CONTAINER_IMAGE=$DOCKER_ZONE"-docker.pkg.dev/risd-media-webhook/risd-webhook-docker-repo/risd-webhook-prod:v3-0-8"
 
 # stable VARS
 ## Set home directory to save docker credentials & env
