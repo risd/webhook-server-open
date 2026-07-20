@@ -25,6 +25,8 @@
 
 `$ sudo docker exec risd-systems-container supervisorctl stop command_delegator`
 
+`$ sudo docker exec risd-systems-container ./bin/build-command --userId=rrodrigu@risd.edu --siteName=risd-nature-lab.risd.systems --branch=develop --siteBucket=naturelab.risd.systems`
+
 sudo docker run \
   --name=risd-systems-container \
   --privileged \
