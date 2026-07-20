@@ -13,9 +13,9 @@ ENV_STAGE=.env.risd.stage-v3-0-9
 
 # change these per deployment
 # ENV_NAME : prod | stage
-ENV_NAME=prod
+ENV_NAME=stage
 BRANCH=master
-ENV=../$(ENV_PROD)
+ENV=../$(ENV_STAGE)
 
 # stable
 # DOCKER_NAME should match the startup-script CONTAINER_IMAGE
@@ -105,14 +105,39 @@ run:
 		$(DOCKER_NAME_ACTIVE)
 
 run-dev:
-	docker container run \
+	docker container run --rm \
 		--name risd-webhook-vm \
 		--publish 80:80 \
 		--env DEBUG=* \
 		--env-file $(ENV) \
 		--label $(DOCKER_LABEL) \
-		--mount src="$(shell pwd)",target=/home/webhook/webhook-server-open,type=bind \
+		-v "$(dir $(shell pwd))":/home/webhook/webhook-server-open \
+		-w /home/webhook/webhook-server-open \
 		$(DOCKER_NAME_ACTIVE)
+
+run-test:
+	docker container run --rm \
+		--name risd-webhook-vm \
+		--publish 80:80 \
+		--env DEBUG=* \
+		--env-file $(ENV) \
+		--label $(DOCKER_LABEL) \
+		-v "$(dir $(shell pwd))":/home/webhook/webhook-server-open \
+		-w /home/webhook/webhook-server-open \
+		$(DOCKER_NAME_ACTIVE) \
+		npm run test
+
+run-script:
+	docker container run --rm \
+		--name risd-webhook-vm \
+		--publish 80:80 \
+		--env DEBUG=* \
+		--env-file $(ENV) \
+		--label $(DOCKER_LABEL) \
+		-v "$(dir $(shell pwd))":/home/webhook/webhook-server-open \
+		-w /home/webhook/webhook-server-open \
+		$(DOCKER_NAME_ACTIVE) \
+		npm install
 
 prune:
 	docker container prune --force --filter "label=$(DOCKER_LABEL)"
