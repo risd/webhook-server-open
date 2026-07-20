@@ -36,7 +36,7 @@ const elastic = Elastic(grunt.config.get('elastic'))
     contentType: argv.contentType,
     query: argv.query,
     page: argv.page,
-    pageSize: arge.pageSize,
+    pageSize: argv.pageSize,
   })
   console.log(results)
 })()
