@@ -9,6 +9,7 @@ const {lib} = require('@risd/wh')
 const mkdirp = require('mkdirp')
 const axios = require('axios')
 const FormData = require('form-data')
+const { setTimeout } = require('node:timers/promises')
 const {MESSAGES} = require('../../libs/jobQueue.js')
 
 require('../../Gruntfile.js')(grunt)
@@ -26,6 +27,13 @@ whGlobalOpts.firebaseName = whGlobalOpts.firebase
 
 function noop () {}
 
+const cmdStringForSpawn = (s) => {
+  return [
+    s.split(' ')[0],
+    s.split(' ').slice(1),
+  ]
+}
+
 // resolve a function to kill the subprocess, or listen for
 // `done-job` message to kill the subprocess
 const subprocess = (cmdString, { onDone=noop }={}) => {
@@ -35,6 +43,7 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
   p.on('exit', (code, signal) => {
     if (!done) onDone(code === 0 ? null : new Error(`cmd`))
   })
+  kill.p = p
   let ready = false
   let done = false
   return new Promise((resolve, reject) => {
@@ -44,7 +53,7 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
       console.log(args[1], str)
       if (str && str.toLowerCase().indexOf(MESSAGES.WAITING) !== -1) {
         ready = true
-        resolve(() => kill())
+        resolve(kill)
       }
       if (str && str.toLowerCase().indexOf(MESSAGES.JOB_DONE) !== -1) {
         kill()
@@ -60,6 +69,63 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
 }
 
 const subprocesses = {}
+
+test('setup-supervisor', async (t) => {
+  const cmdString = 'supervisord -n -c ./test/webhook.conf'
+  const processes = ['beanstalk', 'caddy', 'memcached']
+  
+  const supervisorProcess = (cmdString, { processes, onDone=noop }={}) => {
+    const [cmd, args] = cmdStringForSpawn(cmdString)
+
+    let inRunningState = new Set()
+    const hasSuccessString = (line) => {
+      for (const p of processes) {
+        if (line.includes(`${p} entered RUNNING state`)) {
+          inRunningState.add(p)
+        }
+      }
+      return inRunningState.size === processes.length
+    }
+
+    const p = spawn(cmd, args, { cwd: process.cwd() })
+    let ready = false
+    let killed = false
+
+    const killedEarly = (code, signal) => {
+      throw new Error(`Exited early: ${cmdString}. Code: ${code}. Signal: ${signal}`)
+    }
+
+    p.on('close', killedEarly)
+    p.on('error', (b) => console.error(b.toString()))
+
+    const kill = () => new Promise((resolve, reject) => {
+      killed = true
+      p.off(close, killedEarly)
+      p.on('close', (code, signal) => {
+        return resolve()
+      })
+      p.kill()
+    })
+
+    return new Promise((resolve, reject) => {
+      p.stdout.on('data', (data) => {
+        if (killed) return
+        const str = data.toString()
+        if (!ready && hasSuccessString(str)) {
+          ready = true
+          return resolve(() => kill())
+        }
+      })
+    })
+  }
+
+  const subprocessKill = await supervisorProcess(cmdString, { processes })
+  
+  subprocesses['supervisor'] = subprocessKill
+
+  t.ok(true, 'supervisor processes ready')
+  t.end()
+})
 
 test('setup-delegator', async (t) => {
   try {
@@ -127,9 +193,10 @@ async function ensureServer () {
 test('server-deploy-cycle', async (t) => {
   try {
     await ensureServer()
+    let deployCount = -1
     subprocesses.builder = await subprocess('npm run build-worker', {
       onDone: (error) => {
-        t.ok(!error, 'Finished deploy build cycle without error')
+        t.ok(!error, `Finished deploy build cycle without error. Deploy count: ${deployCount}. buildHasStarted: ${buildHasStarted}`)
         // the build process will finish after the upload is complete
         // so we can end the test here
         t.end()
@@ -138,15 +205,32 @@ test('server-deploy-cycle', async (t) => {
     const siteKeySnapshot = await firebase.siteKey({ siteName: config.creator.siteName })
     const siteKey = siteKeySnapshot.val()
     const cwd = path.join(config.creator.cwd, config.creator.siteName)
-    await lib.push({
-      ...whGlobalOpts,
-      cwd,
-      siteName: config.creator.siteName,
-      siteKey,
-      branch: 'master',
-      http: true,
+
+    const deploy = () => {
+      return lib.push({
+        ...whGlobalOpts,
+        cwd,
+        siteName: config.creator.siteName,
+        siteKey,
+        branch: 'master',
+        http: true,
+        skipBuild: true,
+      })
+    }
+    
+    let buildHasStarted = false
+
+    subprocesses.builder.p.on('data', () => {
+      buildHasStarted = true
     })
-    t.ok(true, 'Pushed without error')
+
+    while (buildHasStarted === false && deployCount < 10) {
+      deployCount++
+      await deploy()
+      await setTimeout(2000, noop)
+    }
+
+    t.ok(true, `Pushed without error. Deploy count: ${deployCount}. buildHasStarted: ${buildHasStarted}`)
   }
   catch (error) {
     t.fail(error, 'Could not signal deploy cycle build')
