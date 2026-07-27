@@ -114,7 +114,7 @@ function configure (config) {
 
       try {
         console.log('npm-install')
-        await runInDir('npm', ['install', '--cache=nope'], { cwd: buildFolder })  
+        await runInDir('npm', ['install', '--cache=nope', '--min-release-age=1'], { cwd: buildFolder })
       }
       catch (error) {
         console.log(error)
