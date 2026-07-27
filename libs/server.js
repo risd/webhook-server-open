@@ -30,6 +30,7 @@ var Deploys = require( 'webhook-deploy-configuration' );
 const {pipeline} = require('node:stream/promises')
 const {fileNameForTimestamp} = require( './backup.js' )
 const GetImageResizeUrl = require('./utils/get-image-resize-url')
+const firebaseEscape = require( './utils/firebase-escape.js' )
 
 module.exports.start = async function(config) {
 
@@ -121,6 +122,11 @@ module.exports.start = async function(config) {
   app.post('/search/delete/type/', protectedRouteOptions, postSearchDeleteTypeHandler)
   app.post('/search/delete/index/', protectedRouteOptions, postSearchDeleteIndexHandler)
   app.post('/upload/', protectedRouteOptions, postUploadHandler)
+
+  app.setErrorHandler((error, request, reply) => {
+    console.log('server:error')
+    console.log(error)
+  })
 
   const { listen } = serverConfig
   await app.listen(listen)
@@ -418,7 +424,7 @@ module.exports.start = async function(config) {
       await cloudStorage.objects.upload({
         bucket: siteBucket,
         local: payload.localFile,
-        remote: Deploys.utilities.fileForSiteBranch(siteName, branch),
+        remote: Deploys.utilities.fileForSiteBranch(firebaseEscape(siteName), branch),
         overrideMimeType: payload.mimeType,
       })
       cleanUpFiles(request)
