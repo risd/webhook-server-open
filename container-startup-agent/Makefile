@@ -120,24 +120,28 @@ run-test:
 		--name risd-webhook-vm \
 		--publish 80:80 \
 		--env DEBUG=* \
+		--env TEST_ENV=$(ENV_NAME) \
 		--env-file $(ENV) \
 		--label $(DOCKER_LABEL) \
 		-v "$(dir $(shell pwd))":/home/webhook/webhook-server-open \
+		-v $$HOME/.risdmedia:/home/webhook/wh-config \
 		-w /home/webhook/webhook-server-open \
 		$(DOCKER_NAME_ACTIVE) \
-		npm run test
+		npm run test > test-run.txt
 
 run-script:
-	docker container run --rm \
+	docker container run --rm -it \
 		--name risd-webhook-vm \
 		--publish 80:80 \
 		--env DEBUG=* \
+		--env TEST_ENV=$(ENV_NAME) \
 		--env-file $(ENV) \
 		--label $(DOCKER_LABEL) \
 		-v "$(dir $(shell pwd))":/home/webhook/webhook-server-open \
+		-v $$HOME/.risdmedia:/home/webhook/wh-config \
 		-w /home/webhook/webhook-server-open \
 		$(DOCKER_NAME_ACTIVE) \
-		npm install
+		npx tape test/libs/create-cname.js > test-run.txt
 
 prune:
 	docker container prune --force --filter "label=$(DOCKER_LABEL)"
