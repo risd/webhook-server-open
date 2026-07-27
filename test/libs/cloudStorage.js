@@ -4,6 +4,7 @@ var crypto = require( 'crypto' )
 var grunt = require( 'grunt' )
 var zlib = require( 'zlib' )
 var test = require( 'tape' )
+const miss = require('mississippi')
 
 webhookTasks(grunt)
 
@@ -101,6 +102,24 @@ test('bucket-list-objects', async (t) => {
   cloudStorage.objects.list({ bucket: uploadOptions.bucket }, function (error, listResult) {
     t.assert(error === null, 'got list objects without error')
   })
+})
+
+test('bucket-list-files-stream', async (t) => {
+  let count = 0
+  miss.pipe(
+    cloudStorage.objects.listStream({
+      bucket: config.cloudStorage.bucket,
+    }),
+    miss.through.obj((file, _, next) => {
+      count += 1
+      next()
+    }),
+    (error) => {
+      if (error) t.fail(error)
+      else t.ok(true, `completed stream: ${count}`)
+      t.end()
+    }
+  )
 })
 
 test( 'delete-bucket', async function ( t ) {
