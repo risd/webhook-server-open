@@ -93,10 +93,26 @@ module.exports.start = async function (config) {
   const oldestBackupTimestamp = backupsLog[oldestBackupKey]
 
   await firebase.backups({ key: oldestBackupKey }, null)
-  await cloudStorage.objects.del({
-    bucket,
-    file: fileNameForTimestamp(oldestBackupTimestamp)
-  })
+  try {
+    await cloudStorage.objects.del({
+      bucket,
+      file: fileNameForTimestamp(oldestBackupTimestamp)
+    })  
+  }
+  catch (error) {
+    if (error.message?.toLowerCase()?.includes('no such object')) {
+      console.log(`Did not find old backup to delete: ${fileNameForTimestamp(oldestBackupTimestamp)}`)
+      console.log(`This could be because we are
+        referencing a firebase db that was saving its
+        backups against a different bucket.
+        This is likely born out of the environment.
+      `)
+    }
+    else {
+      throw error
+    }
+  }
+  
 
   return { file, timestamp }
 }
