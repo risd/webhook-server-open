@@ -3,6 +3,7 @@ var unescape = require( '../utils/firebase-unescape.js' )
 
 module.exports = WHCloudFlare;
 module.exports.ZoneRequiredError = ZoneRequiredError;
+module.exports.ZoneNotFound = ZoneNotFound;
 
 function WHCloudFlare ( options ) {
   if ( ! ( this instanceof WHCloudFlare ) ) return new WHCloudFlare( options )
@@ -115,6 +116,7 @@ function deleteCname ( cnameRecord ) {
 async function getCnameForSiteName ( siteName, zone ) {
   if (!zone) {
     zone = await this.getZone( siteName )
+    if (!zone) throw ZoneNotFound()
   }
 
   const cname = {
@@ -155,24 +157,23 @@ async function getCnameForSiteName ( siteName, zone ) {
   }
 }
 
-function deleteCnameForSiteName ( siteName ) {
-  var client = this._client;
+async function deleteCnameForSiteName ( siteName ) {
 
-  return this.getCnameForSiteName( siteName )
-    .then( handleCnameRecord )
+  const cname = await this.getCnameForSiteName(siteName)
 
-  function handleCnameRecord ( cnameRecord ) {
-    if ( cnameRecord ) {
-      return client.deleteDNS( cnameRecord )
-    }
-    else {
-      return Promise.resolve()
-    }
-  }
+  if (!cname) return { doesNotExist: true }
+
+  const tombstone = await this._client.deleteDNS(cname)
+
+  return tombstone
 }
 
 function ZoneRequiredError () {
   return new Error( 'In order to get a CNAME, a `zone` DNS record is required, or the zone ID.' )
+}
+
+function ZoneNotFound () {
+  return new Error( 'No zone found for siteName.' )
 }
 
 // helpers

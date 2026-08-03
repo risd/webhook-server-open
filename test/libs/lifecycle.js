@@ -335,7 +335,6 @@ test('server-cms-requests', async (t) => {
       uploadFileResponse.data.mimeType &&
       uploadFileResponse.data.resize_url,
       'Got upload file response data in correct shape')
-
   }
   catch (error) {
     t.fail(error, 'Error in /upload-file/')

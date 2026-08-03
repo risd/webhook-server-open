@@ -70,7 +70,7 @@ test( 'cloudflare-internal', function ( t ) {
 
 test( 'create-cname-record', async function ( t ) {
   try {
-    const cname = await createCnameRecord(createCnameRecordOptions)
+    const cname = await createCnameRecord({...createCnameRecordOptions})
     t.ok(cname.content === DEFAULT_CNAME_RECORD.content, 'CNAME default set correctly.')
     t.ok(cname.id, 'cname has id')
     t.ok(cname.zoneId, 'cname has zone id')
@@ -117,16 +117,17 @@ test( 'cloudflare-delete-cname', function ( t ) {
 } )
 
 test( 'error-cname-for-domain', async function ( t ) {
-  var doNotSetCnameOptions = Object.assign( createCnameRecordOptions, {
+  var doNotSetCnameOptions = {
+    ...createCnameRecordOptions,
     siteBucket: 'not-the-owner-of-this-domain.google.com',
-  } )
+  }
 
   try {
     await createCnameRecord(doNotSetCnameOptions)
     t.fail(true, 'Should have thrown an error')
   }
   catch (error) {
-    t.ok( error.message === Cloudflare.ZoneRequiredError().message, `Correct error occurs. ` )
+    t.ok( error.message === Cloudflare.ZoneNotFound().message, `Correct error occurs. ` )
   }
   finally {
     t.end()
