@@ -10,41 +10,80 @@ const options = grunt.config().cloudflare.client
 var cloudflare = Cloudflare( options )
 var siteName = config.creator.siteName;
 
+var DEFAULT_CNAME_RECORD = require( '../../libs/creator.js' ).DEFAULT_CNAME_RECORD;
+var createCnameRecord = require( '../../libs/creator.js' ).createCnameRecord;
+
+var cnameRecordOptions = {
+  siteBucket: siteName,
+  usesFastly: false,
+}
+var createCnameRecordOptions = Object.assign(
+  grunt.config.get( 'cloudflare' ),
+  cnameRecordOptions )
+
+
 Error.stackTraceLimit = Infinity;
 
 test( 'cloudflare-internal', function ( t ) {
-  t.plan( 2 )
-
   cloudflare.getZone( siteName )
     .then( handleZone )
     .catch( handleZoneError )
 
   function handleZone ( zone ) {
     t.pass( `Successfully acquired zone id: ${ zone.id } for site name: ${ siteName }` )
-    testGetCname( zone.id )
+    return testGetCname( zone.id )
   }
 
   function handleZoneError ( error ) {
     t.fail( `Errored while getting ${ siteName } zone: ${ error.message }` )
     t.fail( `Can not test get CNAME without a zone id.` )
+    t.end()
+    return error
   }
 
-  function testGetCname ( zoneId ) {
-    cloudflare.getCnames( zoneId )
-      .then( handleCnames )
-      .catch( handleCnameError )
+  async function testGetCname ( zoneId ) {
+    try {
+      let allCnames = []
+      for await (const cnames of cloudflare.getCnamesGenerator(zoneId)) {
+        allCnames.push(...cnames)
+      }
+      return handleCnames(allCnames)  
+    }
+    catch (error) {
+      return handleCnameError(error)
+    }
   }
 
   function handleCnames ( cnames ) {
     t.ok( Array.isArray( cnames ), `Successfully acquired CNAMEs.` )
+    t.end()
+    return cnames
   }
 
   function handleCnameError ( error ) {
     t.fail( `Errored while getting CNAMEs.` )
+    console.log(error)
+    t.end()
+    return error
   }
 } )
 
-test( 'cloudflare-create-cname', function ( t ) {
+test( 'create-cname-record', async function ( t ) {
+  try {
+    const cname = await createCnameRecord(createCnameRecordOptions)
+    t.ok(cname.content === DEFAULT_CNAME_RECORD.content, 'CNAME default set correctly.')
+    t.ok(cname.id, 'cname has id')
+    t.ok(cname.zoneId, 'cname has zone id')
+  }
+  catch (error) {
+    t.fail( `Error during delete of CNAME: ${ error.message }` )
+  }
+  finally {
+    t.end()
+  }
+})
+
+test( 'cloudflare-get-cname', function ( t ) {
   t.plan( 1 )
 
   cloudflare.getCnameForSiteName( siteName )
@@ -52,7 +91,7 @@ test( 'cloudflare-create-cname', function ( t ) {
     .catch( handleCnameError )
 
   function handleCname ( cname ) {
-    t.pass( `Successfully acquired CNAME for site name ${ siteName }.` )
+    t.ok(cname, `Successfully acquired CNAME for site name ${ siteName }.` )
   }
 
   function handleCnameError ( error ) {
@@ -67,11 +106,31 @@ test( 'cloudflare-delete-cname', function ( t ) {
     .then( handleDelete )
     .catch( handleDeleteError )
 
-  function handleDelete () {
-    t.pass( `Successfully deleted CNAME for site name ${ siteName }.` )
+  function handleDelete (deleted) {
+    t.ok(deleted, `Successfully deleted CNAME for site name ${ siteName }.` )
   }
 
   function handleDeleteError ( error ) {
     t.fail( `Errored while deleting CNAME for site name ${ siteName }.` )
+    console.log(error)
   }
 } )
+
+test( 'error-cname-for-domain', async function ( t ) {
+  var doNotSetCnameOptions = Object.assign( createCnameRecordOptions, {
+    siteBucket: 'not-the-owner-of-this-domain.google.com',
+  } )
+
+  try {
+    await createCnameRecord(doNotSetCnameOptions)
+    t.fail(true, 'Should have thrown an error')
+  }
+  catch (error) {
+    t.ok( error.message === Cloudflare.ZoneRequiredError().message, `Correct error occurs. ` )
+  }
+  finally {
+    t.end()
+  }
+})
+
+test.onFinish( process.exit )

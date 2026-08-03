@@ -214,6 +214,11 @@ async function setupBucket (options) {
  * The a site on the `developmentDomain` uses the default CNAME value
  * of Google Storage CNAME. Other domains can be configured via the
  * `domains` key.
+ *
+ * We return our own object that has relevant cname record fields
+ * since the record returned by the cloudflare api is immutable
+ * and we want to have the cname record carry the zoneId so that
+ * we can easily delete it later on if needed
  * 
  * @param  {object} options
  * @param  {string} options.siteBucket
@@ -237,6 +242,8 @@ function createCnameRecord (options) {
   var googleRecordContent =  { content: 'c.storage.googleapis.com', };
   var fastlyRecordContent =  { content: 'nonssl.global.fastly.net', };
 
+  // Object that we update over the lifetime of this functio
+  // and we return this object as the result
   var recordValues = Object.assign( {
         name: siteBucket,
       },
@@ -248,27 +255,35 @@ function createCnameRecord (options) {
     .then(handleCname)
 
   function handleZone ( zone ) {
-    Object.assign( recordValues, { zone_id: zone.id } )
+    Object.assign( recordValues, {
+      zone_id: zone.id,
+      zoneId: zone.id,
+    } )
     return cloudflare.getCnameForSiteName( siteBucket, zone )
   }
 
   function handleCname ( existingRecord ) {
+    if (existingRecord?.id) {
+      Object.assign(recordValues, { id: existingRecord.id })
+    }
     if ( existingRecord && existingRecord.content !== recordValues.content ) {
-      existingRecord.content = recordValues.content
-      return updateRecord( existingRecord )
+      return updateRecord( recordValues )
     }
     else if ( ! existingRecord ) {
       return createRecord( recordValues )
     }
     else if ( existingRecord ) {
-      return Promise.resolve( existingRecord )
+      return Promise.resolve( recordValues )
     }
   }
 
-  function createRecord ( recordValues ) {
+  function createRecord ( record ) {
     return new Promise( function ( resolve, reject ) {
-      cloudflare.createCname( recordValues )
-        .then( resolve )
+      cloudflare.createCname( record )
+        .then((cname) => {
+          Object.assign(recordValues, { id: cname.id })
+          resolve(recordValues)
+        })
         .catch( function ( error ) {
           error.step = 'createCnameRecord:createRecord';
           reject( error )
@@ -279,7 +294,9 @@ function createCnameRecord (options) {
   function updateRecord ( record ) {
     return new Promise( function ( resolve, reject ) {
       cloudflare.updateCname( record )
-        .then( resolve )
+        .then(() => {
+          resolve(record)
+        })
         .catch( function ( error ) {
           error.step = 'createCnameRecord:updateRecord';
           reject( error )
