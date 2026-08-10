@@ -45,6 +45,14 @@ function WHFirebase ( config ) {
   if ( ! this._app ) {
     this._app = initializeApp( options, this._initializationName )
   }
+  
+
+  // v13 - 14.2 breaks our auth scheme, but when we do make it pasat,
+  // 13.5 we can move to this new setup:
+  // initializeApp is now idempotent, given the same initialization
+  // options will return an existing app if one exists, or creats a new one
+  // https://firebase.google.com/support/release-notes/admin/node/#version_1350_-_28_august_2025
+  // this._app = initializeApp( options, this._initializationName )
 
   this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccount )
 }

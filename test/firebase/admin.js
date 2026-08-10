@@ -8,12 +8,15 @@ webhookTasks( grunt )
 
 Error.stackTraceLimit = Infinity;
 
-const { siteName, userId } = config.creator
+const { siteName, userId } = config.firebaseRead
 
 test( 'firebase-admin', async function ( t ) {
   
   try {
-    const firebase = Firebase( Object.assign( { initializationName: 'admin-test' }, grunt.config().firebase ) )
+    const firebase = Firebase( Object.assign( {
+      initializationName: 'admin-test' },
+      grunt.config().firebase
+    ) )
     t.assert( typeof firebase === 'object', 'Firebase instance is an object.' )  
 
     const db = firebase.database()

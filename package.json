@@ -36,7 +36,7 @@
     "dotenv-safe": "^4.0.4",
     "fastify": "^4.10.2",
     "fastly": "^2.2.0",
-    "firebase-admin": "^11.3.0",
+    "firebase-admin": "^12.7.0",
     "glob": "^7.1.2",
     "google-auth-library": "^8.7.0",
     "grunt": "~0.4.2",
