@@ -13,8 +13,7 @@ const Fastify = require('fastify')
 const cors = require('@fastify/cors')
 const formbody = require('@fastify/formbody')
 const multipart = require('@fastify/multipart')
-const axios = require('axios')
-var fs = require('fs');
+var fs = require('node:fs');
 const fsp = require('node:fs/promises')
 var mkdirp = require('mkdirp');
 var async = require('async');
@@ -31,6 +30,7 @@ const {pipeline} = require('node:stream/promises')
 const {fileNameForTimestamp} = require( './backup.js' )
 const GetImageResizeUrl = require('./utils/get-image-resize-url')
 const firebaseEscape = require( './utils/firebase-escape.js' )
+const fetchToFile = require('./utils/fetch-to-file.js')
 
 module.exports.start = async function(config) {
 
@@ -179,7 +179,7 @@ module.exports.start = async function(config) {
 
     debug('upload-url:download-file')
     const localFile = await createTmpFile()
-    await downloadUrlToPath({ url, localFile })
+    await fetchToFile({ url, localFile })
     const stat = await fsp.stat(localFile)
     if (stat.size > maxFileSize) {
       fs.unlinkSync(localFile)
@@ -224,16 +224,6 @@ module.exports.start = async function(config) {
       size: +results.size,
       mimeType: results.contentType,
       resize_url: results.resizeUrl,
-    }
-
-    function downloadUrlToPath ({ url, localFile }) {
-      return axios({
-        method: 'get',
-        url,
-        responseType: 'stream',
-      }).then((response) => {
-          return pipeline(response.data, fs.createWriteStream(localFile))
-        })
     }
   }
 

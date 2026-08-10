@@ -8,12 +8,12 @@
 
 const fs = require('node:fs')
 const fsp = require('node:fs/promises')
-const axios = require('axios')
 const cloudStorage = require( './cloudStorage.js' )
 const Firebase = require( './firebase/index.js' )
 const {JWT} = require('google-auth-library')
 const path = require('path')
 const {pipeline} = require('node:stream')
+const fetchToFile = require('./utils/fetch-to-file.js')
 
 const fileNameForTimestamp = (timestamp) => {
   return `backup-${timestamp}`
@@ -49,25 +49,10 @@ module.exports.start = async function (config) {
 
   const backupUrl = await firebase.backupUrl()
 
-  const backupResponseStream = await axios({
-    method: 'get',
+  await fetchToFile({
     url: backupUrl,
-    responseType: 'stream',
+    localFile: file,
   })
-
-  const promisePipeline = (...streams) => {
-    return new Promise((resolve, reject) => {
-      pipeline(...streams, (error) => {
-        if (error) return reject(error)
-        resolve()
-      })
-    })
-  }
-
-  await promisePipeline(
-    backupResponseStream.data,
-    fs.createWriteStream(file)
-  )
 
   await cloudStorage.objects.upload({
     bucket,
