@@ -112,16 +112,205 @@ module.exports.start = async function(config) {
     preHandler: [siteBillingActive, siteKeyEqualsToken]
   }
 
+  const protectedRouteSchemaSpecs = [
+    { key: 'site', type: 'string', required: true },
+    { key: 'token', type: 'string', required: true },
+  ]
+
+  // [{ key, type, required? }]
+  const genSchema = ({ schemaSpecs, schemaType }) => {
+    const schema = {
+      [schemaType]: {
+        type: 'object',
+        properties: {},
+        required: [],
+      }
+    }
+    for (const spec of schemaSpecs) {
+      const { key, type, required, ...props } = spec
+      schema[schemaType].properties[key] = { type, ...props }
+      if (required) {
+        schema[schemaType].required.push(key)
+      }
+    }
+    return schema
+  }
+
   app.get('/', getRootHandler)
-  app.get('/backup-snapshot/', protectedRouteOptions, getBackupHandler)
-  app.post('/upload-url/', protectedRouteOptions, postUploadUrlHandler)
-  app.post('/upload-file/', protectedRouteOptions, postUploadFileHandler)
-  app.post('/search/', protectedRouteOptions, postSearchHandler)
-  app.post('/search/index/', protectedRouteOptions, postSearchIndexHandler)
-  app.post('/search/delete/', protectedRouteOptions, postSearchDeleteHandler)
-  app.post('/search/delete/type/', protectedRouteOptions, postSearchDeleteTypeHandler)
-  app.post('/search/delete/index/', protectedRouteOptions, postSearchDeleteIndexHandler)
-  app.post('/upload/', protectedRouteOptions, postUploadHandler)
+
+  const getBackupOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs.concat([{
+        key: 'timestamp',
+        type: 'string',
+        required: true,
+      }]),
+      schemaType: 'querystring',
+    })
+  }
+  app.get('/backup-snapshot/', getBackupOptions, getBackupHandler)
+  
+  const postUploadUrlOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs.concat([
+        {
+          key: 'resize_url',
+          type: 'boolean',
+        },
+        {
+          key: 'url',
+          type: 'string',
+          required: true,
+        },
+      ]),
+      schemaType: 'body',
+    })
+  }
+  app.post('/upload-url/', postUploadUrlOptions, postUploadUrlHandler)
+
+  const fileUploadSchemaType = {
+    type: 'object',
+    properties: {
+      filename: { type: 'string' },
+      localFile: { type: 'string' },
+      mimeType: { type: 'string' },
+    },
+    required: ['localFile', 'filename']
+  }
+  
+  const postUploadFileOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs.concat([
+        {
+          key: 'payload',
+          required: true,
+          ...fileUploadSchemaType,
+        },
+        {
+          key: 'resize_url',
+          type: 'boolean',
+        },
+      ]),
+      schemaType: 'body',
+    })
+  }
+  app.post('/upload-file/', postUploadFileOptions, postUploadFileHandler)
+  
+  const postSearchOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs.concat([
+        {
+          key: 'page',
+          type: 'number',
+        },
+        {
+          key: 'query',
+          type: 'string',
+          required: true,
+        },
+        {
+          key: 'typeName',
+          type: 'string',
+        },
+      ]),
+      schemaType: 'body',
+    })
+  }
+  app.post('/search/', postSearchOptions, postSearchHandler)
+  
+  // uses body { site, data, id, typeName, oneOff? : boolean }
+  const postSearchIndexOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs.concat([
+        {
+          key: 'data',
+          type: 'string',
+          required: true,
+        },
+        {
+          key: 'id',
+          type: 'string',
+          required: true,
+        },
+        {
+          key: 'typeName',
+          type: 'string',
+          required: true,
+        },
+        {
+          key: 'oneOff',
+          type: 'boolean',
+        },
+      ]),
+      schemaType: 'body',
+    })
+  }
+  app.post('/search/index/', postSearchIndexOptions, postSearchIndexHandler)
+  
+  const postSearchDeleteOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs.concat([
+        {
+          key: 'id',
+          type: 'string',
+          required: true,
+        },
+      ]),
+      schemaType: 'body',
+    })
+  }
+  app.post('/search/delete/', postSearchDeleteOptions, postSearchDeleteHandler)
+
+  const postSearchDeleteTypeOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs.concat([
+        {
+          key: 'typeName',
+          type: 'string',
+          required: true,
+        },
+      ]),
+      schemaType: 'body',
+    })
+  }
+  app.post('/search/delete/type/', postSearchDeleteTypeOptions, postSearchDeleteTypeHandler)
+  
+  const postSearchDeleteIndexOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs,
+      schemaType: 'body',
+    })
+  }
+  app.post('/search/delete/index/', postSearchDeleteIndexOptions, postSearchDeleteIndexHandler)
+
+  // wh deploy endpoint
+  const postUploadOptions = {
+    ...protectedRouteOptions,
+    schema: genSchema({
+      schemaSpecs: protectedRouteSchemaSpecs.concat([
+        {
+          key: 'branch',
+          type: 'string',
+          required: true,
+        },
+        {
+          key: 'payload',
+          required: true,
+          ...fileUploadSchemaType,
+        },
+      ]),
+      schemaType: 'body',
+    })
+  }
+  app.post('/upload/', postUploadOptions, postUploadHandler)
 
   app.setErrorHandler((error, request, reply) => {
     console.log('server:error')
@@ -162,14 +351,11 @@ module.exports.start = async function(config) {
     debug('upload-url')
     reply.type('application/json')
 
-    const siteName = request.body.site
-    const token = request.body.token
-
     const resizeUrlRequested = Boolean(request.body.resize_url)
     const url = request.body.url
 
     debug('upload-url:args')
-    debug({ siteName, token, resizeUrlRequested, url })
+    debug({ resizeUrlRequested, url })
 
     if (!url) {
       cleanUpFiles(request)
@@ -234,9 +420,6 @@ module.exports.start = async function(config) {
   // Finally the payload is the file being posted to the server
   async function postUploadFileHandler (request, reply) {
     reply.type('application/json')
-
-    const siteName = request.body.site
-    const token = request.body.token
 
     const resizeUrlRequested = request.body.resize_url ? Boolean(request.body.resize_url) : false
     const payload = request.body.payload

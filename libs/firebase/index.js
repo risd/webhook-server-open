@@ -382,37 +382,37 @@ function WebhookSiteMessagesAdd ({ siteName }, value) {
 
 function WebhookSignalBuild ({ siteName }, payload) {
   const keyPath = `management/commands/build/${ escape(siteName) }`
-  if (!payload.id) payload.id = uuid.v4()
+  if (payload && !payload?.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalInvite ({ siteName }, payload) {
   const keyPath = `management/commands/invite/${ escape(siteName) }`
-  if (!payload.id) payload.id = uuid.v4()
+  if (payload && !payload?.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalDomainMap ({ siteName }, payload) {
   const keyPath = `management/commands/domainMap/${ escape(siteName) }`
-  if (!payload.id) payload.id = uuid.v4()
+  if (payload && !payload?.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalRedirects ({ siteName }, payload) {
   const keyPath = `management/commands/redirects/${ escape(siteName) }`
-  if (!payload.id) payload.id = uuid.v4()
+  if (payload && !payload?.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalPreviewBuild ({ siteName }, payload) {
   const keyPath = `management/commands/previewBuild/${ escape(siteName) }`
-  if (!payload.id) payload.id = uuid.v4()
+  if (payload && !payload?.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 
 function WebhookSignalSiteSearchIndex ({ siteName }, payload) {
   const keyPath = `management/commands/siteSearchReindex/${ escape(siteName) }`
-  if (!payload.id) payload.id = uuid.v4()
+  if (payload && !payload?.id) payload.id = uuid.v4()
   return firebaseDatabaseSetValueForKeyPath(this._app, keyPath, payload)
 }
 

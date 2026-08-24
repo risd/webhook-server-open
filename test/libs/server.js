@@ -2,13 +2,9 @@ const debug = require('debug')('server')
 const config = require('../config')
 const grunt = require('grunt')
 const test = require('tape')
-const {spawn} = require('node:child_process')
 const { Blob } = require('node:buffer')
-const fs = require('node:fs')
+const { readFileSync } = require('node:fs')
 const path = require('node:path')
-const {lib} = require('@risd/wh')
-const mkdirp = require('mkdirp')
-const { setTimeout } = require('node:timers/promises')
 
 require('../../Gruntfile.js')(grunt)
 
@@ -31,6 +27,8 @@ const searchSiteNameandKey = (searchParams) => {
   searchParams.set('site', config.server.siteName)
   searchParams.set('token', config.server.siteKey)
 }
+
+const { uploadDeploySiteSpec } = config.server
 
 test('server:start', async (t) => {
   server = await Server.start(grunt.config)
@@ -68,9 +66,8 @@ test('/upload-file/', async (t) => {
   formSiteNameAndKey(form)
   form.append('resize_url', 'true')
   const fileBlob = new Blob([
-    fs.readFileSync(path.join( __dirname, '..', 'files', 'img.png' ))
+    readFileSync(path.join( __dirname, '..', 'files', 'img.png' ))
   ])
-  console.log({fileBlob})
   form.append('payload', fileBlob, 'img.png')
   const res = await fetch(serverUrl('/upload-file/'), {
     method: 'POST',
@@ -218,12 +215,48 @@ test('/backup-snapshot/', async (t) => {
   t.end()
 })
 
-// test('/upload/', async (t) => {
-//   // app.post('/upload/', protectedRouteOptions, postUploadHandler)
-//   // 
+test('/upload/', async (t) => {
+  const {
+    branch,
+    payload,
+  } = uploadDeploySiteSpec
+
+  // TODO
+  // - use this fetch based upload in the webhook cli
+  // - import it for use here
+  const form = new FormData()
+  formSiteNameAndKey(form)
+
+  form.append("payload", new Blob([readFileSync(payload.content)]), {
+    filename: payload.fileName,
+    contentType: payload.contentType,
+  })
+  form.append("branch", branch)
+
+  try {
+    const res = await fetch(serverUrl('/upload/'), {
+      method: 'POST',
+      body: form,
+    })
+    t.assert(res.ok, '200 deployed site templates via /upload/ route')
+  }
+  catch (error) {
+    t.fail(error, 'Error in deploying site templates via /upload/ route')
+  }
+
+  try {
+    await firebase.signalBuild({ siteName: form.get('site') }, null)
+    // if we are running with build workers running in the background
+    // then perhaps they caught this build signal, otherwise we force
+    // a removal here.
+    t.ok(true, 'Deleted the orphaned site build command arguments')
+  }
+  catch (error) {
+    t.fail(error, 'Could not remove the build signal command arguments')
+  }
   
-//   t.end()
-// })
+  t.end()
+})
 
 test.onFinish(() => {
   process.exit()
