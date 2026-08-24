@@ -28,7 +28,6 @@
     "@fastify/multipart": "^7.3.0",
     "@google-cloud/storage": "^7.12.1",
     "async": "~0.2.9",
-    "axios": "^0.18.0",
     "cloudflare": "^1.1.1",
     "cron": "^3.1.7",
     "debug": "^4.3.4",
