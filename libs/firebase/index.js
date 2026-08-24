@@ -1,6 +1,5 @@
 const debug = require('debug')('WHFirebase')
 const path = require( 'path' )
-const axios = require( 'axios' )
 const admin = require( 'firebase-admin' )
 const {
   initializeApp,
@@ -157,7 +156,7 @@ function WebhookSiteDevData ( options, siteData ) {
   }
 
   function fitsInREST ( dataSize ) {
-    var maxRESTSize = 256 * 1024 * 1024; // 256MB
+    const maxRESTSize = 256 * 1024 * 1024; // 256MB
     return dataSize <= maxRESTSize;
   }
 
@@ -429,13 +428,16 @@ function firebaseDatabaseSetLargeValueForKeyPath ( keyPath, value ) {
   return this._getAccessToken()
     .then( function ( token ) {
         uri += `?access_token=${ token }`
+        const headers = new Headers()
+        const jsonMime = 'application/json'
+        headers.set('Content-Type', jsonMime)
+        headers.set('Accept', jsonMime)
         var putOptions = {
           method: 'PUT',
-          url: uri,
-          data: value,
-          json: true,
+          body: JSON.stringify(value),
+          headers,
         }
-        return axios.put( putOptions )
+        return fetch( uri, putOptions )
     } )
 }
 

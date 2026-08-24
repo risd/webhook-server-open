@@ -1,6 +1,8 @@
 const config = require('../config.js')
 const test = require( 'tape' )
 const grunt = require( 'grunt' )
+const { readFile } = require('node:fs/promises')
+const { join } = require('node:path')
 const Firebase = require( '../../libs/firebase/index.js' )
 const webhookTasks = require( '../../Gruntfile.js' )
 
@@ -9,6 +11,8 @@ webhookTasks( grunt )
 Error.stackTraceLimit = Infinity;
 
 const { siteName, userId } = config.firebaseRead
+const { dataFileName, ...writeOptions } = config.firebaseWriteLarge
+const dataFilePath = join(process.cwd(), dataFileName)
 
 test( 'firebase-admin', async function ( t ) {
   
@@ -38,6 +42,10 @@ test( 'firebase-admin', async function ( t ) {
 
     const allSitesSnapshot = await firebase.allSites()
     t.assert(allSitesSnapshot.val() !== null, 'Got all sites.')
+
+    const siteData = JSON.parse((await readFile(dataFilePath)).toString())
+    const res = await firebase.siteDevData(writeOptions, siteData)
+    t.assert(res.ok, 'Large file upload via rest ok.')
   }
   catch (error) {
     t.fail(error)
