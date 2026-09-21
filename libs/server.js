@@ -182,20 +182,23 @@ module.exports.start = async function(config) {
   
   const postUploadFileOptions = {
     ...protectedRouteOptions,
-    schema: genSchema({
-      schemaSpecs: protectedRouteSchemaSpecs.concat([
-        {
-          key: 'payload',
-          required: true,
-          ...fileUploadSchemaType,
-        },
-        {
-          key: 'resize_url',
-          type: 'boolean',
-        },
-      ]),
-      schemaType: 'body',
-    })
+    schema: {
+      consumes: ['multipart/form-data'],
+      ...genSchema({
+        schemaSpecs: protectedRouteSchemaSpecs.concat([
+          {
+            key: 'payload',
+            required: true,
+            ...fileUploadSchemaType,
+          },
+          {
+            key: 'resize_url',
+            type: 'boolean',
+          },
+        ]),
+        schemaType: 'body',
+      }),
+    },
   }
   app.post('/upload-file/', postUploadFileOptions, postUploadFileHandler)
   
@@ -294,21 +297,24 @@ module.exports.start = async function(config) {
   // wh deploy endpoint
   const postUploadOptions = {
     ...protectedRouteOptions,
-    schema: genSchema({
-      schemaSpecs: protectedRouteSchemaSpecs.concat([
-        {
-          key: 'branch',
-          type: 'string',
-          required: true,
-        },
-        {
-          key: 'payload',
-          required: true,
-          ...fileUploadSchemaType,
-        },
-      ]),
-      schemaType: 'body',
-    })
+    schema: {
+      consumes: ['multipart/form-data'],
+      ...genSchema({
+        schemaSpecs: protectedRouteSchemaSpecs.concat([
+          {
+            key: 'branch',
+            type: 'string',
+            required: true,
+          },
+          {
+            key: 'payload',
+            required: true,
+            ...fileUploadSchemaType,
+          },
+        ]),
+        schemaType: 'body',
+      }),
+    },
   }
   app.post('/upload/', postUploadOptions, postUploadHandler)
 
@@ -656,6 +662,7 @@ function cleanUpFiles (request) {
       }
       catch (error) {
         // ignore, nothing to clean up
+        console.error(error)
       }
     }
   }
