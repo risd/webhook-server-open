@@ -23,9 +23,9 @@
     "npm": ">=10.7.0"
   },
   "dependencies": {
-    "@fastify/cors": "^8.2.0",
-    "@fastify/formbody": "^7.4.0",
-    "@fastify/multipart": "^7.3.0",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/formbody": "^9.0.0",
+    "@fastify/multipart": "^10.1.1",
     "@google-cloud/storage": "^7.12.1",
     "async": "~0.2.9",
     "cloudflare": "^1.1.1",
@@ -33,7 +33,7 @@
     "debug": "^4.3.4",
     "dotenv": "^17.4.2",
     "dotenv-safe": "^4.0.4",
-    "fastify": "^4.10.2",
+    "fastify": "^5.12.5",
     "fastly": "^2.2.0",
     "firebase-admin": "^12.7.0",
     "glob": "^7.1.2",
