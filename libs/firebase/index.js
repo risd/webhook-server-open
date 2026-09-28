@@ -5,6 +5,7 @@ const {
   initializeApp,
   cert,
 } = require( 'firebase-admin/app' )
+const { getAuth } = require( 'firebase-admin/auth' )
 const {
   getDatabase,
 } = require('firebase-admin/database')
@@ -40,18 +41,7 @@ function WHFirebase ( config ) {
 
   this._initializationName = config.initializationName || '[DEFAULT]'
 
-  this._app = appForName( this._initializationName )
-  if ( ! this._app ) {
-    this._app = initializeApp( options, this._initializationName )
-  }
-  
-
-  // v13 - 14.2 breaks our auth scheme, but when we do make it pasat,
-  // 13.5 we can move to this new setup:
-  // initializeApp is now idempotent, given the same initialization
-  // options will return an existing app if one exists, or creats a new one
-  // https://firebase.google.com/support/release-notes/admin/node/#version_1350_-_28_august_2025
-  // this._app = initializeApp( options, this._initializationName )
+  this._app = initializeApp( options, this._initializationName )
 
   this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccount )
 }
