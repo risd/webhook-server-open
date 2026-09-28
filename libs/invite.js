@@ -6,13 +6,13 @@
 * for the site, if not it sends a link to the registration page for the site.
 */
 
-const debug = require('debug')('builder')
+const debug = require('debug')('invite')
 var fs = require('fs');
 var Firebase = require('./firebase/index.js');
 var _ = require('lodash');
 var async = require('async');
 var JobQueue = require('./jobQueue.js');
-var Mailgun = require('mailgun-js');
+const Mailgun = require('mailgun.js')
 
 var unescapeFirebase = require( './utils/firebase-unescape.js' )
 
@@ -20,8 +20,28 @@ module.exports.configure = configure
 
 function configure (config) {
   const mailgunConfig = config.get('mailgun')
-  const {fromEmail, domain, replyEmail} = mailgunConfig
-  const mailgun = new Mailgun(mailgunConfig)
+  const {apiKey, fromEmail, domain, replyEmail} = mailgunConfig
+  const mailgun = new Mailgun(FormData)
+  const mg = mailgun.client({
+    username: 'webhook-server-open-inviter',
+    key: apiKey,
+    useFetch: true,
+  })
+
+  const sendMessage = async (message) => {
+    try {
+      const res = await mg.messages.create(domain, {
+        ...message,
+        from: fromEmail,
+      })
+      console.log({res})
+    }
+    catch (error) {
+      console.error('Error sending invite email')
+      console.error(error)
+    }
+  }
+
   const firebase = Firebase({
     initializationName: 'invite-worker',
     ...config.get('firebase'),
@@ -43,7 +63,6 @@ function configure (config) {
       const contentTemplate = fs.readFileSync('libs/emails/invite-login.email');
       const content = _.template(contentTemplate);
       const message = {
-        from: fromEmail,
         to: userEmail,
         subject,
         text: content({ fromUser, siteUrl, cmsUrl, domain }),
@@ -57,7 +76,6 @@ function configure (config) {
       const contentTemplate = fs.readFileSync('libs/emails/invite-signup.email')
       const content = _.template(contentTemplate)
       const message = {
-        from: fromEmail,
         to: userEmail,
         subject,
         text: content({ fromUser, siteUrl, createUrl, domain }),
@@ -66,15 +84,6 @@ function configure (config) {
       await sendMessage(message)
     }
     debug('msg:sent')
-  }
-
-  function sendMessage (message) {
-    return new Promise((resolve, reject) => {
-      mailgun.messages().send(message, (error) => {
-        if (error) reject(error)
-        else resolve()
-      })
-    })
   }
 }
 
