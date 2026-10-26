@@ -12,27 +12,24 @@ var Firebase = require('./firebase/index.js');
 var _ = require('lodash');
 var async = require('async');
 var JobQueue = require('./jobQueue.js');
-const Mailgun = require('mailgun.js')
+const { sendMessage } = require( './emails/mailgun.js' )
 
 var unescapeFirebase = require( './utils/firebase-unescape.js' )
 
 module.exports.configure = configure
 
 function configure (config) {
-  const mailgunConfig = config.get('mailgun')
-  const {apiKey, fromEmail, domain, replyEmail} = mailgunConfig
-  const mailgun = new Mailgun(FormData)
-  const mg = mailgun.client({
+  const mailgunConfig = {
+    ...config.get('mailgun'),
     username: 'webhook-server-open-inviter',
-    key: apiKey,
-    useFetch: true,
-  })
+  }
+  const { domain, replyEmail } = mailgunConfig
 
-  const sendMessage = async (message) => {
+  const mailgunSendMessage = async (message) => {
     try {
-      const res = await mg.messages.create(domain, {
-        ...message,
-        from: fromEmail,
+      const res = await sendMessage({
+        config: mailgunConfig,
+        message,
       })
       console.log({res})
     }
@@ -68,7 +65,7 @@ function configure (config) {
         text: content({ fromUser, siteUrl, cmsUrl, domain }),
       }
       if (replyEmail) message['h:Reply-To'] = replyEmail
-      await sendMessage(message)
+      await mailgunSendMessage(message)
     }
     else {
       debug('msg:signup')
@@ -81,7 +78,7 @@ function configure (config) {
         text: content({ fromUser, siteUrl, createUrl, domain }),
       }
       if (replyEmail) message['h:Reply-To'] = replyEmail
-      await sendMessage(message)
+      await mailgunSendMessage(message)
     }
     debug('msg:sent')
   }

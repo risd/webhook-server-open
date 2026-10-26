@@ -7,7 +7,6 @@ const {spawn} = require('node:child_process')
 const path = require('node:path')
 const {lib} = require('@risd/wh')
 const mkdirp = require('mkdirp')
-const FormData = require('form-data')
 const { setTimeout } = require('node:timers/promises')
 const {MESSAGES} = require('../../libs/jobQueue.js')
 

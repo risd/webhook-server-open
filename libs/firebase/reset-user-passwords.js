@@ -10,7 +10,6 @@ function ResetUserPasswords ( opts, callback ) {
 
   var firebase = opts.firebase;
   var mailgun = opts.mailgun;
-  var fromEmail = opts.fromEmail;
 
   getFirebaseUsers( function withUsers ( error, usersSites ) {
     if ( error ) return callback( error )
@@ -106,17 +105,22 @@ function ResetUserPasswords ( opts, callback ) {
           .catch( handleError )
 
         function sendEmail ( resetPasswordLink ) {
-          return new Promise( function ( resolve, reject ) {
+          return new Promise( async function ( resolve, reject ) {
             var message = {
-              from: fromEmail,
               to: userSite.userEmail,
               subject: `[ ${ userSite.siteName } ] Please reset your password.`,
               text: emailTemplate( Object.assign( { link: resetPasswordLink }, userSite ) ),
             }
-            mailgun.messages().send( message, function ( error ) {
-              if ( error ) return reject( error )
-              resolve()
-            } )  
+            try {
+              await mailgun.sendMessage({ message })
+            }
+            catch (error) {
+              reject(error)
+            }
+            // mailgun.messages().send( message, function ( error ) {
+            //   if ( error ) return reject( error )
+            //   resolve()
+            // } )  
           } )
         }
 
