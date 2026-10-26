@@ -1,8 +1,8 @@
-FROM buildpack-deps:bookworm AS os
+FROM buildpack-deps:trixie AS os
 
 FROM os AS node
 
-ENV NODE_VERSION=22.23.1
+ENV NODE_VERSION=22.23.4
 ENV NPM_VERSION=11
 
 RUN groupadd --gid 1000 node \
