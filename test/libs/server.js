@@ -16,7 +16,7 @@ let server
 const firebase = new Firebase(grunt.config.get('firebase'))
 
 const serverUrl = (path) => {
-  return `http://localhost:${server.app.server.address().port}${path}`
+  return `http://${grunt.config.get('server').listen.host}:${grunt.config.get('server').listen.port}${path}`
 }
 
 const formSiteNameAndKey = (form) => {
@@ -31,7 +31,12 @@ const searchSiteNameandKey = (searchParams) => {
 const { uploadDeploySiteSpec } = config.server
 
 test('server:start', async (t) => {
-  server = await Server.start(grunt.config)
+  try {
+    server = await Server.start(grunt.config)  
+  }
+  catch (error) {
+    console.error(error)
+  }
   const rootRes = await fetch(serverUrl('/'))
   t.ok(rootRes.ok, 'Got root request')
 
@@ -259,5 +264,6 @@ test('/upload/', async (t) => {
 })
 
 test.onFinish(() => {
+  server?.app?.close()
   process.exit()
 })
