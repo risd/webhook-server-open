@@ -4,6 +4,7 @@ const admin = require( 'firebase-admin' )
 const {
   initializeApp,
   cert,
+  getApp,
 } = require( 'firebase-admin/app' )
 const { getAuth } = require( 'firebase-admin/auth' )
 const {
@@ -41,7 +42,13 @@ function WHFirebase ( config ) {
 
   this._initializationName = config.initializationName || '[DEFAULT]'
 
-  this._app = initializeApp( options, this._initializationName )
+  try {
+    this._app = getApp( this._initializationName )
+  }
+  catch (error) {
+    this._app = initializeApp( options, this._initializationName )  
+  }
+  
 
   this._getAccessToken = getAccessToken.bind( this, firebaseServiceAccount )
 }
