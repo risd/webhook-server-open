@@ -178,7 +178,9 @@ async function ensureServer () {
     debug('setup-server:start')
     subprocesses.server = async () => {
       const server = await Server.start(grunt.config)
-      return () => delete server 
+      return () => {
+        server.app.close()
+      }
     }
     return subprocesses.server()
   }
@@ -218,7 +220,7 @@ test('server-deploy-cycle', async (t) => {
     
     let buildHasStarted = false
 
-    subprocesses.builder.p.on('data', () => {
+    subprocesses.builder.p.stdout.on('data', () => {
       buildHasStarted = true
     })
 
