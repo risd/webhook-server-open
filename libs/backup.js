@@ -8,12 +8,12 @@
 
 const fs = require('node:fs')
 const fsp = require('node:fs/promises')
-const axios = require('axios')
 const cloudStorage = require( './cloudStorage.js' )
 const Firebase = require( './firebase/index.js' )
 const {JWT} = require('google-auth-library')
 const path = require('path')
 const {pipeline} = require('node:stream')
+const fetchToFile = require('./utils/fetch-to-file.js')
 
 const fileNameForTimestamp = (timestamp) => {
   return `backup-${timestamp}`
@@ -49,25 +49,10 @@ module.exports.start = async function (config) {
 
   const backupUrl = await firebase.backupUrl()
 
-  const backupResponseStream = await axios({
-    method: 'get',
+  await fetchToFile({
     url: backupUrl,
-    responseType: 'stream',
+    localFile: file,
   })
-
-  const promisePipeline = (...streams) => {
-    return new Promise((resolve, reject) => {
-      pipeline(...streams, (error) => {
-        if (error) return reject(error)
-        resolve()
-      })
-    })
-  }
-
-  await promisePipeline(
-    backupResponseStream.data,
-    fs.createWriteStream(file)
-  )
 
   await cloudStorage.objects.upload({
     bucket,
@@ -93,10 +78,26 @@ module.exports.start = async function (config) {
   const oldestBackupTimestamp = backupsLog[oldestBackupKey]
 
   await firebase.backups({ key: oldestBackupKey }, null)
-  await cloudStorage.objects.del({
-    bucket,
-    file: fileNameForTimestamp(oldestBackupTimestamp)
-  })
+  try {
+    await cloudStorage.objects.del({
+      bucket,
+      file: fileNameForTimestamp(oldestBackupTimestamp)
+    })  
+  }
+  catch (error) {
+    if (error.message?.toLowerCase()?.includes('no such object')) {
+      console.log(`Did not find old backup to delete: ${fileNameForTimestamp(oldestBackupTimestamp)}`)
+      console.log(`This could be because we are
+        referencing a firebase db that was saving its
+        backups against a different bucket.
+        This is likely born out of the environment.
+      `)
+    }
+    else {
+      throw error
+    }
+  }
+  
 
   return { file, timestamp }
 }

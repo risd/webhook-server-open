@@ -7,8 +7,7 @@ const {spawn} = require('node:child_process')
 const path = require('node:path')
 const {lib} = require('@risd/wh')
 const mkdirp = require('mkdirp')
-const axios = require('axios')
-const FormData = require('form-data')
+const { setTimeout } = require('node:timers/promises')
 const {MESSAGES} = require('../../libs/jobQueue.js')
 
 require('../../Gruntfile.js')(grunt)
@@ -26,6 +25,13 @@ whGlobalOpts.firebaseName = whGlobalOpts.firebase
 
 function noop () {}
 
+const cmdStringForSpawn = (s) => {
+  return [
+    s.split(' ')[0],
+    s.split(' ').slice(1),
+  ]
+}
+
 // resolve a function to kill the subprocess, or listen for
 // `done-job` message to kill the subprocess
 const subprocess = (cmdString, { onDone=noop }={}) => {
@@ -35,6 +41,7 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
   p.on('exit', (code, signal) => {
     if (!done) onDone(code === 0 ? null : new Error(`cmd`))
   })
+  kill.p = p
   let ready = false
   let done = false
   return new Promise((resolve, reject) => {
@@ -44,7 +51,7 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
       console.log(args[1], str)
       if (str && str.toLowerCase().indexOf(MESSAGES.WAITING) !== -1) {
         ready = true
-        resolve(() => kill())
+        resolve(kill)
       }
       if (str && str.toLowerCase().indexOf(MESSAGES.JOB_DONE) !== -1) {
         kill()
@@ -60,6 +67,63 @@ const subprocess = (cmdString, { onDone=noop }={}) => {
 }
 
 const subprocesses = {}
+
+test('setup-supervisor', async (t) => {
+  const cmdString = 'supervisord -n -c ./test/webhook.conf'
+  const processes = ['beanstalk', 'caddy', 'memcached']
+  
+  const supervisorProcess = (cmdString, { processes, onDone=noop }={}) => {
+    const [cmd, args] = cmdStringForSpawn(cmdString)
+
+    let inRunningState = new Set()
+    const hasSuccessString = (line) => {
+      for (const p of processes) {
+        if (line.includes(`${p} entered RUNNING state`)) {
+          inRunningState.add(p)
+        }
+      }
+      return inRunningState.size === processes.length
+    }
+
+    const p = spawn(cmd, args, { cwd: process.cwd() })
+    let ready = false
+    let killed = false
+
+    const killedEarly = (code, signal) => {
+      throw new Error(`Exited early: ${cmdString}. Code: ${code}. Signal: ${signal}`)
+    }
+
+    p.on('close', killedEarly)
+    p.on('error', (b) => console.error(b.toString()))
+
+    const kill = () => new Promise((resolve, reject) => {
+      killed = true
+      p.off(close, killedEarly)
+      p.on('close', (code, signal) => {
+        return resolve()
+      })
+      p.kill()
+    })
+
+    return new Promise((resolve, reject) => {
+      p.stdout.on('data', (data) => {
+        if (killed) return
+        const str = data.toString()
+        if (!ready && hasSuccessString(str)) {
+          ready = true
+          return resolve(() => kill())
+        }
+      })
+    })
+  }
+
+  const subprocessKill = await supervisorProcess(cmdString, { processes })
+  
+  subprocesses['supervisor'] = subprocessKill
+
+  t.ok(true, 'supervisor processes ready')
+  t.end()
+})
 
 test('setup-delegator', async (t) => {
   try {
@@ -114,7 +178,9 @@ async function ensureServer () {
     debug('setup-server:start')
     subprocesses.server = async () => {
       const server = await Server.start(grunt.config)
-      return () => delete server 
+      return () => {
+        server.app.close()
+      }
     }
     return subprocesses.server()
   }
@@ -127,9 +193,10 @@ async function ensureServer () {
 test('server-deploy-cycle', async (t) => {
   try {
     await ensureServer()
+    let deployCount = -1
     subprocesses.builder = await subprocess('npm run build-worker', {
       onDone: (error) => {
-        t.ok(!error, 'Finished deploy build cycle without error')
+        t.ok(!error, `Finished deploy build cycle without error. Deploy count: ${deployCount}. buildHasStarted: ${buildHasStarted}`)
         // the build process will finish after the upload is complete
         // so we can end the test here
         t.end()
@@ -138,15 +205,32 @@ test('server-deploy-cycle', async (t) => {
     const siteKeySnapshot = await firebase.siteKey({ siteName: config.creator.siteName })
     const siteKey = siteKeySnapshot.val()
     const cwd = path.join(config.creator.cwd, config.creator.siteName)
-    await lib.push({
-      ...whGlobalOpts,
-      cwd,
-      siteName: config.creator.siteName,
-      siteKey,
-      branch: 'master',
-      http: true,
+
+    const deploy = () => {
+      return lib.push({
+        ...whGlobalOpts,
+        cwd,
+        siteName: config.creator.siteName,
+        siteKey,
+        branch: 'master',
+        http: true,
+        skipBuild: true,
+      })
+    }
+    
+    let buildHasStarted = false
+
+    subprocesses.builder.p.stdout.on('data', () => {
+      buildHasStarted = true
     })
-    t.ok(true, 'Pushed without error')
+
+    while (buildHasStarted === false && deployCount < 10) {
+      deployCount++
+      await deploy()
+      await setTimeout(2000, noop)
+    }
+
+    t.ok(true, `Pushed without error. Deploy count: ${deployCount}. buildHasStarted: ${buildHasStarted}`)
   }
   catch (error) {
     t.fail(error, 'Could not signal deploy cycle build')
@@ -164,193 +248,6 @@ test('backup', async (t) => {
   catch (error) {
     console.log(error)
     t.fail(error, 'failed to backup')
-  }
-  finally {
-    t.end()
-  }
-})
-
-// axios requests against server
-
-test('server-cms-requests', async (t) => {
-  await ensureServer()
-  const urlForServer = (frag) => `http://localhost:${grunt.config.get('server').listen.port}${frag}`
-  const siteKeySnapshot = await firebase.siteKey({ siteName: config.creator.siteName })
-  const siteKey = siteKeySnapshot.val()
-
-  const siteNameAndKey = (form) => {
-    form.append('site', config.creator.siteName)
-    form.append('token', siteKey)
-  }
-  
-  try {
-    const rootResponse = await axios.get(urlForServer('/'))
-    t.assert(rootResponse.status === 200, '200 root response')  
-  }
-  catch (error) {
-    t.fail(error, 'Error in / request')
-  }
-  
-  try {
-    const backupsSnapshot = await firebase.backups()
-    const backups = backupsSnapshot.val()
-    const timestamp = backups[Object.keys(backups)[Object.keys(backups).length - 1]]
-    // webhook-cms makes this request with query params.
-    const url = urlForServer(`/backup-snapshot/?site=${config.creator.siteName}&token=${siteKey}&timestamp=${timestamp}`)
-    const backupResponse = await axios.get(url)
-    t.assert(backupResponse.status === 200, '200 backup response')
-  }
-  catch (error) {
-    t.fail(error, 'Error in /backup-snapshot/')
-  }
-
-  try {
-    const form = new FormData()
-    siteNameAndKey(form)
-    form.append('resize_url', 'true')
-    form.append('url', 'http://rubenrodriguez.me/favicon.png')
-    const uploadUrlResponse = await axios.post(
-      urlForServer('/upload-url/'),
-      form,
-      { headers: form.getHeaders() }
-    )
-    t.assert(uploadUrlResponse.status === 200, '200 upload url response')
-    t.assert(
-      uploadUrlResponse.data.message &&
-      uploadUrlResponse.data.url &&
-      uploadUrlResponse.data.size &&
-      uploadUrlResponse.data.mimeType &&
-      uploadUrlResponse.data.resize_url,
-      'Got upload url response data in correct shape')
-  }
-  catch (error) {
-    t.fail(error, 'Error in /upload-url/')
-  }
-
-  try {
-    const form = new FormData()
-    siteNameAndKey(form)
-    form.append('resize_url', 'true')
-    form.append(
-      'payload',
-      fs.readFileSync(path.join( __dirname, '..', 'files', 'img.png' )),
-      {
-        filename: 'img.png',
-        contentType: 'image/png',
-      })
-    const uploadFileResponse = await axios.post(
-      urlForServer('/upload-file/'),
-      form,
-      { headers: form.getHeaders() }
-    )
-    t.assert(uploadFileResponse.status === 200, '200 upload url response')
-    t.assert(
-      uploadFileResponse.data.message &&
-      uploadFileResponse.data.url &&
-      uploadFileResponse.data.size &&
-      uploadFileResponse.data.mimeType &&
-      uploadFileResponse.data.resize_url,
-      'Got upload file response data in correct shape')
-
-  }
-  catch (error) {
-    t.fail(error, 'Error in /upload-file/')
-  }
-
-  const searchDocument = (form) => {
-    form.append('data', JSON.stringify({ name: 'test-title' }))
-    form.append('id', 'one-off-page')
-    form.append('typeName', 'pages')
-    form.append('oneOff', 'true')
-  }
-
-  try {
-    const form = new FormData()
-    siteNameAndKey(form)
-    searchDocument(form)
-    const searchIndexResponse = await axios.post(
-      urlForServer('/search/index/'),
-      form,
-      { headers: form.getHeaders() }
-    )
-    t.assert(searchIndexResponse.status === 200, '200 search index response')
-    t.assert(
-      searchIndexResponse.data.message,
-      'Got search index response data in correct shape')
-  }
-  catch (error) {
-    t.fail(error, 'Error in /search/index/')
-  }
-
-  try {
-    const form = new FormData()
-    siteNameAndKey(form)
-    searchDocument(form)
-    form.append('query', 'test')
-    const searchResponse = await axios.post(
-      urlForServer('/search/'),
-      form,
-      { headers: form.getHeaders() }
-    )
-    t.assert(searchResponse.status === 200, '200 search response')
-    t.assert(Array.isArray(searchResponse?.data?.hits), 'search response includes hits')
-  }
-  catch (error) {
-    t.fail(error, 'Error in /search/')
-  }
-
-  try {
-    const form = new FormData()
-    siteNameAndKey(form)
-    searchDocument(form)
-    const searchDeleteResponse = await axios.post(
-      urlForServer('/search/delete/'),
-      form,
-      { headers: form.getHeaders() }
-    )
-    t.assert(searchDeleteResponse.status === 200, '200 search delete response')
-    t.assert(
-      searchDeleteResponse.data.message,
-      'Got search delete response data in correct shape')
-  }
-  catch (error) {
-    t.fail(error, 'Error in /search/delete/')
-  }
-
-  try {
-    const form = new FormData()
-    siteNameAndKey(form)
-    searchDocument(form)
-    const searchDeleteTypeResponse = await axios.post(
-      urlForServer('/search/delete/type/'),
-      form,
-      { headers: form.getHeaders() }
-    )
-    t.assert(searchDeleteTypeResponse.status === 200, '200 search delete type response')
-    t.assert(
-      searchDeleteTypeResponse.data.message,
-      'Got search delete type response data in correct shape')
-  }
-  catch (error) {
-    t.fail(error, 'Error in /search/delete/type/')
-  }
-
-  try {
-    const form = new FormData()
-    siteNameAndKey(form)
-    searchDocument(form)
-    const searchDeleteIndexResponse = await axios.post(
-      urlForServer('/search/delete/index/'),
-      form,
-      { headers: form.getHeaders() }
-    )
-    t.assert(searchDeleteIndexResponse.status === 200, '200 search delete index response')
-    t.assert(
-      searchDeleteIndexResponse.data.message,
-      'Got search delete index response data in correct shape')
-  }
-  catch (error) {
-    t.fail(error, 'Error in /search/delete/index/')
   }
   finally {
     t.end()

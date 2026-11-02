@@ -3,6 +3,7 @@ var unescape = require( '../utils/firebase-unescape.js' )
 
 module.exports = WHCloudFlare;
 module.exports.ZoneRequiredError = ZoneRequiredError;
+module.exports.ZoneNotFound = ZoneNotFound;
 
 function WHCloudFlare ( options ) {
   if ( ! ( this instanceof WHCloudFlare ) ) return new WHCloudFlare( options )
@@ -16,6 +17,7 @@ function WHCloudFlare ( options ) {
 
 WHCloudFlare.prototype.getZone = getZone;
 WHCloudFlare.prototype.getCnames = getCnames;
+WHCloudFlare.prototype.getCnamesGenerator = getCnamesGenerator;
 WHCloudFlare.prototype.createCname = createCname;
 WHCloudFlare.prototype.updateCname = updateCname;
 WHCloudFlare.prototype.deleteCname = deleteCname;
@@ -40,6 +42,27 @@ function getZone ( bucket ) {
 
   function domainForBucket ( bucket ) {
     return unescape( bucket ).split( '.' ).slice( -2 ).join( '.' )
+  }
+}
+
+async function* getCnamesGenerator (zone) {
+  if (!zone) throw ZoneRequiredError()
+  var zoneId = typeof zone === 'string'
+    ? zone
+    : zone.id;
+  let page = 1
+  let done = false
+  while (done === false) {
+    const res = await this._client.browseDNS(zoneId, {
+      page,
+      type: 'CNAME',
+    })
+    yield res.result
+    if (res.page >= res.totalPages) {
+      done = true
+      return
+    }
+    page += 1
   }
 }
 
@@ -90,26 +113,37 @@ function deleteCname ( cnameRecord ) {
   return this._client.deleteDNS( cnameRecord )
 }
 
-function getCnameForSiteName ( siteName, zone ) {
-  if ( siteName && zone ) {
-    var resolveZone = Promise.resolve( zone )
+async function getCnameForSiteName ( siteName, zone ) {
+  if (!zone) {
+    zone = await this.getZone( siteName )
+    if (!zone) throw ZoneNotFound()
   }
-  else if ( siteName ) {
-    var resolveZone = this.getZone( siteName )
+
+  const cname = {
+    zoneId: zone.id,
   }
   
-  return resolveZone
-    .then( this.getCnames.bind( this ) )
-    .then( pluckCnameForSiteName( siteName ) )
-
-  function pluckCnameForSiteName ( siteName ) {
-    return pluckCname;
-
-    function pluckCname ( cnames ) {
-      var siteCnameRecord = valueInArray( cnames, nameKey, unescape( siteName ) )
-      if ( ! siteCnameRecord ) return Promise.resolve()
-      else return Promise.resolve( siteCnameRecord )
+  const cnames = await this.getCnames(zone)
+  for await (const cnames of this.getCnamesGenerator(zone.id)) {
+    const cfCname = pluckCname(cnames, siteName)
+    if (cfCname) {
+      cname.id = cfCname?.id
+      cname.content = cfCname?.content
+      cname.name = cfCname?.name
+      cname.proxied = cfCname?.proxied
+      cname.type = cfCname?.type
+      break
     }
+  }
+  
+  if (!cname?.id) return null
+
+  return cname
+
+  function pluckCname ( cnames, siteName ) {
+    var siteCnameRecord = valueInArray( cnames, nameKey, unescape( siteName ) )
+    if ( ! siteCnameRecord ) return null
+    else return siteCnameRecord
   }
 
   function valueInArray ( arr, keyFn, seekingValue ) {
@@ -123,24 +157,23 @@ function getCnameForSiteName ( siteName, zone ) {
   }
 }
 
-function deleteCnameForSiteName ( siteName ) {
-  var client = this._client;
+async function deleteCnameForSiteName ( siteName ) {
 
-  return this.getCnameForSiteName( siteName )
-    .then( handleCnameRecord )
+  const cname = await this.getCnameForSiteName(siteName)
 
-  function handleCnameRecord ( cnameRecord ) {
-    if ( cnameRecord ) {
-      return client.deleteDNS( cnameRecord )
-    }
-    else {
-      return Promise.resolve()
-    }
-  }
+  if (!cname) return { doesNotExist: true }
+
+  const tombstone = await this._client.deleteDNS(cname)
+
+  return tombstone
 }
 
 function ZoneRequiredError () {
   return new Error( 'In order to get a CNAME, a `zone` DNS record is required, or the zone ID.' )
+}
+
+function ZoneNotFound () {
+  return new Error( 'No zone found for siteName.' )
 }
 
 // helpers

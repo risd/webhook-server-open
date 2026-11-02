@@ -24,4 +24,5 @@ beanstalk
 
 test/config.js
 test/createSiteDir/*
+test/files/*
 .wh-generate

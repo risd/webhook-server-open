@@ -71,6 +71,10 @@ function WebhookSiteDelete ( siteName ) {
 
   function deleteCnameForSiteNameTask ( bucket ) {
     return self._cloudflare.deleteCnameForSiteName( bucket )
+      .then((result) => {
+        if (result?.id) console.log('cname deleted')
+        if (result?.doesNotExist) console.log('cname was already deleted')
+      })
       .catch( function (error) {
         console.log( 'Could not find a Cloudflare CNAME to remove', bucket )
         debug(error)
