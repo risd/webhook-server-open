@@ -6,16 +6,16 @@ REPO_NAME=risd-webhook-docker-repo
 
 DOCKER_PROJECT=risd-webook-server
 # update with package.json, this flows into gen-startup-script
-DOCKER_VERSION=v4-0-0
+DOCKER_VERSION=v4-0-1
 
 ENV_PROD=.env.rackspace.prod-v3-0-9
 ENV_STAGE=.env.risd.stage-v3-0-9
 
-# change these per deployment
-# ENV_NAME : prod | stage
+# change ALL 3 per deployment
+# ENV_NAME : prod | stage, BRANCH, ENV=../$(ENV_STAGE | ENV_PROD)
 ENV_NAME=prod
 BRANCH=master
-ENV=../$(ENV_STAGE)
+ENV=../$(ENV_PROD)
 
 # stable
 # DOCKER_NAME should match the startup-script CONTAINER_IMAGE
