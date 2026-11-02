@@ -132,7 +132,6 @@ run-test:
 run-script:
 	docker container run --rm -it \
 		--name risd-webhook-vm \
-		--publish 80:80 \
 		--env DEBUG=* \
 		--env TEST_ENV=$(ENV_NAME) \
 		--env-file $(ENV) \
@@ -141,7 +140,30 @@ run-script:
 		-v $$HOME/.risdmedia:/home/webhook/wh-config \
 		-w /home/webhook/webhook-server-open \
 		$(DOCKER_NAME_ACTIVE) \
-		npx tape test/libs/create-cname.js > test-run.txt
+		npm audit
+
+# npm install
+# npm test
+# npm audit
+# npx tape test/firebase/admin.js
+# npx tape test/libs/cloudStorage.js
+# npx tape test/libs/invite.js
+# npx tape test/libs/server.js
 
 prune:
 	docker container prune --force --filter "label=$(DOCKER_LABEL)"
+
+run-opencode:
+	docker container run --rm -it \
+		--name risd-webhook-vm-opencode \
+		--publish 80:80 \
+		--env DEBUG=* \
+		--env TEST_ENV=$(ENV_NAME) \
+		--env-file $(ENV) \
+		--label $(DOCKER_LABEL) \
+		-v "$(dir $(shell pwd))":/home/webhook/webhook-server-open \
+		-v $$HOME/.risdmedia:/home/webhook/wh-config \
+		-v $$HOME/.opencode:/home/webhook/.opencode \
+		-w /home/webhook/webhook-server-open \
+		$(DOCKER_NAME_ACTIVE) \
+		npx opencode
