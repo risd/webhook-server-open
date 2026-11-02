@@ -6,14 +6,14 @@ REPO_NAME=risd-webhook-docker-repo
 
 DOCKER_PROJECT=risd-webook-server
 # update with package.json, this flows into gen-startup-script
-DOCKER_VERSION=v3-0-10
+DOCKER_VERSION=v4-0-0
 
 ENV_PROD=.env.rackspace.prod-v3-0-9
 ENV_STAGE=.env.risd.stage-v3-0-9
 
 # change these per deployment
 # ENV_NAME : prod | stage
-ENV_NAME=stage
+ENV_NAME=prod
 BRANCH=master
 ENV=../$(ENV_STAGE)
 
@@ -140,7 +140,7 @@ run-script:
 		-v $$HOME/.risdmedia:/home/webhook/wh-config \
 		-w /home/webhook/webhook-server-open \
 		$(DOCKER_NAME_ACTIVE) \
-		npm audit
+		npm install
 
 # npm install
 # npm test
