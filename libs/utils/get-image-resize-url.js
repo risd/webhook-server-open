@@ -1,5 +1,4 @@
 const debug = require('debug')('get-img-resize-url')
-const axios = require('axios')
 
 module.exports = getImgResizeUrl
 
@@ -38,18 +37,17 @@ function getImgResizeUrl ({ serviceUrl, appEngine }) {
     throw new Error('Must include an image resizing service URL.')
   }
 
-  return (imageUrl) => {
+  return async (imageUrl) => {
     const encodedUrl = encodeURIComponentsForURL( removeProtocolFromURL( imageUrl ) )
     const imageResizerUrl = `${resizeServiceUrl}/${ encodedUrl  }`
     debug('imageResizerUrl', imageResizerUrl)
-    return axios.get(imageResizerUrl).then((response) => {
-      let resizeUrl = response.data
-      if (resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0) {
-        resizeUrl = `https${ resizeUrl.slice( 4 )}`
-      }
-      debug('resizeUrl', resizeUrl)
-      return resizeUrl
-    })
+    const res = await fetch(imageResizerUrl)
+    let resizeUrl = await res.text()
+    if (resizeUrl.length > 0 && resizeUrl.indexOf( 'http://' ) === 0) {
+      resizeUrl = `https${ resizeUrl.slice( 4 )}`
+    }
+    debug('resizeUrl', resizeUrl)
+    return resizeUrl
   }
 }
 
